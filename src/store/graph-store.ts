@@ -19,7 +19,12 @@ import {
   createEmptyGraphDocument,
   loadGraphDocument,
   saveGraphDocument,
+  exportGraphJson,
 } from "@/lib/graph/serialization";
+
+import { downloadTextFile, saveTextFileWithPicker } from "@/lib/download";
+
+import { toSafeFilename } from "@/lib/filename";
 
 type GraphStore = {
   title: string;
@@ -39,6 +44,7 @@ type GraphStore = {
   deleteSelected: () => void;
   save: () => void;
   reset: () => void;
+  exportJson: () => Promise<void>;
 };
 
 export const useGraphStore = create<GraphStore>((set, get) => ({
@@ -78,6 +84,18 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   onConnect: (connection) => {
     if (!connection.source || !connection.target) return;
 
+    const existingEdge = get().edges.find((edge) => {
+      const sameDirection =
+        edge.source === connection.source && edge.target === connection.target;
+
+      const oppositeDirection =
+        edge.source === connection.target && edge.target === connection.source;
+
+      return sameDirection || oppositeDirection;
+    });
+
+    if (existingEdge) return;
+
     const edge = createGraphEdge(connection.source, connection.target);
 
     set({
@@ -112,6 +130,24 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       edges: state.edges,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    });
+  },
+
+  exportJson: async () => {
+    const state = get();
+
+    const contents = exportGraphJson({
+      title: state.title,
+      nodes: state.nodes,
+      edges: state.edges,
+    });
+    const filename = toSafeFilename(state.title || "graph-board");
+
+    await saveTextFileWithPicker({
+      suggestedName: `${filename}.json`,
+      contents,
+      mimeType: "application/json",
+      extension: ".json",
     });
   },
 

@@ -1,7 +1,10 @@
 import { nanoid } from "nanoid";
 import type { GraphEdge, VertexNode } from "./types";
 
-export function createVertexNode(position: { x: number; y: number }): VertexNode {
+export function createVertexNode(position: {
+  x: number;
+  y: number;
+}): VertexNode {
   const id = nanoid();
 
   return {
@@ -19,7 +22,9 @@ export function createGraphEdge(source: string, target: string): GraphEdge {
     id: nanoid(),
     source,
     target,
-    type: "default",
+    sourceHandle: "center-source",
+    targetHandle: "center-target",
+    type: "straight-center",
     data: {
       directed: false,
     },
@@ -51,3 +56,4 @@ export function deleteSelectedElements(params: {
     }),
   };
 }
+
