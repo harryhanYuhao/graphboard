@@ -48,6 +48,17 @@ function GraphEditorInner() {
         [],
     );
 
+    const handleVertexClick = useGraphStore((state) => state.handleVertexClick);
+    const handleNodeClick = useCallback(
+        (event: React.MouseEvent, node: VertexNodeType) => {
+            if (mode !== "add-edge") return;
+
+            event.stopPropagation();
+            handleVertexClick(node.id);
+        },
+        [handleVertexClick, mode],
+    );
+
     useEffect(() => {
         hydrate();
     }, [hydrate]);
@@ -108,7 +119,9 @@ function GraphEditorInner() {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onNodeClick={handleNodeClick}
                 onPaneClick={handlePaneClick}
+                  nodesConnectable={false}
                 fitView
                 deleteKeyCode={["Backspace", "Delete"]}
             >

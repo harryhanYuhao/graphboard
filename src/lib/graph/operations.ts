@@ -11,6 +11,7 @@ export function createVertexNode(position: {
     id,
     type: "vertex",
     position,
+    origin: [0.5, 0.5],
     data: {
       label: id.slice(0, 4),
     },
