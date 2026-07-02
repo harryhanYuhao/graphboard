@@ -32,6 +32,7 @@ type GraphStore = {
   edges: GraphEdge[];
   mode: EditorMode;
   hasHydrated: boolean;
+  pendingEdgeSourceId: string | null;
 
   hydrate: () => void;
   setMode: (mode: EditorMode) => void;
@@ -41,10 +42,12 @@ type GraphStore = {
   onConnect: (connection: Connection) => void;
 
   addVertexAt: (position: { x: number; y: number }) => void;
+  handleVertexClick: (vertexId: string) => void;
+  addEdgeBetween: (sourceId: string, targetId: string) => void;
   deleteSelected: () => void;
   save: () => void;
-  reset: () => void;
   exportJson: () => Promise<void>;
+  reset: () => void;
 };
 
 export const useGraphStore = create<GraphStore>((set, get) => ({
@@ -53,6 +56,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   edges: [],
   mode: "select",
   hasHydrated: false,
+
+  pendingEdgeSourceId: null,
 
   hydrate: () => {
     const document = loadGraphDocument();
@@ -66,7 +71,10 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   setMode: (mode) => {
-    set({ mode });
+    set({
+      mode,
+      pendingEdgeSourceId: null,
+    });
   },
 
   onNodesChange: (changes) => {
@@ -108,6 +116,45 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
     set({
       nodes: [...get().nodes, node],
+    });
+  },
+
+  handleVertexClick: (vertexId) => {
+    const state = get();
+
+    if (state.mode !== "add-edge") return;
+
+    if (!state.pendingEdgeSourceId) {
+      set({
+        pendingEdgeSourceId: vertexId,
+      });
+
+      return;
+    }
+
+    if (state.pendingEdgeSourceId === vertexId) {
+      set({
+        pendingEdgeSourceId: null,
+      });
+
+      return;
+    }
+
+    const edge = createGraphEdge(state.pendingEdgeSourceId, vertexId);
+
+    set({
+      edges: addEdge(edge, state.edges),
+      pendingEdgeSourceId: null,
+    });
+  },
+
+  addEdgeBetween: (sourceId, targetId) => {
+    if (sourceId === targetId) return;
+
+    const edge = createGraphEdge(sourceId, targetId);
+
+    set({
+      edges: addEdge(edge, get().edges),
     });
   },
 

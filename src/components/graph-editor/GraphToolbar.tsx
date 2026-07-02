@@ -2,7 +2,7 @@
 
 "use client";
 
-import { Download, MousePointer2, PlusCircle, Save, Trash2, RotateCcw } from "lucide-react";
+import { Download, GitBranch, MousePointer2, PlusCircle, Save, Trash2, RotateCcw } from "lucide-react";
 import { useGraphStore } from "@/store/graph-store";
 import type { EditorMode } from "@/lib/graph/types";
 
@@ -57,6 +57,14 @@ export function GraphToolbar() {
                 onClick={() => setEditorMode("add-vertex")}
             >
                 <PlusCircle size={18} />
+            </ToolbarButton>
+
+            <ToolbarButton
+                title="Add edge"
+                active={mode === "add-edge"}
+                onClick={() => setEditorMode("add-edge")}
+            >
+                <GitBranch size={18} />
             </ToolbarButton>
 
             <ToolbarButton title="Delete selected" onClick={deleteSelected}>

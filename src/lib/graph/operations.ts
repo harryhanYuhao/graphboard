@@ -22,8 +22,6 @@ export function createGraphEdge(source: string, target: string): GraphEdge {
     id: nanoid(),
     source,
     target,
-    sourceHandle: "center-source",
-    targetHandle: "center-target",
     type: "straight-center",
     data: {
       directed: false,
