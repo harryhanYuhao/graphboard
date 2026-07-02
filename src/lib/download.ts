@@ -28,9 +28,14 @@ export async function saveTextFileWithPicker(params: {
   const mimeType = params.mimeType ?? "application/json";
   const extension = params.extension ?? ".json";
 
-  // Modern Chromium-based browsers: Chrome, Edge, etc.
-  if ("showSaveFilePicker" in window) {
-    const fileHandle = await window.showSaveFilePicker({
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const saveFilePicker = window.showSaveFilePicker;
+
+  if (typeof saveFilePicker === "function") {
+    const fileHandle = await saveFilePicker.call(window, {
       suggestedName: params.suggestedName,
       types: [
         {
@@ -49,7 +54,6 @@ export async function saveTextFileWithPicker(params: {
     return;
   }
 
-  // Fallback for browsers without showSaveFilePicker, such as Firefox/Safari.
   const blob = new Blob([params.contents], {
     type: mimeType,
   });

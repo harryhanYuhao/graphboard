@@ -22,7 +22,7 @@ import {
   exportGraphJson,
 } from "@/lib/graph/serialization";
 
-import { downloadTextFile, saveTextFileWithPicker } from "@/lib/download";
+import { saveTextFileWithPicker } from "@/lib/download";
 
 import { toSafeFilename } from "@/lib/filename";
 
