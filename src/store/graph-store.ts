@@ -74,6 +74,14 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     set({
       mode,
       pendingEdgeSourceId: null,
+      nodes: get().nodes.map((node) => ({
+        ...node,
+        selected: false,
+      })),
+      edges: get().edges.map((edge) => ({
+        ...edge,
+        selected: false,
+      })),
     });
   },
 

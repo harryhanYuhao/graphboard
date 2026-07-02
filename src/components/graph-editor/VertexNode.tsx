@@ -15,6 +15,15 @@ export function VertexNode({
 
   const isPendingEdgeSource = pendingEdgeSourceId === id;
 
+  const className = [
+    "flex h-12 w-12 items-center justify-center rounded-full border-2 bg-white text-sm font-semibold shadow-sm",
+    isPendingEdgeSource
+      ? "border-amber-500 ring-4 ring-amber-300"
+      : selected
+        ? "border-blue-600 ring-2 ring-blue-200"
+        : "border-slate-900",
+  ].join(" ");
+
   return (
     <div
       className="relative h-12 w-12"
@@ -41,13 +50,7 @@ export function VertexNode({
         className="!absolute !left-1/2 !top-1/2 !h-12 !w-12 !-translate-x-1/2 !-translate-y-1/2 !rounded-full !border-0 !bg-transparent"
       />
 
-      <div
-        className={[
-          "pointer-events-none flex h-12 w-12 items-center justify-center rounded-full border-2 bg-white text-sm font-semibold shadow-sm",
-          selected ? "border-blue-600 ring-2 ring-blue-200" : "border-slate-900",
-          isPendingEdgeSource ? "ring-4 ring-amber-300" : "",
-        ].join(" ")}
-      >
+      <div className={className} >
         <span>{data.label}</span>
       </div>
     </div>
