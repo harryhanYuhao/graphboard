@@ -23,10 +23,12 @@ export function VertexNode({
   const meta = VERTEX_TYPE_MAP[data.vertexType] ?? VERTEX_TYPE_MAP[DEFAULT_VERTEX_TYPE];
   const isTriangle = meta.shape === "triangle";
 
+
   const shapeRadius =
     {
       circle: "rounded-full",
       square: "rounded-md",
+      triangle: "",
     }[meta.shape] ?? "";
   
   // A CSS border/ring does not follow a clip-path silhouette, so we use a
@@ -40,14 +42,16 @@ export function VertexNode({
 
   const className = [
     "flex items-center justify-center font-semibold shadow-sm",
-    isTriangle ? "pt-3 text-[10px]" : "border-2 text-sm",
     shapeRadius,
     meta.className,
-    `w-${meta.size}`,
-    `h-${meta.size}`,
   ]
     .filter(Boolean)
     .join(" ");
+
+  // Size is applied via inline style
+  const dimension = `${meta.size * 0.25}rem`;
+
+  const handleClassName = "!absolute !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !rounded-full !border-0 !bg-transparent";
 
   return (
     <div
@@ -61,23 +65,27 @@ export function VertexNode({
     >
       <Handle
         type="target"
-        // position={Position.Top}
+        position={Position.Top}
         id="center-target"
         isConnectable={mode === "add-edge"}
-        className={`!absolute !left-1/2 !top-1/2 !h-${meta.size} !w-${meta.size} !-translate-x-1/2 !-translate-y-1/2 !rounded-full !border-0 !bg-transparent`}
+        className={handleClassName}
+        style={{ width: dimension, height: dimension }}
       />
 
       <Handle
         type="source"
-        // position={Position.Bottom}
+        position={Position.Bottom}
         id="center-source"
         isConnectable={mode === "add-edge"}
-        className={`!absolute !left-1/2 !top-1/2 !h-${meta.size} !w-${meta.size} !-translate-x-1/2 !-translate-y-1/2 !rounded-full !border-0 !bg-transparent`}
+        className={handleClassName}
+        style={{ width: dimension, height: dimension }}
       />
 
       <div
         className={className}
         style={{
+          width: dimension,
+          height: dimension,
           clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined,
           filter: highlightFilter,
         }}

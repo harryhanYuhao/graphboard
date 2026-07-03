@@ -16,11 +16,8 @@ export type VertexTypeMeta = {
   // control the size, which is also used to determine anchors
   size: number;
 
-  // Tailwind classes applied to the shape body (fill + text color).
+  // Tailwind classes applied to the shape body (fill + text + border color).
   className: string;
-  // Border color class — only applied to non-triangle shapes (a CSS border
-  // does not follow a clip-path silhouette).
-  borderClassName: string;
 };
 
 // clip-path for the triangle body (also used for the menu swatch).
@@ -32,28 +29,35 @@ export const VERTEX_TYPES: VertexTypeMeta[] = [
     label: "Z spider",
     shape: "circle",
     size: 6,
-    className: "bg-green-500 text-white border-green-700",
+    className: "bg-green-500 text-white border-green-700 border-2 text-sm",
+  },
+  {
+    type: "empty",
+    label: "empty node",
+    shape: "circle",
+    size: 4.5,
+    className: "border-2 border-dotted text-xs border-black/50",
   },
   {
     type: "x",
     label: "X spider",
     shape: "circle",
     size: 6,
-    className: "bg-red-500 text-white border-red-700",
+    className: "bg-red-500 text-white border-red-700 border-2 text-sm",
   },
   {
     type: "w",
     label: "W node",
     shape: "triangle",
-    size: 8,
-    className: "bg-slate-900 text-white",
+    size: 5,
+    className: "bg-slate-900 text-white pt-3 text-[10px]",
   },
   {
     type: "h",
     label: "H box",
     shape: "square",
-    size: 5,
-    className: "bg-amber-300 text-slate-900 border-amber-500",
+    size: 4,
+    className: "bg-amber-300 text-slate-900 border-amber-500 border-2 text-sm",
   },
 ];
 

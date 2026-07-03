@@ -23,7 +23,7 @@ function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
     <span
       className={[
         "h-5 w-5 shrink-0",
-        isTriangle ? "" : `border ${meta.borderClassName}`,
+        isTriangle ? "" : "border",
         shapeRadius,
         meta.className,
       ]

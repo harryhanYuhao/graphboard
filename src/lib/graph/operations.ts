@@ -17,7 +17,7 @@ export function createVertexNode(
     position,
     origin: [0.5, 0.5],
     data: {
-      label: "", // TODO: the label is the content
+      label: "A", // TODO: the label is the content
       vertexType,
     },
   };

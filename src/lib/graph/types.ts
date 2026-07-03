@@ -3,7 +3,7 @@
 import type { Edge, Node } from "@xyflow/react";
 
 // ZXW generators. Each type renders with a distinct shape and color.
-export type VertexType = "z" | "x" | "w" | "h";
+export type VertexType = "z" | "empty" | "x" | "w" | "h";
 
 export type VertexData = {
   label: string;
