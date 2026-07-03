@@ -1,10 +1,14 @@
 import { nanoid } from "nanoid";
-import type { GraphEdge, VertexNode } from "./types";
+import type { GraphEdge, VertexNode, VertexType } from "./types";
+import { DEFAULT_VERTEX_TYPE } from "./vertex-types";
 
-export function createVertexNode(position: {
-  x: number;
-  y: number;
-}): VertexNode {
+export function createVertexNode(
+  position: {
+    x: number;
+    y: number;
+  },
+  vertexType: VertexType = DEFAULT_VERTEX_TYPE,
+): VertexNode {
   const id = nanoid();
 
   return {
@@ -13,7 +17,8 @@ export function createVertexNode(position: {
     position,
     origin: [0.5, 0.5],
     data: {
-      label: id.slice(0, 4),
+      label: "", // TODO: the label is the content
+      vertexType,
     },
   };
 }

@@ -9,12 +9,18 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import { create } from "zustand";
-import type { EditorMode, GraphEdge, VertexNode } from "@/lib/graph/types";
+import type {
+  EditorMode,
+  GraphEdge,
+  VertexNode,
+  VertexType,
+} from "@/lib/graph/types";
 import {
   createGraphEdge,
   createVertexNode,
   deleteSelectedElements,
 } from "@/lib/graph/operations";
+import { DEFAULT_VERTEX_TYPE } from "@/lib/graph/vertex-types";
 import {
   createEmptyGraphDocument,
   loadGraphDocument,
@@ -33,9 +39,11 @@ type GraphStore = {
   mode: EditorMode;
   hasHydrated: boolean;
   pendingEdgeSourceId: string | null;
+  selectedVertexType: VertexType;
 
   hydrate: () => void;
   setMode: (mode: EditorMode) => void;
+  setVertexType: (vertexType: VertexType) => void;
 
   onNodesChange: (changes: NodeChange<VertexNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<GraphEdge>[]) => void;
@@ -58,6 +66,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   hasHydrated: false,
 
   pendingEdgeSourceId: null,
+  selectedVertexType: DEFAULT_VERTEX_TYPE,
 
   hydrate: () => {
     const document = loadGraphDocument();
@@ -83,6 +92,10 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         selected: false,
       })),
     });
+  },
+
+  setVertexType: (vertexType) => {
+    set({ selectedVertexType: vertexType });
   },
 
   onNodesChange: (changes) => {
@@ -120,7 +133,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   addVertexAt: (position) => {
-    const node = createVertexNode(position);
+    const node = createVertexNode(position, get().selectedVertexType);
 
     set({
       nodes: [...get().nodes, node],

@@ -16,6 +16,7 @@ import "@xyflow/react/dist/style.css";
 
 import { VertexNode } from "./VertexNode";
 import { GraphToolbar } from "./GraphToolbar";
+import { VertexTypeMenu } from "./VertexTypeMenu";
 import { useGraphStore } from "@/store/graph-store";
 import type { GraphEdge, VertexNode as VertexNodeType } from "@/lib/graph/types";
 import { StraightCenterEdge } from "./StraightCenterEdge";
@@ -131,6 +132,7 @@ function GraphEditorInner() {
             </ReactFlow>
 
             <GraphToolbar />
+            <VertexTypeMenu />
         </div>
     );
 }
