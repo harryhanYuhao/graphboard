@@ -32,6 +32,8 @@ function GraphEditorInner() {
   const onEdgesChange = useGraphStore((state) => state.onEdgesChange);
   const addVertexAt = useGraphStore((state) => state.addVertexAt);
   const deleteSelected = useGraphStore((state) => state.deleteSelected);
+  const onNodeDragStart = useGraphStore((state) => state.onNodeDragStart);
+  const onNodeDragStop = useGraphStore((state) => state.onNodeDragStop);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
@@ -77,6 +79,25 @@ function GraphEditorInner() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [deleteSelected]);
+
+  // Undo/Redo keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+
+      if (event.key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        useGraphStore.temporal.getState().undo();
+      } else if ((event.key === "z" && event.shiftKey) || event.key === "y") {
+        event.preventDefault();
+        useGraphStore.temporal.getState().redo();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Auto save
   useEffect(() => {
@@ -124,6 +145,8 @@ function GraphEditorInner() {
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         nodesConnectable={false}
         fitView
       >
