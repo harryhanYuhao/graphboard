@@ -264,6 +264,7 @@ export const useGraphStore = create<GraphStore>()(
           nodes: document.nodes,
           edges: document.edges,
           mode: "select",
+          isResetConfirmOpen: false,
         });
 
         saveGraphDocument(document);

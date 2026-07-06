@@ -168,10 +168,7 @@ function GraphEditorInner() {
         message="Are you sure you want to reset the graph? This will delete all nodes, edges, and the current title. This action cannot be undone."
         confirmText="Reset"
         cancelText="Cancel"
-        onConfirm={() => {
-          reset();
-          closeResetConfirm();
-        }}
+        onConfirm={reset}
         onCancel={closeResetConfirm}
         confirmButtonClassName="bg-red-600 hover:bg-red-700"
       />
