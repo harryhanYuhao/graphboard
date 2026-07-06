@@ -40,6 +40,7 @@ type GraphStore = {
   hasHydrated: boolean;
   pendingEdgeSourceId: string | null;
   selectedVertexType: VertexType;
+  isResetConfirmOpen: boolean;
 
   hydrate: () => void;
   setMode: (mode: EditorMode) => void;
@@ -55,6 +56,8 @@ type GraphStore = {
   save: () => void;
   exportJson: () => Promise<void>;
   reset: () => void;
+  openResetConfirm: () => void;
+  closeResetConfirm: () => void;
 
   onNodeDragStart: () => void;
   onNodeDragStop: () => void;
@@ -80,6 +83,7 @@ export const useGraphStore = create<GraphStore>()(
 
       pendingEdgeSourceId: null,
       selectedVertexType: DEFAULT_VERTEX_TYPE,
+      isResetConfirmOpen: false,
 
       hydrate: () => {
         const document = loadGraphDocument();
@@ -264,6 +268,14 @@ export const useGraphStore = create<GraphStore>()(
 
         saveGraphDocument(document);
         useGraphStore.temporal.getState().clear();
+      },
+
+      openResetConfirm: () => {
+        set({ isResetConfirmOpen: true });
+      },
+
+      closeResetConfirm: () => {
+        set({ isResetConfirmOpen: false });
       },
 
       onNodeDragStart: () => {
