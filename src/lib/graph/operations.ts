@@ -17,7 +17,7 @@ export function createVertexNode(
     position,
     origin: [0.5, 0.5],
     data: {
-      label: "A", // TODO: the label is the content
+      label: "",
       vertexType,
     },
   };
@@ -29,9 +29,6 @@ export function createGraphEdge(source: string, target: string): GraphEdge {
     source,
     target,
     type: "straight-center",
-    data: {
-      directed: false,
-    },
   };
 }
 

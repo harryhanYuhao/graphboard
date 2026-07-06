@@ -6,7 +6,7 @@
 
 import type { VertexType } from "./types";
 
-export type VertexShape = "circle" | "square" | "triangle";
+type VertexShape = "circle" | "square" | "triangle";
 
 export type VertexTypeMeta = {
   type: VertexType;

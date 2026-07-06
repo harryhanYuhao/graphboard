@@ -1,24 +1,5 @@
 // src/lib/download.ts
 
-// export function downloadTextFile(params: {
-//   filename: string;
-//   contents: string;
-//   mimeType?: string;
-// }) {
-//   const blob = new Blob([params.contents], {
-//     type: params.mimeType ?? "application/json",
-//   });
-//
-//   const url = URL.createObjectURL(blob);
-//   const anchor = document.createElement("a");
-//
-//   anchor.href = url;
-//   anchor.download = params.filename;
-//   anchor.click();
-//
-//   URL.revokeObjectURL(url);
-// }
-
 export async function saveTextFileWithPicker(params: {
   suggestedName: string;
   contents: string;

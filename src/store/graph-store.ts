@@ -4,7 +4,6 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
-  type Connection,
   type EdgeChange,
   type NodeChange,
 } from "@xyflow/react";
@@ -47,11 +46,10 @@ type GraphStore = {
 
   onNodesChange: (changes: NodeChange<VertexNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<GraphEdge>[]) => void;
-  onConnect: (connection: Connection) => void;
 
   addVertexAt: (position: { x: number; y: number }) => void;
   handleVertexClick: (vertexId: string) => void;
-  addEdgeBetween: (sourceId: string, targetId: string) => void;
+  updateVertexLabel: (nodeId: string, label: string) => void;
   deleteSelected: () => void;
   save: () => void;
   exportJson: () => Promise<void>;
@@ -110,28 +108,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     });
   },
 
-  onConnect: (connection) => {
-    if (!connection.source || !connection.target) return;
-
-    const existingEdge = get().edges.find((edge) => {
-      const sameDirection =
-        edge.source === connection.source && edge.target === connection.target;
-
-      const oppositeDirection =
-        edge.source === connection.target && edge.target === connection.source;
-
-      return sameDirection || oppositeDirection;
-    });
-
-    if (existingEdge) return;
-
-    const edge = createGraphEdge(connection.source, connection.target);
-
-    set({
-      edges: addEdge(edge, get().edges),
-    });
-  },
-
   addVertexAt: (position) => {
     const node = createVertexNode(position, get().selectedVertexType);
 
@@ -166,16 +142,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     set({
       edges: addEdge(edge, state.edges),
       pendingEdgeSourceId: null,
-    });
-  },
-
-  addEdgeBetween: (sourceId, targetId) => {
-    if (sourceId === targetId) return;
-
-    const edge = createGraphEdge(sourceId, targetId);
-
-    set({
-      edges: addEdge(edge, get().edges),
     });
   },
 
@@ -216,6 +182,16 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       contents,
       mimeType: "application/json",
       extension: ".json",
+    });
+  },
+
+  updateVertexLabel: (nodeId, label) => {
+    set({
+      nodes: get().nodes.map((node) =>
+        node.id === nodeId
+          ? { ...node, data: { ...node.data, label } }
+          : node,
+      ),
     });
   },
 
