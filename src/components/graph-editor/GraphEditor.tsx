@@ -33,6 +33,9 @@ function GraphEditorInner() {
   const onEdgesChange = useGraphStore((state) => state.onEdgesChange);
   const addVertexAt = useGraphStore((state) => state.addVertexAt);
   const deleteSelected = useGraphStore((state) => state.deleteSelected);
+  const copySelected = useGraphStore((state) => state.copySelected);
+  const paste = useGraphStore((state) => state.paste);
+  const cutSelected = useGraphStore((state) => state.cutSelected);
   const onNodeDragStart = useGraphStore((state) => state.onNodeDragStart);
   const onNodeDragStop = useGraphStore((state) => state.onNodeDragStop);
   const isResetConfirmOpen = useGraphStore((state) => state.isResetConfirmOpen);
@@ -102,6 +105,33 @@ function GraphEditorInner() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  // Copy / Paste / Cut keyboard shortcuts. Skip when typing into an input
+  // (e.g. vertex label editor) so the browser's native clipboard handling
+  // stays intact for text fields.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+
+      const tag = (event.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (event.key === "c" && !event.shiftKey) {
+        event.preventDefault();
+        copySelected();
+      } else if (event.key === "v" && !event.shiftKey) {
+        event.preventDefault();
+        paste();
+      } else if (event.key === "x" && !event.shiftKey) {
+        event.preventDefault();
+        cutSelected();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [copySelected, paste, cutSelected]);
 
   // Auto save
   useEffect(() => {

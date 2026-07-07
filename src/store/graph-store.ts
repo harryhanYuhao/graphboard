@@ -19,6 +19,9 @@ import {
   createGraphEdge,
   createVertexNode,
   deleteSelectedElements,
+  cloneSubgraphForClipboard,
+  getSelectedSubgraph,
+  pasteSubgraph,
 } from "@/lib/graph/operations";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/graph/vertex-types";
 import {
@@ -41,6 +44,14 @@ type GraphStore = {
   pendingEdgeSourceId: string | null;
   selectedVertexType: VertexType;
   isResetConfirmOpen: boolean;
+  // Session-scoped clipboard. Not persisted — paste should not survive a reload.
+  clipboard: {
+    nodes: VertexNode[];
+    edges: GraphEdge[];
+    // How many times the current clipboard has been pasted; each paste adds
+    // `PASTE_OFFSET_STEP * pasteCount` so duplicates don't overlap exactly.
+    pasteCount: number;
+  } | null;
 
   hydrate: () => void;
   setMode: (mode: EditorMode) => void;
@@ -52,6 +63,9 @@ type GraphStore = {
   addVertexAt: (position: { x: number; y: number }) => void;
   handleVertexClick: (vertexId: string) => void;
   updateVertexLabel: (nodeId: string, label: string) => void;
+  copySelected: () => void;
+  paste: () => void;
+  cutSelected: () => void;
   deleteSelected: () => void;
   save: () => void;
   exportJson: () => Promise<void>;
@@ -84,6 +98,7 @@ export const useGraphStore = create<GraphStore>()(
       pendingEdgeSourceId: null,
       selectedVertexType: DEFAULT_VERTEX_TYPE,
       isResetConfirmOpen: false,
+      clipboard: null,
 
       hydrate: () => {
         const document = loadGraphDocument();
@@ -215,6 +230,71 @@ export const useGraphStore = create<GraphStore>()(
         set(next);
       },
 
+      copySelected: () => {
+        const subgraph = getSelectedSubgraph({
+          nodes: get().nodes,
+          edges: get().edges,
+        });
+
+        if (subgraph.nodes.length === 0) return;
+
+        set({
+          clipboard: {
+            ...cloneSubgraphForClipboard(subgraph),
+            pasteCount: 0,
+          },
+        });
+      },
+
+      paste: () => {
+        const clipboard = get().clipboard;
+
+        if (!clipboard || clipboard.nodes.length === 0) return;
+
+        const pasted = pasteSubgraph({
+          subgraph: clipboard,
+          pasteCount: clipboard.pasteCount + 1,
+        });
+
+        set({
+          nodes: [
+            ...get().nodes.map((node) => ({ ...node, selected: false })),
+            ...pasted.nodes,
+          ],
+          edges: [
+            ...get().edges.map((edge) => ({ ...edge, selected: false })),
+            ...pasted.edges,
+          ],
+          clipboard: {
+            ...clipboard,
+            pasteCount: clipboard.pasteCount + 1,
+          },
+        });
+      },
+
+      cutSelected: () => {
+        const subgraph = getSelectedSubgraph({
+          nodes: get().nodes,
+          edges: get().edges,
+        });
+
+        if (subgraph.nodes.length === 0) return;
+
+        // Cut = copy to clipboard + remove the original selection.
+        const remaining = deleteSelectedElements({
+          nodes: get().nodes,
+          edges: get().edges,
+        });
+
+        set({
+          ...remaining,
+          clipboard: {
+            ...cloneSubgraphForClipboard(subgraph),
+            pasteCount: 0,
+          },
+        });
+      },
+
       save: () => {
         const state = get();
 
@@ -265,6 +345,7 @@ export const useGraphStore = create<GraphStore>()(
           edges: document.edges,
           mode: "select",
           isResetConfirmOpen: false,
+          clipboard: null,
         });
 
         saveGraphDocument(document);

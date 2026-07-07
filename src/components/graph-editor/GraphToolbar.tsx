@@ -2,7 +2,7 @@
 
 "use client";
 
-import { Download, GitBranch, MousePointer2, PlusCircle, Redo2, Save, Trash2, OctagonX, Undo2 } from "lucide-react";
+import { Clipboard, Copy, Download, GitBranch, MousePointer2, PlusCircle, Redo2, Save, Scissors, Trash2, OctagonX, Undo2 } from "lucide-react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
 import type { EditorMode } from "@/lib/graph/types";
@@ -41,6 +41,12 @@ export function GraphToolbar() {
   const exportJson = useGraphStore((state) => state.exportJson);
   const openResetConfirm = useGraphStore((state) => state.openResetConfirm);
   const deleteSelected = useGraphStore((state) => state.deleteSelected);
+  const copySelected = useGraphStore((state) => state.copySelected);
+  const cutSelected = useGraphStore((state) => state.cutSelected);
+  const paste = useGraphStore((state) => state.paste);
+  const hasClipboard = useGraphStore(
+    (state) => state.clipboard !== null && state.clipboard.nodes.length > 0,
+  );
 
   const canUndo = useStore(useGraphStore.temporal, (state) => state.pastStates.length > 0);
   const canRedo = useStore(useGraphStore.temporal, (state) => state.futureStates.length > 0);
@@ -91,6 +97,22 @@ export function GraphToolbar() {
         onClick={() => setEditorMode("add-edge")}
       >
         <GitBranch size={18} />
+      </ToolbarButton>
+
+      <ToolbarButton title="Cut (Ctrl+X)" onClick={cutSelected}>
+        <Scissors size={18} />
+      </ToolbarButton>
+
+      <ToolbarButton title="Copy (Ctrl+C)" onClick={copySelected}>
+        <Copy size={18} />
+      </ToolbarButton>
+
+      <ToolbarButton
+        title="Paste (Ctrl+V)"
+        disabled={!hasClipboard}
+        onClick={paste}
+      >
+        <Clipboard size={18} />
       </ToolbarButton>
 
       <ToolbarButton title="Delete selected" onClick={deleteSelected}>
