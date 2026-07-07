@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   type EdgeChange,
@@ -35,13 +34,26 @@ import { saveTextFileWithPicker } from "@/lib/download";
 
 import { toSafeFilename } from "@/lib/filename";
 
+// Modifier flags captured at click time and forwarded into handleVertexClick
+// so the store doesn't need to reach back into the DOM event.
+export type VertexClickModifiers = {
+  // Cmd (mac) or Ctrl (win/linux) — used to add to the pending source list
+  // instead of committing.
+  modifier: boolean;
+  // Shift — used to commit without clearing the pending source list.
+  shift: boolean;
+};
+
 type GraphStore = {
   title: string;
   nodes: VertexNode[];
   edges: GraphEdge[];
   mode: EditorMode;
   hasHydrated: boolean;
-  pendingEdgeSourceId: string | null;
+  // Vertex IDs staged as edge sources while in add-edge mode. Empty outside
+  // of add-edge mode. Edges are fanned out from every ID in this list to the
+  // next clicked target.
+  pendingEdgeSources: string[];
   selectedVertexType: VertexType;
   isResetConfirmOpen: boolean;
   // Session-scoped clipboard. Not persisted — paste should not survive a reload.
@@ -61,7 +73,12 @@ type GraphStore = {
   onEdgesChange: (changes: EdgeChange<GraphEdge>[]) => void;
 
   addVertexAt: (position: { x: number; y: number }) => void;
-  handleVertexClick: (vertexId: string) => void;
+  handleVertexClick: (
+    vertexId: string,
+    modifiers: VertexClickModifiers,
+  ) => void;
+  clearPendingEdgeSources: () => void;
+  addSelectedToPendingSources: () => void;
   updateVertexLabel: (nodeId: string, label: string) => void;
   copySelected: () => void;
   paste: () => void;
@@ -95,7 +112,7 @@ export const useGraphStore = create<GraphStore>()(
       mode: "select",
       hasHydrated: false,
 
-      pendingEdgeSourceId: null,
+      pendingEdgeSources: [],
       selectedVertexType: DEFAULT_VERTEX_TYPE,
       isResetConfirmOpen: false,
       clipboard: null,
@@ -114,18 +131,27 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       setMode: (mode) => {
-        set({
-          mode,
-          pendingEdgeSourceId: null,
-          nodes: get().nodes.map((node) => ({
-            ...node,
-            selected: false,
-          })),
-          edges: get().edges.map((edge) => ({
-            ...edge,
-            selected: false,
-          })),
-        });
+        // Selection is intentionally preserved across mode switches so a
+        // user can pre-select vertices in select mode and have them
+        // auto-promote to pending edge sources when they switch to add-edge.
+        if (mode === "add-edge") {
+          // Auto-promote currently-selected vertices into the pending source
+          // list. Merge with anything already pending so toggling add-edge
+          // off and back on preserves work-in-progress.
+          const selectedIds = get()
+            .nodes.filter((node) => node.selected)
+            .map((node) => node.id);
+
+          const merged = Array.from(
+            new Set([...get().pendingEdgeSources, ...selectedIds]),
+          );
+
+          set({ mode, pendingEdgeSources: merged });
+        } else {
+          // Pending sources only make sense in add-edge mode — drop them
+          // whenever we leave it so the list stays coherent.
+          set({ mode, pendingEdgeSources: [] });
+        }
       },
 
       setVertexType: (vertexType) => {
@@ -192,33 +218,111 @@ export const useGraphStore = create<GraphStore>()(
         });
       },
 
-      handleVertexClick: (vertexId) => {
+      handleVertexClick: (vertexId, modifiers) => {
         const state = get();
 
         if (state.mode !== "add-edge") return;
 
-        if (!state.pendingEdgeSourceId) {
+        const { pendingEdgeSources, nodes, edges } = state;
+
+        // Cmd/Ctrl click: add this vertex to the pending source list
+        // (idempotent — if it's already there, the wrong gesture was used
+        // to toggle it off and there's nothing to do).
+        if (modifiers.modifier) {
+          if (pendingEdgeSources.includes(vertexId)) return;
+
           set({
-            pendingEdgeSourceId: vertexId,
+            pendingEdgeSources: [...pendingEdgeSources, vertexId],
           });
 
           return;
         }
 
-        if (state.pendingEdgeSourceId === vertexId) {
-          set({
-            pendingEdgeSourceId: null,
-          });
+        // Existing source→target pairs we won't recreate. Self-loops are
+        // explicitly allowed — only parallel duplicates are filtered.
+        const existingPairs = new Set(
+          edges.map((edge) => `${edge.source}->${edge.target}`),
+        );
 
+        const buildFanOut = (clearAfter: boolean) => {
+          const newEdges = pendingEdgeSources
+            .filter(
+              (sourceId) =>
+                !existingPairs.has(`${sourceId}->${vertexId}`),
+            )
+            .map((sourceId) => createGraphEdge(sourceId, vertexId));
+
+          // Nothing added and nothing to clear — leave state alone.
+          if (newEdges.length === 0 && !clearAfter) return;
+
+          if (clearAfter) {
+            set({
+              edges:
+                newEdges.length > 0 ? [...edges, ...newEdges] : edges,
+              pendingEdgeSources: [],
+              nodes: nodes.map((node) => ({ ...node, selected: false })),
+            });
+          } else {
+            set({ edges: [...edges, ...newEdges] });
+          }
+        };
+
+        // Shift click: connect every pending source to this target but
+        // keep the pending list intact so the user can broadcast the same
+        // sources to multiple targets. Empty pending degrades to the
+        // plain-click-on-empty behavior of starting a fresh pending list.
+        if (modifiers.shift) {
+          if (pendingEdgeSources.length === 0) {
+            set({ pendingEdgeSources: [vertexId] });
+            return;
+          }
+
+          buildFanOut(false);
           return;
         }
 
-        const edge = createGraphEdge(state.pendingEdgeSourceId, vertexId);
+        // Plain click.
+        if (pendingEdgeSources.length === 0) {
+          set({ pendingEdgeSources: [vertexId] });
+          return;
+        }
 
-        set({
-          edges: addEdge(edge, state.edges),
-          pendingEdgeSourceId: null,
-        });
+        // Click on a vertex already in the pending list: toggle it off.
+        if (pendingEdgeSources.includes(vertexId)) {
+          set({
+            pendingEdgeSources: pendingEdgeSources.filter(
+              (id) => id !== vertexId,
+            ),
+          });
+          return;
+        }
+
+        // Plain click with a fresh target: commit the fan-out and reset
+        // both the pending list and any selection.
+        buildFanOut(true);
+      },
+
+      clearPendingEdgeSources: () => {
+        set({ pendingEdgeSources: [] });
+      },
+
+      // Merge every currently-selected vertex into the pending source list.
+      // Intended for the box-select end in add-edge mode (Shift+drag on the
+      // pane) — React Flow has just finished updating `selected` on the
+      // boxed nodes by the time this fires, so we can read them straight
+      // from the store. Duplicates and already-pending IDs are deduped.
+      addSelectedToPendingSources: () => {
+        const selectedIds = get()
+          .nodes.filter((node) => node.selected)
+          .map((node) => node.id);
+
+        if (selectedIds.length === 0) return;
+
+        const merged = Array.from(
+          new Set([...get().pendingEdgeSources, ...selectedIds]),
+        );
+
+        set({ pendingEdgeSources: merged });
       },
 
       deleteSelected: () => {
@@ -346,6 +450,7 @@ export const useGraphStore = create<GraphStore>()(
           mode: "select",
           isResetConfirmOpen: false,
           clipboard: null,
+          pendingEdgeSources: [],
         });
 
         saveGraphDocument(document);
