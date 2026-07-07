@@ -39,6 +39,9 @@ function GraphEditorInner() {
   const clearPendingEdgeSources = useGraphStore(
     (state) => state.clearPendingEdgeSources,
   );
+  const addSelectedToPendingSources = useGraphStore(
+    (state) => state.addSelectedToPendingSources,
+  );
   const onNodeDragStart = useGraphStore((state) => state.onNodeDragStart);
   const onNodeDragStop = useGraphStore((state) => state.onNodeDragStop);
   const isResetConfirmOpen = useGraphStore((state) => state.isResetConfirmOpen);
@@ -73,6 +76,16 @@ function GraphEditorInner() {
     },
     [handleVertexClick, mode],
   );
+
+  // React Flow's `onSelectionEnd` only fires when a box-select drag finishes
+  // (Shift+drag on the pane), not on single shift-clicks — which is exactly
+  // the gesture we want to capture here. We funnel the just-selected nodes
+  // into the pending source list so the user can sweep a region of vertices
+  // into the fan-out with one drag instead of N cmd-clicks.
+  const handleSelectionEnd = useCallback(() => {
+    if (mode !== "add-edge") return;
+    addSelectedToPendingSources();
+  }, [addSelectedToPendingSources, mode]);
 
   useEffect(() => {
     hydrate();
@@ -200,6 +213,12 @@ function GraphEditorInner() {
         onPaneClick={handlePaneClick}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
+        // Shift+drag on the pane becomes a box-select that sweeps vertices
+        // into the pending source list (handled in onSelectionEnd). The
+        // default selectionKeyCode is already 'Shift', so we only need to
+        // flip selectionOnDrag on for add-edge mode.
+        selectionOnDrag={mode === "add-edge"}
+        onSelectionEnd={handleSelectionEnd}
         nodesConnectable={false}
         fitView
       >

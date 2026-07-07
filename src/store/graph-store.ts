@@ -78,6 +78,7 @@ type GraphStore = {
     modifiers: VertexClickModifiers,
   ) => void;
   clearPendingEdgeSources: () => void;
+  addSelectedToPendingSources: () => void;
   updateVertexLabel: (nodeId: string, label: string) => void;
   copySelected: () => void;
   paste: () => void;
@@ -303,6 +304,25 @@ export const useGraphStore = create<GraphStore>()(
 
       clearPendingEdgeSources: () => {
         set({ pendingEdgeSources: [] });
+      },
+
+      // Merge every currently-selected vertex into the pending source list.
+      // Intended for the box-select end in add-edge mode (Shift+drag on the
+      // pane) — React Flow has just finished updating `selected` on the
+      // boxed nodes by the time this fires, so we can read them straight
+      // from the store. Duplicates and already-pending IDs are deduped.
+      addSelectedToPendingSources: () => {
+        const selectedIds = get()
+          .nodes.filter((node) => node.selected)
+          .map((node) => node.id);
+
+        if (selectedIds.length === 0) return;
+
+        const merged = Array.from(
+          new Set([...get().pendingEdgeSources, ...selectedIds]),
+        );
+
+        set({ pendingEdgeSources: merged });
       },
 
       deleteSelected: () => {
