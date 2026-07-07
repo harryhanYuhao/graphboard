@@ -16,11 +16,12 @@ export function VertexNode({
   selected,
 }: NodeProps<VertexNodeType>) {
   const mode = useGraphStore((state) => state.mode);
-  const pendingEdgeSourceId = useGraphStore((state) => state.pendingEdgeSourceId);
-  const handleVertexClick = useGraphStore((state) => state.handleVertexClick);
+  const pendingEdgeSources = useGraphStore(
+    (state) => state.pendingEdgeSources,
+  );
   const updateVertexLabel = useGraphStore((state) => state.updateVertexLabel);
 
-  const isPendingEdgeSource = pendingEdgeSourceId === id;
+  const isPendingEdgeSource = pendingEdgeSources.includes(id);
 
   const meta = VERTEX_TYPE_MAP[data.vertexType] ?? VERTEX_TYPE_MAP[DEFAULT_VERTEX_TYPE];
   const isTriangle = meta.shape === "triangle";
@@ -80,12 +81,6 @@ export function VertexNode({
   return (
     <div
       className="relative"
-      onClick={(event) => {
-        if (mode !== "add-edge") return;
-
-        event.stopPropagation();
-        handleVertexClick(id);
-      }}
       onDoubleClick={(event) => {
         event.stopPropagation();
         startEditing();

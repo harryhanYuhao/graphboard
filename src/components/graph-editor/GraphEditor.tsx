@@ -36,6 +36,9 @@ function GraphEditorInner() {
   const copySelected = useGraphStore((state) => state.copySelected);
   const paste = useGraphStore((state) => state.paste);
   const cutSelected = useGraphStore((state) => state.cutSelected);
+  const clearPendingEdgeSources = useGraphStore(
+    (state) => state.clearPendingEdgeSources,
+  );
   const onNodeDragStart = useGraphStore((state) => state.onNodeDragStart);
   const onNodeDragStop = useGraphStore((state) => state.onNodeDragStop);
   const isResetConfirmOpen = useGraphStore((state) => state.isResetConfirmOpen);
@@ -63,7 +66,10 @@ function GraphEditorInner() {
       if (mode !== "add-edge") return;
 
       event.stopPropagation();
-      handleVertexClick(node.id);
+      handleVertexClick(node.id, {
+        modifier: event.metaKey || event.ctrlKey,
+        shift: event.shiftKey,
+      });
     },
     [handleVertexClick, mode],
   );
@@ -80,12 +86,18 @@ function GraphEditorInner() {
 
       if (event.key === "Backspace" || event.key === "Delete") {
         deleteSelected();
+      } else if (event.key === "Escape") {
+        // Escape clears the pending edge source list without creating
+        // edges — a no-op if the list is already empty.
+        if (useGraphStore.getState().pendingEdgeSources.length > 0) {
+          clearPendingEdgeSources();
+        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [deleteSelected]);
+  }, [clearPendingEdgeSources, deleteSelected]);
 
   // Undo/Redo keyboard shortcuts
   useEffect(() => {
@@ -147,16 +159,23 @@ function GraphEditorInner() {
 
   const handlePaneClick = useCallback(
     (event: React.MouseEvent) => {
-      if (mode !== "add-vertex") return;
+      if (mode === "add-vertex") {
+        const position = reactFlow.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        });
 
-      const position = reactFlow.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
+        addVertexAt(position);
+        return;
+      }
 
-      addVertexAt(position);
+      if (mode === "add-edge") {
+        // Clicking empty pane in add-edge mode cancels the pending source
+        // list without creating any edges.
+        clearPendingEdgeSources();
+      }
     },
-    [addVertexAt, mode, reactFlow],
+    [addVertexAt, clearPendingEdgeSources, mode, reactFlow],
   );
 
   if (!hasHydrated) {
