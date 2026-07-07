@@ -1,6 +1,11 @@
 // src/lib/graph/serialization.ts
 
-import type { GraphDocument, GraphEdge, VertexNode } from "./types";
+import {
+  CURRENT_SCHEMA_VERSION,
+  type GraphDocument,
+  type GraphEdge,
+  type VertexNode,
+} from "./types";
 
 const LOCAL_STORAGE_KEY = "graph-board-document";
 
@@ -8,6 +13,7 @@ export function createEmptyGraphDocument(): GraphDocument {
   const now = new Date().toISOString();
 
   return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     id: "local-document",
     title: "Untitled Graph",
     nodes: [],
@@ -17,13 +23,18 @@ export function createEmptyGraphDocument(): GraphDocument {
   };
 }
 
-export function saveGraphDocument(document: GraphDocument): void {
+export function saveGraphDocument(
+  document: Omit<GraphDocument, "schemaVersion">,
+): void {
   if (typeof window === "undefined") return;
 
+  // Always write the current schema version on save so older documents
+  // get upgraded implicitly the next time the user touches them.
   localStorage.setItem(
     LOCAL_STORAGE_KEY,
     JSON.stringify({
       ...document,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       updatedAt: new Date().toISOString(),
     }),
   );
@@ -40,11 +51,36 @@ export function loadGraphDocument(): GraphDocument {
     return createEmptyGraphDocument();
   }
 
+  let parsed: Partial<GraphDocument>;
+
   try {
-    return JSON.parse(raw) as GraphDocument;
+    parsed = JSON.parse(raw) as Partial<GraphDocument>;
   } catch {
     return createEmptyGraphDocument();
   }
+
+  // Backward compat: documents saved before schema versioning existed
+  // have no schemaVersion field. Treat them as v1 — the previous shape
+  // is identical to v1.
+  if (typeof parsed.schemaVersion !== "number") {
+    return {
+      ...createEmptyGraphDocument(),
+      ...parsed,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+    } as GraphDocument;
+  }
+
+  if (parsed.schemaVersion > CURRENT_SCHEMA_VERSION) {
+    // A future build saved a document this build doesn't understand.
+    // Don't silently drop data; fall back to an empty document so the
+    // user notices something is off rather than overwriting it on next save.
+    console.warn(
+      `graph-board: document schemaVersion ${parsed.schemaVersion} is newer than supported ${CURRENT_SCHEMA_VERSION}; loading empty document.`,
+    );
+    return createEmptyGraphDocument();
+  }
+
+  return parsed as GraphDocument;
 }
 
 export function exportGraphJson(params: {
@@ -55,6 +91,7 @@ export function exportGraphJson(params: {
   const now = new Date().toISOString();
 
   const document: GraphDocument = {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     id: "exported-document",
     title: params.title,
     nodes: params.nodes,
