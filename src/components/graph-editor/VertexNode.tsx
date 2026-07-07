@@ -66,10 +66,10 @@ export function VertexNode({
   }
 
   function commitEdit() {
-    const trimmed = draft.trim();
-    if (trimmed) {
-      updateVertexLabel(id, trimmed);
-    }
+    // Always commit, including the empty string — the user pressed Enter
+    // to confirm, so clearing the label is a valid outcome. Escape remains
+    // the way to discard changes (see cancelEdit).
+    updateVertexLabel(id, draft.trim());
     setIsEditing(false);
   }
 
