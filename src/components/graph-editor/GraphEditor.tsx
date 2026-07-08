@@ -45,12 +45,17 @@ function GraphEditorInner() {
   const onNodeDragStart = useGraphStore((state) => state.onNodeDragStart);
   const onNodeDragStop = useGraphStore((state) => state.onNodeDragStop);
 
-  const isResetConfirmOpen = useGraphStore((state) => state.isConfirmDialogueOpen);
-  const resetConfirmTitle = useGraphStore((state) => state.confirmDialogueTitle);
-  const resetConfirmMsg = useGraphStore((state) => state.confirmDialogueMsg);
-  const resetConfirmCallback = useGraphStore((state) => state.confirmDialogueCallback);
+  const isConfirmOpen = useGraphStore((state) => state.isConfirmDialogueOpen);
+  const confirmTitle = useGraphStore((state) => state.confirmDialogueTitle);
+  const confirmMessage = useGraphStore((state) => state.confirmDialogueMsg);
+  const confirmText = useGraphStore((state) => state.confirmDialogueConfirmText);
+  const cancelText = useGraphStore((state) => state.confirmDialogueCancelText);
+  const confirmButtonClassName = useGraphStore(
+    (state) => state.confirmDialogueButtonClassName,
+  );
+  const onConfirm = useGraphStore((state) => state.pendingConfirmAction);
 
-  const closeResetConfirm = useGraphStore((state) => state.closeConfirmDialogue);
+  const closeConfirm = useGraphStore((state) => state.closeConfirmDialogue);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
@@ -235,14 +240,14 @@ function GraphEditorInner() {
       <VertexTypeMenu />
 
       <ConfirmationDialog
-        isOpen={isResetConfirmOpen}
-        title={resetConfirmTitle}
-        message={resetConfirmMsg}
-        confirmText="Reset"
-        cancelText="Cancel"
-        onConfirm={resetConfirmCallback}
-        onCancel={closeResetConfirm}
-        confirmButtonClassName="bg-red-600 hover:bg-red-700"
+        isOpen={isConfirmOpen}
+        title={confirmTitle}
+        message={confirmMessage}
+        confirmText={confirmText}
+        cancelText={cancelText}
+        confirmButtonClassName={confirmButtonClassName}
+        onConfirm={onConfirm}
+        onCancel={closeConfirm}
       />
     </div>
   );

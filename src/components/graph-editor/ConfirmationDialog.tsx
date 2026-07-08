@@ -34,13 +34,11 @@ export function ConfirmationDialog({
     }
   }, [isOpen]);
 
-  // Handle keyboard events
+  // Handle keyboard events. Enter is left to the browser so the focused
+  // button's native click handler fires exactly once — intercepting Enter
+  // here too would double-fire onConfirm / onCancel.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      onCancel();
-    } else if (e.key === 'Enter' && e.target === confirmRef.current) {
-      onConfirm();
-    } else if (e.key === 'Enter' && e.target === cancelRef.current) {
       onCancel();
     }
   };

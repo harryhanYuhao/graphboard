@@ -61,6 +61,14 @@ type GraphStore = {
   isConfirmDialogueOpen: boolean;
   confirmDialogueTitle: string;
   confirmDialogueMsg: string;
+  confirmDialogueConfirmText: string;
+  confirmDialogueCancelText: string;
+  confirmDialogueButtonClassName: string;
+  // Pending action the dialog will run when the user confirms. Defaults to a
+  // no-op so reads from the store are always safe (e.g. when the dialog is
+  // closed). This is *state*, not an action — it gets overwritten on every
+  // openConfirmDialogue call.
+  pendingConfirmAction: () => void;
 
   // Session-scoped clipboard. Not persisted — paste should not survive a reload.
   clipboard: {
@@ -95,9 +103,15 @@ type GraphStore = {
   importJson: () => Promise<void>;
   reset: () => void;
 
-  openConfirmDialogue: (title: string, msg: string, callBack: () => void) => void;
+  openConfirmDialogue: (params: {
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
+    confirmButtonClassName?: string;
+  }) => void;
   closeConfirmDialogue: () => void;
-  confirmDialogueCallback: () => void;
 
 
   isStateEmpty: () => boolean;
@@ -130,6 +144,10 @@ export const useGraphStore = create<GraphStore>()(
       isConfirmDialogueOpen: false,
       confirmDialogueTitle: "",
       confirmDialogueMsg: "",
+      confirmDialogueConfirmText: "Confirm",
+      confirmDialogueCancelText: "Cancel",
+      confirmDialogueButtonClassName: "bg-red-600 hover:bg-red-700",
+      pendingConfirmAction: () => { },
 
       clipboard: null,
 
@@ -453,56 +471,61 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       // Open a JSON file from disk and replace the current editor state
-      // with its contents. The autosave loop will pick up the new state
-      // and write it to localStorage on the next debounce.
-      //
-      // Failure modes surfaced via `window.alert`:
-      //
-      // "Open" is a destructive. 
+      // with its contents.
+      // Importing is destructive when the canvas already has content, so
+      // we route through the confirmation dialog. 
       importJson: async () => {
-
         const contents = await openTextFileWithPicker({});
-
         if (contents === null) return;
 
-        // check if we have empty canvas
-        if (!get().isStateEmpty()) {
-          get().openConfirmDialogue("Clear Canvas?",
-            "The canvas is not empty. Importing will delete the existing nodes. This action cannot be undone.",
-            get().closeConfirmDialogue
-          )
-        }
-
+        // Validate the file up front so we never open a confirm dialog for
+        // a document we're going to reject anyway.
         const result = importGraphJson(contents);
-
         if (!result.ok) {
           window.alert(`Failed to import: ${result.error}`);
           return;
         }
 
-        const hydrated = hydrateDocument(result.document);
+        const applyImport = () => {
+          const hydrated = hydrateDocument(result.document);
 
-        set({
-          title: hydrated.title,
-          nodes: hydrated.nodes,
-          edges: hydrated.edges,
-          mode: "select",
-          pendingEdgeSources: [],
-          clipboard: null,
-        });
+          set({
+            title: hydrated.title,
+            nodes: hydrated.nodes,
+            edges: hydrated.edges,
+            mode: "select",
+            pendingEdgeSources: [],
+            clipboard: null,
+          });
 
-        // Persist immediately so the imported state survives a refresh
-        // even if the user closes the tab before the autosave timer fires.
-        saveGraphDocument({
-          id: hydrated.id,
-          title: hydrated.title,
-          nodes: hydrated.nodes,
-          edges: hydrated.edges,
-          createdAt: hydrated.createdAt,
-        });
+          // Persist immediately so the imported state survives a refresh
+          // even if the user closes the tab before the autosave timer fires.
+          saveGraphDocument({
+            id: hydrated.id,
+            title: hydrated.title,
+            nodes: hydrated.nodes,
+            edges: hydrated.edges,
+            createdAt: hydrated.createdAt,
+          });
 
-        // Clear undo history — past states belong to the previous graph.
-        useGraphStore.temporal.getState().clear();
+        };
+
+        if (!get().isStateEmpty()) {
+          get().openConfirmDialogue({
+            title: "Clear Canvas?",
+            message:
+              "The canvas is not empty. Importing will delete the existing nodes. This action cannot be undone.",
+            confirmText: "Import",
+            confirmButtonClassName: "bg-red-600 hover:bg-red-700",
+            onConfirm: () => {
+              get().closeConfirmDialogue();
+              applyImport();
+            },
+          });
+          return;
+        }
+
+        applyImport();
       },
 
       updateVertexLabel: (nodeId, label) => {
@@ -543,12 +566,22 @@ export const useGraphStore = create<GraphStore>()(
         useGraphStore.temporal.getState().clear();
       },
 
-      openConfirmDialogue: (title: string, msg: string, callBack: () => void) => {
+      openConfirmDialogue: ({
+        title,
+        message,
+        onConfirm,
+        confirmText = "Confirm",
+        cancelText = "Cancel",
+        confirmButtonClassName = "bg-red-600 hover:bg-red-700",
+      }) => {
         set({
           isConfirmDialogueOpen: true,
           confirmDialogueTitle: title,
-          confirmDialogueMsg: msg,
-          confirmDialogueCallback: callBack,
+          confirmDialogueMsg: message,
+          confirmDialogueConfirmText: confirmText,
+          confirmDialogueCancelText: cancelText,
+          confirmDialogueButtonClassName: confirmButtonClassName,
+          pendingConfirmAction: onConfirm,
         });
       },
 
@@ -557,11 +590,11 @@ export const useGraphStore = create<GraphStore>()(
           isConfirmDialogueOpen: false,
           confirmDialogueTitle: "",
           confirmDialogueMsg: "",
-          confirmDialogueCallback: () => { }
+          // Reset to a no-op so stray reads after close don't re-fire the
+          // last action.
+          pendingConfirmAction: () => { },
         });
       },
-
-      confirmDialogueCallback: () => { },
 
       // Return true if and only if the graph has no nodes.
       isStateEmpty: () => {

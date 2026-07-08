@@ -55,6 +55,7 @@ export function GraphToolbar() {
   const exportJson = useGraphStore((state) => state.exportJson);
   const importJson = useGraphStore((state) => state.importJson);
   const openResetConfirm = useGraphStore((state) => state.openConfirmDialogue);
+  const closeResetConfirm = useGraphStore((state) => state.closeConfirmDialogue);
   const deleteSelected = useGraphStore((state) => state.deleteSelected);
   const reset = useGraphStore((state) => state.reset);
   const copySelected = useGraphStore((state) => state.copySelected);
@@ -163,11 +164,17 @@ export function GraphToolbar() {
       <ToolbarButton
         title="RESET (Can NOT be undo)"
         onClick={() => {
-          openResetConfirm(
-            "Reset Graph",
-            "Are you sure you want to reset the graph? This will delete all nodes, edges, and the current title. This action cannot be undone.",
-            reset
-          )
+          openResetConfirm({
+            title: "Reset Graph",
+            message:
+              "Are you sure you want to reset the graph? This will delete all nodes, edges, and the current title. This action cannot be undone.",
+            confirmText: "Reset",
+            confirmButtonClassName: "bg-red-600 hover:bg-red-700",
+            onConfirm: () => {
+              closeResetConfirm();
+              reset();
+            },
+          });
         }}>
         <OctagonX size={18} color="#f00707" />
       </ToolbarButton>
