@@ -19,6 +19,7 @@ import { GraphToolbar } from "./GraphToolbar";
 import { VertexTypeMenu } from "./VertexTypeMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
+import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useGraphStore } from "@/store/graph-store";
 import type { GraphEdge, VertexNode as VertexNodeType } from "@/lib/graph/types";
 import { StraightCenterEdge } from "./StraightCenterEdge";
@@ -33,10 +34,6 @@ function GraphEditorInner() {
   const onNodesChange = useGraphStore((state) => state.onNodesChange);
   const onEdgesChange = useGraphStore((state) => state.onEdgesChange);
   const addVertexAt = useGraphStore((state) => state.addVertexAt);
-  const deleteSelected = useGraphStore((state) => state.deleteSelected);
-  const copySelected = useGraphStore((state) => state.copySelected);
-  const paste = useGraphStore((state) => state.paste);
-  const cutSelected = useGraphStore((state) => state.cutSelected);
   const clearPendingEdgeSources = useGraphStore(
     (state) => state.clearPendingEdgeSources,
   );
@@ -101,72 +98,7 @@ function GraphEditorInner() {
     hydrate();
   }, [hydrate]);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      // do not handle in input mode
-      const tag = (event.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-      if (event.key === "Backspace" || event.key === "Delete") {
-        deleteSelected();
-      } else if (event.key === "Escape") {
-        // Escape clears the pending edge source list without creating
-        // edges — a no-op if the list is already empty.
-        if (useGraphStore.getState().pendingEdgeSources.length > 0) {
-          clearPendingEdgeSources();
-        }
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clearPendingEdgeSources, deleteSelected]);
-
-  // Undo/Redo keyboard shortcuts
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const mod = event.metaKey || event.ctrlKey;
-      if (!mod) return;
-
-      if (event.key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        useGraphStore.temporal.getState().undo();
-      } else if ((event.key === "z" && event.shiftKey) || event.key === "y") {
-        event.preventDefault();
-        useGraphStore.temporal.getState().redo();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  // Copy / Paste / Cut keyboard shortcuts. Skip when typing into an input
-  // (e.g. vertex label editor) so the browser's native clipboard handling
-  // stays intact for text fields.
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      const mod = event.metaKey || event.ctrlKey;
-      if (!mod) return;
-
-      const tag = (event.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-      if (event.key === "c" && !event.shiftKey) {
-        event.preventDefault();
-        copySelected();
-      } else if (event.key === "v" && !event.shiftKey) {
-        event.preventDefault();
-        paste();
-      } else if (event.key === "x" && !event.shiftKey) {
-        event.preventDefault();
-        cutSelected();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [copySelected, paste, cutSelected]);
+  useKeyboardShortcuts();
 
   // Auto save
   useEffect(() => {

@@ -19,8 +19,10 @@ import {
   createVertexNode,
   deleteSelectedElements,
   cloneSubgraphForClipboard,
+  clearAllSelections,
   getSelectedSubgraph,
   pasteSubgraph,
+  selectAllElements,
 } from "@/lib/graph/operations";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/graph/vertex-types";
 import {
@@ -99,6 +101,8 @@ type GraphStore = {
   paste: () => void;
   cutSelected: () => void;
   deleteSelected: () => void;
+  selectAll: () => void;
+  clearSelection: () => void;
   save: () => void;
   exportJson: () => Promise<void>;
   importJson: () => Promise<void>;
@@ -372,6 +376,24 @@ export const useGraphStore = create<GraphStore>()(
         });
 
         set(next);
+      },
+
+      selectAll: () => {
+        set(
+          selectAllElements({
+            nodes: get().nodes,
+            edges: get().edges,
+          }),
+        );
+      },
+
+      clearSelection: () => {
+        set(
+          clearAllSelections({
+            nodes: get().nodes,
+            edges: get().edges,
+          }),
+        );
       },
 
       copySelected: () => {

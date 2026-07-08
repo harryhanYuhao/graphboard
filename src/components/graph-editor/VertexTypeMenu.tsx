@@ -20,14 +20,18 @@ export function VertexTypeMenu() {
         Vertex type
       </div>
 
-      {VERTEX_TYPES.map((meta) => {
+      {VERTEX_TYPES.map((meta, index) => {
         const active = meta.type === selectedVertexType;
+        // 1-based shortcut key for this entry, but only show single-digit
+        // numbers (1–9). With 8 types we never overflow today; if we ever
+        // do, hide the badge rather than invent a multi-key binding.
+        const shortcutKey = index < 9 ? String(index + 1) : null;
 
         return (
           <button
             key={meta.type}
             type="button"
-            title={meta.label}
+            title={shortcutKey ? `${meta.label} (${shortcutKey})` : meta.label}
             onClick={() => setVertexType(meta.type)}
             className={[
               "flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm",
@@ -37,7 +41,12 @@ export function VertexTypeMenu() {
             ].join(" ")}
           >
             <VertexSwatch meta={meta} />
-            <span>{meta.label}</span>
+            <span className="flex-1">{meta.label}</span>
+            {shortcutKey && (
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                {shortcutKey}
+              </kbd>
+            )}
           </button>
         );
       })}

@@ -94,7 +94,7 @@ export function GraphToolbar() {
       <div className="mx-1 h-6 w-px bg-slate-200" />
 
       <ToolbarButton
-        title="Select"
+        title="Select (S)"
         active={mode === "select"}
         onClick={() => setEditorMode("select")}
       >
@@ -102,7 +102,7 @@ export function GraphToolbar() {
       </ToolbarButton>
 
       <ToolbarButton
-        title="Add vertex"
+        title="Add vertex (V)"
         active={mode === "add-vertex"}
         onClick={() => setEditorMode("add-vertex")}
       >
@@ -110,7 +110,7 @@ export function GraphToolbar() {
       </ToolbarButton>
 
       <ToolbarButton
-        title="Add edge"
+        title="Add edge (E)"
         active={mode === "add-edge"}
         onClick={() => setEditorMode("add-edge")}
       >
@@ -133,13 +133,13 @@ export function GraphToolbar() {
         <Clipboard size={18} />
       </ToolbarButton>
 
-      <ToolbarButton title="Delete selected" onClick={deleteSelected}>
+      <ToolbarButton title="Delete selected (Del)" onClick={deleteSelected}>
         <Trash2 size={18} />
       </ToolbarButton>
 
       <div className="mx-1 h-6 w-px bg-slate-200" />
 
-      <ToolbarButton title="Save" onClick={save}>
+      <ToolbarButton title="Save (Ctrl+S)" onClick={save}>
         <Save size={18} />
       </ToolbarButton>
 

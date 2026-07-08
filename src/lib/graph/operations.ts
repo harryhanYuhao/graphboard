@@ -83,6 +83,44 @@ export function getSelectedSubgraph(params: {
   return { nodes: selectedNodes, edges: selectedEdges };
 }
 
+// Mark every node and edge as selected. Returned arrays are new arrays so
+// the Zustand store picks up the change as a reference diff.
+export function selectAllElements(params: {
+  nodes: VertexNode[];
+  edges: GraphEdge[];
+}): {
+  nodes: VertexNode[];
+  edges: GraphEdge[];
+} {
+  return {
+    nodes: params.nodes.map((node) =>
+      node.selected ? node : { ...node, selected: true },
+    ),
+    edges: params.edges.map((edge) =>
+      edge.selected ? edge : { ...edge, selected: true },
+    ),
+  };
+}
+
+// Mark every node and edge as not selected. Returned arrays are new arrays
+// so the Zustand store picks up the change as a reference diff.
+export function clearAllSelections(params: {
+  nodes: VertexNode[];
+  edges: GraphEdge[];
+}): {
+  nodes: VertexNode[];
+  edges: GraphEdge[];
+} {
+  return {
+    nodes: params.nodes.map((node) =>
+      node.selected ? { ...node, selected: false } : node,
+    ),
+    edges: params.edges.map((edge) =>
+      edge.selected ? { ...edge, selected: false } : edge,
+    ),
+  };
+}
+
 // Shallow-clone the subgraph for clipboard storage. IDs are preserved so the
 // clipboard payload keeps its internal edge→node references intact; IDs are
 // re-minted only when the subgraph is actually pasted.
