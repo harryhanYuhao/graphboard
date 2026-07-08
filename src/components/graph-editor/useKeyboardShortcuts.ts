@@ -33,7 +33,7 @@ export function useKeyboardShortcuts(): void {
       if (isTypingTarget(event.target)) return;
 
       const mod = event.metaKey || event.ctrlKey;
-      const { mode, setMode, deleteSelected, copySelected, paste, cutSelected, clearPendingEdgeSources, selectAll, clearSelection, save, setVertexType } =
+      const { mode, setMode, deleteSelected, copySelected, paste, cutSelected, clearPendingEdgeSources, selectAll, clearSelection, save, setVertexType, toggleHelp } =
         useGraphStore.getState();
 
       // ---- Modifier-bearing shortcuts ----
@@ -115,6 +115,13 @@ export function useKeyboardShortcuts(): void {
           // Fit view to all nodes/edges — handy for getting back to the
           // canvas after panning off into the void.
           reactFlow.fitView({ padding: 0.1, duration: 200 });
+          return;
+        case "?":
+          // Toggle the keyboard-shortcuts help dialog. Works regardless of
+          // the current editor mode, including add-vertex (where the
+          // default branch below would otherwise try to parse it as a
+          // vertex-type index).
+          toggleHelp();
           return;
         case "Backspace":
         case "Delete":

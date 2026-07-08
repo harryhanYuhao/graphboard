@@ -6,6 +6,7 @@ import {
   Clipboard,
   Copy,
   GitBranch,
+  Keyboard,
   MousePointer2,
   PlusCircle,
   Redo2,
@@ -61,6 +62,7 @@ export function GraphToolbar() {
   const copySelected = useGraphStore((state) => state.copySelected);
   const cutSelected = useGraphStore((state) => state.cutSelected);
   const paste = useGraphStore((state) => state.paste);
+  const openHelp = useGraphStore((state) => state.openHelp);
   const hasClipboard = useGraphStore(
     (state) => state.clipboard !== null && state.clipboard.nodes.length > 0,
   );
@@ -135,6 +137,14 @@ export function GraphToolbar() {
 
       <ToolbarButton title="Delete selected (Del)" onClick={deleteSelected}>
         <Trash2 size={18} />
+      </ToolbarButton>
+
+      <ToolbarButton
+        title="Keyboard shortcuts (?)"
+        onClick={openHelp}
+        aria-label="Show keyboard shortcuts"
+      >
+        <Keyboard size={18} />
       </ToolbarButton>
 
       <div className="mx-1 h-6 w-px bg-slate-200" />

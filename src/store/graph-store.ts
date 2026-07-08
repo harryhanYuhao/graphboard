@@ -72,6 +72,11 @@ type GraphStore = {
   // openConfirmDialogue call.
   pendingConfirmAction: () => void;
 
+  // Keyboard-shortcuts help dialog. Pure UI — no pending action — but kept
+  // in the store so the global `?` keybinding and the toolbar button share
+  // a single source of truth.
+  isHelpOpen: boolean;
+
   // Session-scoped clipboard. Not persisted — paste should not survive a reload.
   clipboard: {
     nodes: VertexNode[];
@@ -118,6 +123,10 @@ type GraphStore = {
   }) => void;
   closeConfirmDialogue: () => void;
 
+  openHelp: () => void;
+  closeHelp: () => void;
+  toggleHelp: () => void;
+
 
   isStateEmpty: () => boolean;
 
@@ -153,6 +162,8 @@ export const useGraphStore = create<GraphStore>()(
       confirmDialogueCancelText: "Cancel",
       confirmDialogueButtonClassName: "bg-red-600 hover:bg-red-700",
       pendingConfirmAction: () => { },
+
+      isHelpOpen: false,
 
       clipboard: null,
 
@@ -519,6 +530,7 @@ export const useGraphStore = create<GraphStore>()(
             mode: "select",
             pendingEdgeSources: [],
             clipboard: null,
+            isHelpOpen: false,
           });
 
           // Persist immediately so the imported state survives a refresh
@@ -585,6 +597,7 @@ export const useGraphStore = create<GraphStore>()(
           edges: hydrated.edges,
           mode: "select",
           isConfirmDialogueOpen: false,
+          isHelpOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
         });
@@ -627,6 +640,18 @@ export const useGraphStore = create<GraphStore>()(
           // last action.
           pendingConfirmAction: () => { },
         });
+      },
+
+      openHelp: () => {
+        set({ isHelpOpen: true });
+      },
+
+      closeHelp: () => {
+        set({ isHelpOpen: false });
+      },
+
+      toggleHelp: () => {
+        set({ isHelpOpen: !get().isHelpOpen });
       },
 
       // Return true if and only if the graph has no nodes.

@@ -19,6 +19,7 @@ import { GraphToolbar } from "./GraphToolbar";
 import { VertexTypeMenu } from "./VertexTypeMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
+import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useGraphStore } from "@/store/graph-store";
 import type { GraphEdge, VertexNode as VertexNodeType } from "@/lib/graph/types";
@@ -54,6 +55,9 @@ function GraphEditorInner() {
   const onConfirm = useGraphStore((state) => state.pendingConfirmAction);
 
   const closeConfirm = useGraphStore((state) => state.closeConfirmDialogue);
+
+  const isHelpOpen = useGraphStore((state) => state.isHelpOpen);
+  const closeHelp = useGraphStore((state) => state.closeHelp);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
@@ -183,6 +187,8 @@ function GraphEditorInner() {
         onConfirm={onConfirm}
         onCancel={closeConfirm}
       />
+
+      <KeyboardShortcutsDialog isOpen={isHelpOpen} onClose={closeHelp} />
     </div>
   );
 }
