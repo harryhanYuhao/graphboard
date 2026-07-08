@@ -33,7 +33,7 @@ export function VertexNode({
   const shapeRadius =
     {
       circle: "rounded-full",
-      square: "rounded-md",
+      square: "rounded-sm",
       triangle: "",
     }[meta.shape] ?? "";
 
@@ -55,7 +55,7 @@ export function VertexNode({
     .join(" ");
 
   // Size is applied via inline style
-  const dimension = `${meta.size * 0.25}rem`;
+  const dimension = data.label !== "" ? `${meta.size * 0.35}rem` : `${meta.size * 0.25}rem`;
 
   const handleClassName = "!absolute !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !-rounded-full !border-0 !bg-transparent";
 
@@ -66,9 +66,7 @@ export function VertexNode({
   }
 
   function commitEdit() {
-    // Always commit, including the empty string — the user pressed Enter
-    // to confirm, so clearing the label is a valid outcome. Escape remains
-    // the way to discard changes (see cancelEdit).
+    // Always commit, including the empty string 
     updateVertexLabel(id, draft.trim());
     setIsEditing(false);
   }

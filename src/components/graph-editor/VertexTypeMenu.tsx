@@ -20,9 +20,9 @@ function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
         : "";
 
   return (
-    <span
+    <div
       className={[
-        "h-5 w-5 shrink-0",
+        "h-5 w-5 shrink-0 flex item-center justify-center border-1",
         isTriangle ? "" : "border",
         shapeRadius,
         meta.className,
@@ -30,7 +30,9 @@ function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
         .filter(Boolean)
         .join(" ")}
       style={{ clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined }}
-    />
+    >
+      <span className="text-justify">{meta.defaultText}</span>
+    </div>
   );
 }
 

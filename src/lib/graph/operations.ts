@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import type { GraphEdge, VertexNode, VertexType } from "./types";
-import { DEFAULT_VERTEX_TYPE } from "./vertex-types";
+import { DEFAULT_VERTEX_TYPE, VERTEX_TYPE_MAP } from "./vertex-types";
 
 export function createVertexNode(
   position: {
@@ -17,7 +17,7 @@ export function createVertexNode(
     position,
     origin: [0.5, 0.5],
     data: {
-      label: "",
+      label: VERTEX_TYPE_MAP[vertexType]?.defaultText ?? "",
       vertexType,
     },
   };

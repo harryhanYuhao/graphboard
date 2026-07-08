@@ -18,6 +18,8 @@ export type VertexTypeMeta = {
 
   // Tailwind classes applied to the shape body (fill + text + border color).
   className: string;
+
+  defaultText: string,
 };
 
 // clip-path for the triangle body (also used for the menu swatch).
@@ -25,11 +27,20 @@ export const TRIANGLE_CLIP_PATH = "polygon(50% 0%, 0% 100%, 100% 100%)";
 
 export const VERTEX_TYPES: VertexTypeMeta[] = [
   {
+    type: "zbox",
+    label: "Z box",
+    shape: "square",
+    size: 4,
+    className: "bg-lime-500 text-black border-lime-900 border-2 text-sm",
+    defaultText: ""
+  },
+  {
     type: "z",
     label: "Z spider",
     shape: "circle",
-    size: 6,
-    className: "bg-green-500 text-white border-green-700 border-2 text-sm",
+    size: 4,
+    className: "bg-lime-500 text-black border-lime-900 border-2 text-sm",
+    defaultText: ""
   },
   {
     type: "empty",
@@ -37,13 +48,23 @@ export const VERTEX_TYPES: VertexTypeMeta[] = [
     shape: "circle",
     size: 4.5,
     className: "border-2 border-dotted text-xs border-black/50",
+    defaultText: ""
   },
   {
     type: "x",
     label: "X spider",
     shape: "circle",
-    size: 6,
-    className: "bg-red-500 text-white border-red-700 border-2 text-sm",
+    size: 4,
+    className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
+    defaultText: ""
+  },
+  {
+    type: "xbox",
+    label: "X box",
+    shape: "square",
+    size: 4,
+    className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
+    defaultText: ""
   },
   {
     type: "w",
@@ -51,13 +72,23 @@ export const VERTEX_TYPES: VertexTypeMeta[] = [
     shape: "triangle",
     size: 5,
     className: "bg-slate-900 text-white pt-3 text-[10px]",
+    defaultText: ""
   },
   {
     type: "h",
     label: "H box",
     shape: "square",
     size: 4,
-    className: "bg-amber-300 text-slate-900 border-amber-500 border-2 text-sm",
+    className: "bg-yellow-300 text-slate-900 border-yellow-900 border-2 text-sm",
+    defaultText: ""
+  },
+  {
+    type: "and",
+    label: "And gate",
+    shape: "square",
+    size: 4,
+    className: "bg-white text-slate-900 border-grey-900 border-2 text-sm",
+    defaultText: "Λ"
   },
 ];
 
