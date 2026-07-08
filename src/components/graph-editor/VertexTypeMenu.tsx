@@ -3,38 +3,8 @@
 "use client";
 
 import { useGraphStore } from "@/store/graph-store";
-import {
-  TRIANGLE_CLIP_PATH,
-  VERTEX_TYPES,
-  type VertexTypeMeta,
-} from "@/lib/graph/vertex-types";
-
-function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
-  const isTriangle = meta.shape === "triangle";
-
-  const shapeRadius =
-    meta.shape === "circle"
-      ? "rounded-full"
-      : meta.shape === "square"
-        ? "rounded-md"
-        : "";
-
-  return (
-    <div
-      className={[
-        "h-5 w-5 shrink-0 flex item-center justify-center border-1",
-        isTriangle ? "" : "border",
-        shapeRadius,
-        meta.className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={{ clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined }}
-    >
-      <span className="text-justify">{meta.defaultText}</span>
-    </div>
-  );
-}
+import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
+import { VertexSwatch } from "./VertexSwatch";
 
 export function VertexTypeMenu() {
   const mode = useGraphStore((state) => state.mode);

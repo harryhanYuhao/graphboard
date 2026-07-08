@@ -17,6 +17,7 @@ import "@xyflow/react/dist/style.css";
 import { VertexNode } from "./VertexNode";
 import { GraphToolbar } from "./GraphToolbar";
 import { VertexTypeMenu } from "./VertexTypeMenu";
+import { VertexPropertyPanel } from "./VertexPropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { useGraphStore } from "@/store/graph-store";
 import type { GraphEdge, VertexNode as VertexNodeType } from "@/lib/graph/types";
@@ -238,6 +239,7 @@ function GraphEditorInner() {
 
       <GraphToolbar />
       <VertexTypeMenu />
+      <VertexPropertyPanel />
 
       <ConfirmationDialog
         isOpen={isConfirmOpen}

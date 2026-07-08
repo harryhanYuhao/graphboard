@@ -94,6 +94,7 @@ type GraphStore = {
   clearPendingEdgeSources: () => void;
   addSelectedToPendingSources: () => void;
   updateVertexLabel: (nodeId: string, label: string) => void;
+  updateVertexType: (nodeId: string, vertexType: VertexType) => void;
   copySelected: () => void;
   paste: () => void;
   cutSelected: () => void;
@@ -533,6 +534,16 @@ export const useGraphStore = create<GraphStore>()(
           nodes: get().nodes.map((node) =>
             node.id === nodeId
               ? { ...node, data: { ...node.data, label } }
+              : node,
+          ),
+        });
+      },
+
+      updateVertexType: (nodeId, vertexType) => {
+        set({
+          nodes: get().nodes.map((node) =>
+            node.id === nodeId
+              ? { ...node, data: { ...node.data, vertexType } }
               : node,
           ),
         });
