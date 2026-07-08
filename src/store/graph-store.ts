@@ -29,9 +29,10 @@ import {
   loadGraphDocument,
   saveGraphDocument,
   exportGraphJson,
+  importGraphJson,
 } from "@/lib/graph/serialization";
 
-import { saveTextFileWithPicker } from "@/lib/download";
+import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 
 import { toSafeFilename } from "@/lib/filename";
 
@@ -56,7 +57,11 @@ type GraphStore = {
   // next clicked target.
   pendingEdgeSources: string[];
   selectedVertexType: VertexType;
-  isResetConfirmOpen: boolean;
+
+  isConfirmDialogueOpen: boolean;
+  confirmDialogueTitle: string;
+  confirmDialogueMsg: string;
+
   // Session-scoped clipboard. Not persisted — paste should not survive a reload.
   clipboard: {
     nodes: VertexNode[];
@@ -87,9 +92,15 @@ type GraphStore = {
   deleteSelected: () => void;
   save: () => void;
   exportJson: () => Promise<void>;
+  importJson: () => Promise<void>;
   reset: () => void;
-  openResetConfirm: () => void;
-  closeResetConfirm: () => void;
+
+  openConfirmDialogue: (title: string, msg: string, callBack: () => void) => void;
+  closeConfirmDialogue: () => void;
+  confirmDialogueCallback: () => void;
+
+
+  isStateEmpty: () => boolean;
 
   onNodeDragStart: () => void;
   onNodeDragStop: () => void;
@@ -115,7 +126,11 @@ export const useGraphStore = create<GraphStore>()(
 
       pendingEdgeSources: [],
       selectedVertexType: DEFAULT_VERTEX_TYPE,
-      isResetConfirmOpen: false,
+
+      isConfirmDialogueOpen: false,
+      confirmDialogueTitle: "",
+      confirmDialogueMsg: "",
+
       clipboard: null,
 
       hydrate: () => {
@@ -437,6 +452,59 @@ export const useGraphStore = create<GraphStore>()(
         });
       },
 
+      // Open a JSON file from disk and replace the current editor state
+      // with its contents. The autosave loop will pick up the new state
+      // and write it to localStorage on the next debounce.
+      //
+      // Failure modes surfaced via `window.alert`:
+      //
+      // "Open" is a destructive. 
+      importJson: async () => {
+
+        const contents = await openTextFileWithPicker({});
+
+        if (contents === null) return;
+
+        // check if we have empty canvas
+        if (!get().isStateEmpty()) {
+          get().openConfirmDialogue("Clear Canvas?",
+            "The canvas is not empty. Importing will delete the existing nodes. This action cannot be undone.",
+            get().closeConfirmDialogue
+          )
+        }
+
+        const result = importGraphJson(contents);
+
+        if (!result.ok) {
+          window.alert(`Failed to import: ${result.error}`);
+          return;
+        }
+
+        const hydrated = hydrateDocument(result.document);
+
+        set({
+          title: hydrated.title,
+          nodes: hydrated.nodes,
+          edges: hydrated.edges,
+          mode: "select",
+          pendingEdgeSources: [],
+          clipboard: null,
+        });
+
+        // Persist immediately so the imported state survives a refresh
+        // even if the user closes the tab before the autosave timer fires.
+        saveGraphDocument({
+          id: hydrated.id,
+          title: hydrated.title,
+          nodes: hydrated.nodes,
+          edges: hydrated.edges,
+          createdAt: hydrated.createdAt,
+        });
+
+        // Clear undo history — past states belong to the previous graph.
+        useGraphStore.temporal.getState().clear();
+      },
+
       updateVertexLabel: (nodeId, label) => {
         set({
           nodes: get().nodes.map((node) =>
@@ -460,7 +528,7 @@ export const useGraphStore = create<GraphStore>()(
           nodes: hydrated.nodes,
           edges: hydrated.edges,
           mode: "select",
-          isResetConfirmOpen: false,
+          isConfirmDialogueOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
         });
@@ -475,12 +543,29 @@ export const useGraphStore = create<GraphStore>()(
         useGraphStore.temporal.getState().clear();
       },
 
-      openResetConfirm: () => {
-        set({ isResetConfirmOpen: true });
+      openConfirmDialogue: (title: string, msg: string, callBack: () => void) => {
+        set({
+          isConfirmDialogueOpen: true,
+          confirmDialogueTitle: title,
+          confirmDialogueMsg: msg,
+          confirmDialogueCallback: callBack,
+        });
       },
 
-      closeResetConfirm: () => {
-        set({ isResetConfirmOpen: false });
+      closeConfirmDialogue: () => {
+        set({
+          isConfirmDialogueOpen: false,
+          confirmDialogueTitle: "",
+          confirmDialogueMsg: "",
+          confirmDialogueCallback: () => { }
+        });
+      },
+
+      confirmDialogueCallback: () => { },
+
+      // Return true if and only if the graph has no nodes.
+      isStateEmpty: () => {
+        return get().nodes.length === 0;
       },
 
       onNodeDragStart: () => {

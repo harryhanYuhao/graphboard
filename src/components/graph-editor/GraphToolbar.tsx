@@ -2,7 +2,21 @@
 
 "use client";
 
-import { Clipboard, Copy, Download, GitBranch, MousePointer2, PlusCircle, Redo2, Save, Scissors, Trash2, OctagonX, Undo2 } from "lucide-react";
+import {
+  Clipboard,
+  Copy,
+  GitBranch,
+  MousePointer2,
+  PlusCircle,
+  Redo2,
+  Save,
+  Scissors,
+  Trash2,
+  OctagonX,
+  Undo2,
+  FolderInput,
+  FileDown,
+} from "lucide-react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
 import type { EditorMode } from "@/lib/graph/types";
@@ -39,8 +53,10 @@ export function GraphToolbar() {
   const setMode = useGraphStore((state) => state.setMode);
   const save = useGraphStore((state) => state.save);
   const exportJson = useGraphStore((state) => state.exportJson);
-  const openResetConfirm = useGraphStore((state) => state.openResetConfirm);
+  const importJson = useGraphStore((state) => state.importJson);
+  const openResetConfirm = useGraphStore((state) => state.openConfirmDialogue);
   const deleteSelected = useGraphStore((state) => state.deleteSelected);
+  const reset = useGraphStore((state) => state.reset);
   const copySelected = useGraphStore((state) => state.copySelected);
   const cutSelected = useGraphStore((state) => state.cutSelected);
   const paste = useGraphStore((state) => state.paste);
@@ -54,6 +70,7 @@ export function GraphToolbar() {
   const setEditorMode = (nextMode: EditorMode) => {
     setMode(nextMode);
   };
+
 
   return (
     <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
@@ -126,15 +143,32 @@ export function GraphToolbar() {
       </ToolbarButton>
 
       <ToolbarButton
+        title="Import JSON"
+        onClick={() => {
+          void importJson();
+        }}
+      >
+        <FileDown size={18} />
+      </ToolbarButton>
+
+      <ToolbarButton
         title="Export JSON"
         onClick={() => {
           void exportJson();
         }}
       >
-        <Download size={18} />
+        <FolderInput size={18} />
       </ToolbarButton>
 
-      <ToolbarButton title="RESET (Can NOT be undo)" onClick={openResetConfirm}>
+      <ToolbarButton
+        title="RESET (Can NOT be undo)"
+        onClick={() => {
+          openResetConfirm(
+            "Reset Graph",
+            "Are you sure you want to reset the graph? This will delete all nodes, edges, and the current title. This action cannot be undone.",
+            reset
+          )
+        }}>
         <OctagonX size={18} color="#f00707" />
       </ToolbarButton>
     </div>

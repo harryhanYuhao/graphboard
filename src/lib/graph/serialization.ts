@@ -1,17 +1,16 @@
 // src/lib/graph/serialization.ts
 //
-// Persistence boundary. The persisted `GraphDocument` is the v2 shape
+// Persistence boundary. The persisted `GraphDocument` is the v1 shape
 // `{ graph, view }` (see `./types.ts`); runtime React Flow objects never
 // touch disk. This module owns:
 //
-//   - `projectDocument` — runtime `VertexNode[]` / `GraphEdge[]` → v2 doc.
-//   - `hydrateDocument` — v2 doc → runtime objects the store / React Flow
+//   - `projectDocument` — runtime `VertexNode[]` / `GraphEdge[]` → v1 doc.
+//   - `hydrateDocument` — v1 doc → runtime objects the store / React Flow
 //     can consume directly.
-//   - `migrateV1ToV2`   — translate older documents (where the persisted
-//     shape was React Flow's Node/Edge directly) into v2.
 //
 // Anything above this boundary should not need to know about React Flow's
-// runtime fields; anything below it doesn't need to know about the v2 split.
+// runtime fields; anything below it doesn't need to know about the
+// graph/view split.
 
 import {
   CURRENT_SCHEMA_VERSION,
@@ -213,4 +212,73 @@ export function exportGraphJson(params: {
   });
 
   return JSON.stringify(document, null, 2);
+}
+
+// ---- Import ----------------------------------------------------------------
+//
+// Parse + validate a JSON string picked from disk. The contract is the v1
+// `{ graph, view }` shape (see `./types.ts`). Pre-v1 "draft" documents —
+// where nodes/edges were React Flow runtime objects dumped straight to
+// disk — are not supported; they're treated as malformed here so the
+// importer surfaces a clear error rather than silently dropping data.
+//
+// Returns a discriminated result rather than throwing so callers (the
+// store action, mostly) can render a user-visible error message without
+// needing to wrap in try/catch.
+
+export type ImportResult =
+  | { ok: true; document: GraphDocument }
+  | { ok: false; error: string };
+
+export function importGraphJson(contents: string): ImportResult {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return { ok: false, error: "File is not valid JSON." };
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, error: "Document must be a JSON object." };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  if (!obj.graph || typeof obj.graph !== "object") {
+    return {
+      ok: false,
+      error: "Document is missing the 'graph' slice (v1 shape required).",
+    };
+  }
+
+  if (!obj.view || typeof obj.view !== "object") {
+    return {
+      ok: false,
+      error: "Document is missing the 'view' slice (v1 shape required).",
+    };
+  }
+
+  // Forward compat: a file from a future build this one doesn't understand.
+  // Don't silently accept — surface the mismatch so the user knows to
+  // upgrade.
+  if (
+    typeof obj.schemaVersion === "number" &&
+    obj.schemaVersion > CURRENT_SCHEMA_VERSION
+  ) {
+    return {
+      ok: false,
+      error: `Document schemaVersion ${obj.schemaVersion} is newer than supported (${CURRENT_SCHEMA_VERSION}).`,
+    };
+  }
+
+  // Stamp v1 if absent so downstream consumers don't have to handle the
+  // missing-field case. We trust the validated `graph`/`view` shape above
+  // to determine validity — schemaVersion is just a hint.
+  const document: GraphDocument = {
+    ...(obj as unknown as GraphDocument),
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+  };
+
+  return { ok: true, document };
 }

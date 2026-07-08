@@ -11,10 +11,20 @@ declare global {
         accept: Record<string, string[]>;
       }>;
     }) => Promise<FileSystemFileHandle>;
+
+    showOpenFilePicker?: (options?: {
+      multiple?: boolean;
+      excludeAcceptAllOption?: boolean;
+      types?: Array<{
+        description: string;
+        accept: Record<string, string[]>;
+      }>;
+    }) => Promise<FileSystemFileHandle[]>;
   }
 
   interface FileSystemFileHandle {
     createWritable: () => Promise<FileSystemWritableFileStream>;
+    getFile: () => Promise<File>;
   }
 
   interface FileSystemWritableFileStream {

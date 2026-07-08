@@ -44,9 +44,13 @@ function GraphEditorInner() {
   );
   const onNodeDragStart = useGraphStore((state) => state.onNodeDragStart);
   const onNodeDragStop = useGraphStore((state) => state.onNodeDragStop);
-  const isResetConfirmOpen = useGraphStore((state) => state.isResetConfirmOpen);
-  const reset = useGraphStore((state) => state.reset);
-  const closeResetConfirm = useGraphStore((state) => state.closeResetConfirm);
+
+  const isResetConfirmOpen = useGraphStore((state) => state.isConfirmDialogueOpen);
+  const resetConfirmTitle = useGraphStore((state) => state.confirmDialogueTitle);
+  const resetConfirmMsg = useGraphStore((state) => state.confirmDialogueMsg);
+  const resetConfirmCallback = useGraphStore((state) => state.confirmDialogueCallback);
+
+  const closeResetConfirm = useGraphStore((state) => state.closeConfirmDialogue);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
@@ -232,11 +236,11 @@ function GraphEditorInner() {
 
       <ConfirmationDialog
         isOpen={isResetConfirmOpen}
-        title="Reset Graph"
-        message="Are you sure you want to reset the graph? This will delete all nodes, edges, and the current title. This action cannot be undone."
+        title={resetConfirmTitle}
+        message={resetConfirmMsg}
         confirmText="Reset"
         cancelText="Cancel"
-        onConfirm={reset}
+        onConfirm={resetConfirmCallback}
         onCancel={closeResetConfirm}
         confirmButtonClassName="bg-red-600 hover:bg-red-700"
       />

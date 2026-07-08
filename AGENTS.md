@@ -83,7 +83,7 @@ through `next build` and the VS Code TS SDK (`.vscode/settings.json`).
   Access API (`window.showSaveFilePicker`) and falls back to anchor-download.
   `src/lib/filename.ts` sanitizes the title into a safe filename.
 
-## Document shape (v2): graph vs view
+## Document shape (v1): graph vs view
 
 Persisted documents (`GraphDocument`, see `src/lib/graph/types.ts`) are
 **split** into two parallel slices:
@@ -100,7 +100,7 @@ The runtime store still holds React Flow's own `Node`/`Edge` objects
 (`VertexNode` / `GraphEdge`) because that's what React Flow consumes.
 Conversion happens at the persistence boundary in `serialization.ts`:
 
-- `projectDocument(runtime)` → v2 doc (called from `saveGraphDocument`
+- `projectDocument(runtime)` → v1 doc (called from `saveGraphDocument`
   and `exportGraphJson`).
 - `hydrateDocument(doc)` → runtime objects (called from `loadGraphDocument`
   consumers — i.e. the store's `hydrate` action).
@@ -111,10 +111,8 @@ Conversion happens at the persistence boundary in `serialization.ts`:
   `doc.graph` — never `doc.view`.
 - Selection (`selected`), `origin`, React Flow's `type` discriminator
   (`"vertex"` / `"straight-center"`), and runtime `measured` /
-  `internals.*` fields are **never** persisted. (Pre-v2, selection
+  `internals.*` fields are **never** persisted. (Pre-v1, selection
   accidentally survived reloads — the split fixes that.)
-- Schema versioning lives in `CURRENT_SCHEMA_VERSION`. The current
-  document is **v2**. v1 documents (or untagged ones) are migrated
-  forward by `migrateV1ToV2` at load time. When the shape changes again,
-  bump the constant and add a new `migrateV2ToV3` step in
-  `loadGraphDocument`.
+- Schema versioning lives in `CURRENT_SCHEMA_VERSION` (= `1`). Bump it
+  when the shape changes again and add a migration step in
+  `loadGraphDocument` / `importGraphJson`.
