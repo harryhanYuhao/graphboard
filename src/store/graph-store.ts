@@ -25,6 +25,7 @@ import {
 import { DEFAULT_VERTEX_TYPE } from "@/lib/graph/vertex-types";
 import {
   createEmptyGraphDocument,
+  hydrateDocument,
   loadGraphDocument,
   saveGraphDocument,
   exportGraphJson,
@@ -118,12 +119,17 @@ export const useGraphStore = create<GraphStore>()(
       clipboard: null,
 
       hydrate: () => {
+        // Load the persisted document (v2 `{ graph, view }` shape) and
+        // hydrate it back into runtime `VertexNode[]` / `GraphEdge[]` for
+        // the store + React Flow. The persisted shape never reaches the
+        // store directly.
         const document = loadGraphDocument();
+        const hydrated = hydrateDocument(document);
 
         set({
-          title: document.title,
-          nodes: document.nodes,
-          edges: document.edges,
+          title: hydrated.title,
+          nodes: hydrated.nodes,
+          edges: hydrated.edges,
           hasHydrated: true,
         });
 
@@ -402,13 +408,14 @@ export const useGraphStore = create<GraphStore>()(
       save: () => {
         const state = get();
 
+        // `updatedAt` is stamped inside `saveGraphDocument` so callers
+        // don't have to keep clocks in sync.
         saveGraphDocument({
           id: "local-document",
           title: state.title,
           nodes: state.nodes,
           edges: state.edges,
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
         });
       },
 
@@ -441,19 +448,30 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       reset: () => {
+        // Empty v2 doc → hydrate to runtime shape for the store. We don't
+        // reuse the persisted `nodes`/`edges` directly because after the
+        // v2 split those are `GraphNodeRecord[]` / `GraphEdgeRecord[]`,
+        // not runtime React Flow objects.
         const document = createEmptyGraphDocument();
+        const hydrated = hydrateDocument(document);
 
         set({
-          title: document.title,
-          nodes: document.nodes,
-          edges: document.edges,
+          title: hydrated.title,
+          nodes: hydrated.nodes,
+          edges: hydrated.edges,
           mode: "select",
           isResetConfirmOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
         });
 
-        saveGraphDocument(document);
+        saveGraphDocument({
+          id: hydrated.id,
+          title: hydrated.title,
+          nodes: hydrated.nodes,
+          edges: hydrated.edges,
+          createdAt: hydrated.createdAt,
+        });
         useGraphStore.temporal.getState().clear();
       },
 
