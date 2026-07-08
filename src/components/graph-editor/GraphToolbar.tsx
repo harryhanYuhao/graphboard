@@ -6,7 +6,6 @@ import {
   Clipboard,
   Copy,
   GitBranch,
-  Keyboard,
   MousePointer2,
   PlusCircle,
   Redo2,
@@ -17,6 +16,7 @@ import {
   Undo2,
   FolderInput,
   FileDown,
+  CircleQuestionMark
 } from "lucide-react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
@@ -144,7 +144,7 @@ export function GraphToolbar() {
         onClick={openHelp}
         aria-label="Show keyboard shortcuts"
       >
-        <Keyboard size={18} />
+        <CircleQuestionMark size={18} />
       </ToolbarButton>
 
       <div className="mx-1 h-6 w-px bg-slate-200" />
