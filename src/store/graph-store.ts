@@ -293,11 +293,11 @@ export const useGraphStore = create<GraphStore>()(
           return;
         }
 
-        // Existing source→target pairs we won't recreate. Self-loops are
-        // explicitly allowed — only parallel duplicates are filtered.
-        const existingPairs = new Set(
-          edges.map((edge) => `${edge.source}->${edge.target}`),
-        );
+// Existing source→target pairs we won't recreate. Includes self-loops
+// (a→a) — there's no special-case carve-out.
+const existingPairs = new Set(
+  edges.map((edge) => `${edge.source}->${edge.target}`),
+);
 
         const buildFanOut = (clearAfter: boolean) => {
           const newEdges = pendingEdgeSources
