@@ -129,7 +129,15 @@ describe("modifier-bearing shortcuts", () => {
   });
 
   it("Ctrl+S calls save and preventDefaults", () => {
-    const saveSpy = vi.spyOn(useGraphStore.getState(), "save");
+    // Stub the implementation: the real save() writes to localStorage,
+    // which throws under jsdom if `localStorage` isn't on the global
+    // (which can happen intermittently across test isolation boundaries
+    // in vitest). The browser swallows event-listener throws silently,
+    // so without this stub the spy assertion would still pass while
+    // vitest catches the throw as an unhandled error.
+    const saveSpy = vi
+      .spyOn(useGraphStore.getState(), "save")
+      .mockImplementation(() => {});
     renderHook(() => useKeyboardShortcuts());
 
     const event = new KeyboardEvent("keydown", {
