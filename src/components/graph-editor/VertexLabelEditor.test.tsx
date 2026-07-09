@@ -9,8 +9,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
-import { VertexLabelEditor } from "./VertexLabelEditor";
+import { useRef, useState } from "react";
+import { VertexLabelEditor, type VertexLabelEditorHandle } from "./VertexLabelEditor";
 
 // Controlled wrapper — the editor calls `onCommit(label)` and the
 // parent updates its `value` so the editor re-renders into the
@@ -35,6 +35,36 @@ function Harness({
         setValue(label);
       }}
     />
+  );
+}
+
+// Wrapper that exposes the imperative ref the way VertexNode does:
+// a parent-owned ref that can call `startEditing()` from a
+// double-click anywhere inside its own DOM subtree, not just on the
+// editor's inner span. This is the trigger path that catches clicks
+// on the body background — the regression we're guarding against.
+function HarnessWithOuterRef({
+  initial = "",
+  canStartEditing = true,
+}: {
+  initial?: string;
+  canStartEditing?: boolean;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<VertexLabelEditorHandle>(null);
+  return (
+    <div
+      data-testid="outer"
+      onDoubleClick={() => ref.current?.startEditing()}
+    >
+      <VertexLabelEditor
+        ref={ref}
+        value={value}
+        glyph={<span data-testid="glyph">Λ</span>}
+        canStartEditing={canStartEditing}
+        onCommit={setValue}
+      />
+    </div>
   );
 }
 
@@ -190,5 +220,50 @@ describe("VertexLabelEditor — input element properties", () => {
     expect(input.value).toBe("hello");
     fireEvent.change(input, { target: { value: "hello world" } });
     expect(input.value).toBe("hello world");
+  });
+});
+
+// Regression: the inner <span>'s onDoubleClick only fires when the
+// click lands *directly* on the span / glyph. For empty-label
+// vertices the body has no glyph/text to catch the click, so a
+// double-click on the body background would otherwise open nothing.
+// VertexNode wires an outer-div onDoubleClick that calls the
+// imperative `startEditing()` handle — that's the trigger path this
+// block exercises.
+describe("VertexLabelEditor — imperative handle for parent-triggered editing", () => {
+  it("a double-click on a parent wrapper opens the editor via the ref", () => {
+    render(<HarnessWithOuterRef initial="" />);
+    // Simulate the parent catching a double-click on its outer div
+    // (which, in VertexNode, wraps both the handles and the body).
+    // Firing it on the outer div tests that the ref reaches the
+    // editor without depending on where inside the subtree the click
+    // landed.
+    fireEvent.doubleClick(screen.getByTestId("outer"));
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("a parent-triggered startEditing is gated by canStartEditing", () => {
+    render(<HarnessWithOuterRef initial="" canStartEditing={false} />);
+    fireEvent.doubleClick(screen.getByTestId("outer"));
+    // canStartEditing=false → the editor must not flip into input mode.
+    expect(screen.queryByRole("textbox")).toBeNull();
+    // The glyph is still there as the empty-state content.
+    expect(screen.getByTestId("glyph")).toBeInTheDocument();
+  });
+
+  it("a stray double-click while already editing does not clobber the draft", () => {
+    // Mirror VertexNode's outer-div handler: a double-click
+    // bubbling up from the input itself while the user is typing
+    // should be a no-op, not reset the draft to the original value.
+    render(<HarnessWithOuterRef initial="alpha" />);
+    fireEvent.doubleClick(screen.getByText("alpha"));
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "alpha-2" } });
+
+    // Now a second double-click bubbles up to the outer div — must
+    // NOT reset the in-progress draft back to "alpha".
+    fireEvent.doubleClick(input);
+    expect(input.value).toBe("alpha-2");
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { type NodeProps } from "@xyflow/react";
+import { useRef } from "react";
 import { type VertexNode as VertexNodeType } from "@/lib/graph/types";
 import {
   DEFAULT_VERTEX_TYPE,
@@ -10,7 +11,10 @@ import {
 } from "@/lib/graph/vertex-types";
 import { useGraphStore } from "@/store/graph-store";
 import { VertexHandles } from "./VertexHandles";
-import { VertexLabelEditor } from "./VertexLabelEditor";
+import {
+  VertexLabelEditor,
+  type VertexLabelEditorHandle,
+} from "./VertexLabelEditor";
 
 export function VertexNode({
   id,
@@ -62,8 +66,26 @@ export function VertexNode({
     ? `${meta.size * 0.35}rem`
     : `${meta.size * 0.25}rem`;
 
+  // Ref into the label editor so the outer-div double-click handler
+  // (below) can request editing on its behalf. The inner <span>'s
+  // own onDoubleClick only fires when the click lands directly on
+  // the span/glyph — that misses all the cases where the user
+  // double-clicks the body background (which is most of the visible
+  // body for empty-label vertices like W / Z / X / H, where there's
+  // no glyph to fill the box). The outer-div handler catches every
+  // double-click that bubbles up from anywhere inside the vertex.
+  const labelEditorRef = useRef<VertexLabelEditorHandle>(null);
+
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onDoubleClick={(event) => {
+        // Stop React Flow's pane-level double-click from also firing
+        // (it would otherwise reset the viewport).
+        event.stopPropagation();
+        labelEditorRef.current?.startEditing();
+      }}
+    >
       <VertexHandles isDirectional={isDirectional} dimension={dimension} />
 
       <div
@@ -104,6 +126,7 @@ export function VertexNode({
           }}
         >
           <VertexLabelEditor
+            ref={labelEditorRef}
             value={data.label}
             glyph={meta.glyph}
             canStartEditing={mode === "select" || mode === "add-vertex"}

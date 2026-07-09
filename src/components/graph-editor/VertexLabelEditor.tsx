@@ -9,10 +9,17 @@
 // When the label is empty, the parent's `glyph` (e.g. the And gate's
 // SVG Λ) is shown instead — see `VertexNode` for the wiring. Clearing
 // the label reveals the glyph again.
+//
+// The inner `<span>` here still carries `onDoubleClick` as the
+// semantic trigger ("double-click the editor to edit it") — the unit
+// tests pin that surface. `VertexNode` additionally wires
+// `onDoubleClick` on its own outer div so clicks that land on the
+// body background (where there's no glyph/text to receive the event)
+// still reach the editor via the imperative handle exposed below.
 
 "use client";
 
-import { useRef, useState } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { renderLabel } from "@/lib/label/renderLabel";
 
@@ -29,21 +36,45 @@ export type VertexLabelEditorProps = {
   canStartEditing: boolean;
 };
 
-export function VertexLabelEditor({
-  value,
-  glyph,
-  onCommit,
-  canStartEditing,
-}: VertexLabelEditorProps) {
+// Imperative surface for the parent to request "start editing now"
+// from somewhere *outside* this component's DOM subtree. The inner
+// span's own onDoubleClick only catches clicks that land directly
+// on the label/glyph; clicks on the body background or on the React
+// Flow Handle overlays would otherwise miss it (events bubble up
+// the DOM, never down). See VertexNode.tsx for the wiring.
+export type VertexLabelEditorHandle = {
+  startEditing: () => void;
+};
+
+export const VertexLabelEditor = forwardRef<
+  VertexLabelEditorHandle,
+  VertexLabelEditorProps
+>(function VertexLabelEditor(
+  { value, glyph, onCommit, canStartEditing },
+  ref,
+) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function startEditing() {
+  const startEditing = useCallback(() => {
+    // Gate on mode / capability first.
     if (!canStartEditing) return;
+    // If we're already editing, the user is interacting with the
+    // `<input>` (typing, selecting text via double-click, etc.). A
+    // stray double-click that bubbles up to the parent's outer-div
+    // handler should not reset the draft they're currently typing
+    // into — `setDraft(value)` would clobber their in-progress text.
+    if (isEditing) return;
     setDraft(value);
     setIsEditing(true);
-  }
+  }, [canStartEditing, isEditing, value]);
+
+  // Expose `startEditing` so the parent can trigger it from a
+  // double-click anywhere on the vertex, not just on the inner span.
+  // The callback is stable when its deps don't change, so the handle
+  // isn't recreated on every render.
+  useImperativeHandle(ref, () => ({ startEditing }), [startEditing]);
 
   function commit() {
     // Always commit, including the empty string — clearing the label
@@ -107,4 +138,4 @@ export function VertexLabelEditor({
   // Wrapped in a span so the double-click target matches the
   // label-rendered path.
   return <span onDoubleClick={startEditing}>{glyph}</span>;
-}
+});
