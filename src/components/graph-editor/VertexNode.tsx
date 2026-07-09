@@ -32,6 +32,7 @@ export function VertexNode({
 
   const meta = VERTEX_TYPE_MAP[data.vertexType] ?? VERTEX_TYPE_MAP[DEFAULT_VERTEX_TYPE];
   const isTriangle = meta.shape === "triangle";
+  const isDirectional = meta.directional === true;
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(data.label);
@@ -71,7 +72,18 @@ export function VertexNode({
     ? `${meta.size * 0.35}rem`
     : `${meta.size * 0.25}rem`;
 
-  const handleClassName = "!absolute !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !-rounded-full !border-0 !bg-transparent";
+  // Two handle styles:
+  //   - centered: full-size transparent handle overlaid on the node
+  //     center. Used for the default symmetric behavior (x/z/h/etc.
+  //     both ends, and the output side of directional vertices).
+  //   - directional: small visible dot placed on the actual edge via
+  //     React Flow's `Position` prop. Used for the top input anchor
+  //     on W / And gate so the user can see the directional structure.
+  const centeredHandleClassName =
+    "!absolute !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !-rounded-full !border-0 !bg-transparent";
+  const directionalHandleClassName =
+    "!absolute !rounded-full !border !border-slate-400 !bg-white";
+  const directionalHandleStyle = { width: "0.4rem", height: "0.4rem" };
 
   function startEditing() {
     if (mode !== "select" && mode !== "add-vertex") return;
@@ -98,21 +110,51 @@ export function VertexNode({
         startEditing();
       }}
     >
-      <Handle
-        type="target"
-        position={Position.Top}
-        id="center-target"
-        className={handleClassName}
-        style={{ width: dimension, height: dimension }}
-      />
-
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="center-source"
-        className={handleClassName}
-        style={{ width: dimension, height: dimension }}
-      />
+      {isDirectional ? (
+        <>
+          {/* Single, visible input anchor at the top edge — signals
+              the directional asymmetry of W / And gate. The original
+              centered target handle moves here; it stays a target so
+              existing edges into the vertex are unaffected by which
+              side they came from. */}
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="top"
+            className={directionalHandleClassName}
+            style={directionalHandleStyle}
+          />
+          {/* Output side: keep the original centered, transparent
+              source handle. A single React Flow handle accepts any
+              number of connections, so this still gives W / And gate
+              their "many bottom edges" fan-out without needing a row
+              of bottom slots. */}
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="center-source"
+            className={centeredHandleClassName}
+            style={{ width: dimension, height: dimension }}
+          />
+        </>
+      ) : (
+        <>
+          <Handle
+            type="target"
+            position={Position.Top}
+            id="center-target"
+            className={centeredHandleClassName}
+            style={{ width: dimension, height: dimension }}
+          />
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            id="center-source"
+            className={centeredHandleClassName}
+            style={{ width: dimension, height: dimension }}
+          />
+        </>
+      )}
 
       <div
         className={className}

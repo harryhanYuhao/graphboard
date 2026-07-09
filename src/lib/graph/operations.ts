@@ -24,11 +24,33 @@ export function createVertexNode(
   };
 }
 
-export function createGraphEdge(source: string, target: string): GraphEdge {
+export function createGraphEdge(
+  source: string,
+  target: string,
+  nodes?: VertexNode[],
+): GraphEdge {
+  // Pick the target handle id based on the target vertex's type. For
+  // directional vertices (W, And gate) the target handle is the
+  // visible top dot ("top"); for everything else it's the centered
+  // target ("center-target"). The source handle is always the bottom
+  // slot ("center-source") — the side edges leave from. Passing
+  // `nodes` is optional so legacy callers (and tests) keep working;
+  // without it we fall back to the non-directional defaults.
+  let targetHandle: string | undefined;
+  if (nodes) {
+    const targetNode = nodes.find((n) => n.id === target);
+    const meta = targetNode
+      ? VERTEX_TYPE_MAP[targetNode.data.vertexType]
+      : undefined;
+    targetHandle = meta?.directional ? "top" : "center-target";
+  }
+
   return {
     id: nanoid(),
     source,
     target,
+    sourceHandle: "center-source",
+    targetHandle,
     type: "straight-center",
   };
 }

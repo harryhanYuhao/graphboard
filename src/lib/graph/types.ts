@@ -55,13 +55,23 @@ export type GraphNodeRecord = {
   data: VertexData;
 };
 
-// Persisted edge — id plus endpoints. We deliberately do not persist React
-// Flow's `type` discriminator ("straight-center") here; that's a renderer
+// Persisted edge — id plus endpoints, plus the connection-point
+// indices on each side. We deliberately do not persist React Flow's
+// `type` discriminator ("straight-center") here; that's a renderer
 // detail and may change without affecting the graph.
+//
+// `sourceHandle` / `targetHandle` are numeric indices into the
+// respective vertex's handle slots: 0 = top, 1 = bottom. Indexed
+// (not id-based) so future vertex types with more than two handles
+// can extend the scheme without churning the schema. Absent on
+// legacy documents — see `serialization.ts` for the default values
+// applied at hydration.
 export type GraphEdgeRecord = {
   id: string;
   source: string;
   target: string;
+  sourceHandle?: number;
+  targetHandle?: number;
 };
 
 export type GraphSlice = {

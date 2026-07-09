@@ -313,11 +313,11 @@ export const useGraphStore = create<GraphStore>()(
           return;
         }
 
-// Existing source→target pairs we won't recreate. Includes self-loops
-// (a→a) — there's no special-case carve-out.
-const existingPairs = new Set(
-  edges.map((edge) => `${edge.source}->${edge.target}`),
-);
+        // Existing source→target pairs we won't recreate. Includes self-loops
+        // (a→a) — there's no special-case carve-out.
+        const existingPairs = new Set(
+          edges.map((edge) => `${edge.source}->${edge.target}`),
+        );
 
         const buildFanOut = (clearAfter: boolean) => {
           const newEdges = pendingEdgeSources
@@ -325,7 +325,11 @@ const existingPairs = new Set(
               (sourceId) =>
                 !existingPairs.has(`${sourceId}->${vertexId}`),
             )
-            .map((sourceId) => createGraphEdge(sourceId, vertexId));
+            // Pass `nodes` so the new edge can pick the right target
+            // handle id ("top" for directional vertices, otherwise the
+            // centered target). Without it, createGraphEdge falls back
+            // to "center-target" — safe but suboptimal for W/And.
+            .map((sourceId) => createGraphEdge(sourceId, vertexId, nodes));
 
           // Nothing added and nothing to clear — leave state alone.
           if (newEdges.length === 0 && !clearAfter) return;

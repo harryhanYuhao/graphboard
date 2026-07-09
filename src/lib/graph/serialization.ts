@@ -21,7 +21,9 @@ import {
   type GraphNodeRecord,
   type NodeView,
   type VertexNode,
+  type VertexType,
 } from "./types";
+import { VERTEX_TYPE_MAP } from "./vertex-types";
 
 const LOCAL_STORAGE_KEY = "graph-board-document";
 
@@ -66,7 +68,19 @@ export function projectDocument(input: ProjectInput): GraphDocument {
   const graphEdges: GraphEdgeRecord[] = [];
   const viewEdges: EdgeView[] = [];
   for (const edge of input.edges) {
-    graphEdges.push({ id: edge.id, source: edge.source, target: edge.target });
+    // Persisted edges carry the handle slots as numeric indices
+    // (0 = top, 1 = bottom). The runtime side stores React-Flow
+    // handle ids ("center-source" / "top" / "center-target") — we
+    // translate here so the on-disk format is stable across vertex
+    // types and forward-compatible with nodes that have more than
+    // two handles.
+    graphEdges.push({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: handleIdToIndex(edge.sourceHandle),
+      targetHandle: handleIdToIndex(edge.targetHandle),
+    });
     viewEdges.push({ id: edge.id });
   }
 
@@ -115,11 +129,27 @@ function hydrateNode(
   };
 }
 
-function hydrateEdge(graphEdge: GraphEdgeRecord): GraphEdge {
+function hydrateEdge(
+  graphEdge: GraphEdgeRecord,
+  vertexTypeById: Map<string, VertexType>,
+): GraphEdge {
   return {
     id: graphEdge.id,
     source: graphEdge.source,
     target: graphEdge.target,
+    // Translate the persisted numeric indices back to runtime handle
+    // ids. Absent fields fall back to sensible defaults — see
+    // `indexToHandleId`.
+    sourceHandle: indexToHandleId(
+      graphEdge.sourceHandle,
+      vertexTypeById.get(graphEdge.source),
+      "source",
+    ),
+    targetHandle: indexToHandleId(
+      graphEdge.targetHandle,
+      vertexTypeById.get(graphEdge.target),
+      "target",
+    ),
     // Renderer-level discriminator; "straight-center" is the only edge
     // type today, but it stays in the runtime layer.
     type: "straight-center",
@@ -130,15 +160,75 @@ export function hydrateDocument(doc: GraphDocument): HydratedDocument {
   const nodeViewById = new Map<string, NodeView>(
     doc.view.nodes.map((v) => [v.id, v]),
   );
+  // Pre-index vertex types so hydrateEdge can look up the source /
+  // target endpoint in O(1) without re-scanning the node list per
+  // edge.
+  const vertexTypeById = new Map<string, VertexType>(
+    doc.graph.nodes.map((n) => [n.id, n.data.vertexType]),
+  );
 
   return {
     id: doc.id,
     title: doc.title,
     nodes: doc.graph.nodes.map((n) => hydrateNode(n, nodeViewById)),
-    edges: doc.graph.edges.map((e) => hydrateEdge(e)),
+    edges: doc.graph.edges.map((e) => hydrateEdge(e, vertexTypeById)),
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
+}
+
+// ---- Handle id <-> index conversion ---------------------------------------
+//
+// Edges on disk carry numeric handle indices (0 = top, 1 = bottom).
+// At runtime they carry React-Flow handle ids ("center-source" /
+// "top" / "center-target"). The two helpers below are the only place
+// this mapping lives — keep them in sync if either side adds new
+// values.
+
+// Convert a runtime handle id to the persisted numeric index. The
+// "bottom" handle (always a source-type slot) is index 1; everything
+// else (target-type slots, including the directional "top" dot) is
+// index 0. Unknown / absent handles return undefined so the field
+// gets omitted from the JSON output entirely — the deserializer then
+// falls back to its per-role default.
+function handleIdToIndex(handleId: string | null | undefined): number | undefined {
+  if (handleId == null) return undefined;
+  if (handleId === "center-source") return 1;
+  return 0;
+}
+
+// Convert a persisted numeric index back to a runtime handle id,
+// picking the right id based on the endpoint's role (source vs
+// target) and the vertex's directional flag.
+//
+// Defaults (when the field is absent on disk):
+//   - source side → bottom slot (1) → "center-source". This matches
+//     the user-facing rule for W / And gate ("default shall be the
+//     bottom handle"); for non-directional vertices both handles are
+//     at the body center anyway, so the choice is cosmetic.
+//   - target side → top slot (0) → "top" for directional vertices
+//     (the visible input dot), "center-target" otherwise.
+function indexToHandleId(
+  index: number | undefined,
+  vertexType: VertexType | undefined,
+  role: "source" | "target",
+): string {
+  const meta = vertexType ? VERTEX_TYPE_MAP[vertexType] : undefined;
+  const isDirectional = meta?.directional === true;
+
+  if (role === "source") {
+    // Source side is always the bottom slot, regardless of vertex
+    // type — the data leaves from there.
+    return "center-source";
+  }
+
+  // Target side: top slot, with the directional case picking the
+  // visible "top" handle id. Unknown indices fall through to the
+  // default.
+  if (index === undefined || index === 0) {
+    return isDirectional ? "top" : "center-target";
+  }
+  return "center-target";
 }
 
 // ---- Public API ------------------------------------------------------------

@@ -69,6 +69,30 @@ describe("createGraphEdge", () => {
     expect(edge.target).toBe("b");
     expect(edge.type).toBe("straight-center");
     expect(edge.id).toBeTruthy();
+    // Source side is always the bottom slot ("center-source") — the
+    // side edges leave from, regardless of vertex type.
+    expect(edge.sourceHandle).toBe("center-source");
+    // Without a node list we can't pick the right target handle, so
+    // it stays unset and the serializer falls back to the default.
+    expect(edge.targetHandle).toBeUndefined();
+  });
+
+  it("picks the directional 'top' handle for W / And gate targets", () => {
+    const nodes: VertexNode[] = [
+      { ...makeVertex("a", { x: 0, y: 0 }), data: { label: "", vertexType: "w" } },
+      { ...makeVertex("b", { x: 0, y: 0 }), data: { label: "", vertexType: "and" } },
+    ];
+    const edge = createGraphEdge("a", "b", nodes);
+    expect(edge.targetHandle).toBe("top");
+  });
+
+  it("falls back to the centered target handle for non-directional targets", () => {
+    const nodes: VertexNode[] = [
+      makeVertex("a", { x: 0, y: 0 }),
+      { ...makeVertex("b", { x: 0, y: 0 }), data: { label: "", vertexType: "x" } },
+    ];
+    const edge = createGraphEdge("a", "b", nodes);
+    expect(edge.targetHandle).toBe("center-target");
   });
 });
 

@@ -33,6 +33,16 @@ export type VertexTypeMeta = {
   // the type's color/shape, so they automatically pick up the
   // `className` text color via `currentColor`.
   glyph?: ReactNode,
+
+  // If true, the vertex has a directional structure with a single
+  // target edge at the top and multiple source edges spread across
+  // the bottom. Used by vertex types that are asymmetric in ZXW
+  // calculus — the W node ("copy", one input fan-out to many
+  // outputs) and the And gate. The renderer (VertexNode) and the
+  // edge component (StraightCenterEdge) both key off this flag;
+  // symmetric types leave it unset and behave as before (edges meet
+  // at the body center).
+  directional?: boolean,
 };
 
 // clip-path for the triangle body (also used for the menu swatch).
@@ -85,7 +95,12 @@ export const VERTEX_TYPES: VertexTypeMeta[] = [
     shape: "triangle",
     size: 5,
     className: "bg-slate-900 text-white pt-3 text-[10px]",
-    defaultText: ""
+    defaultText: "",
+    // W is the "copy" generator: one input (top) fans out to many
+    // outputs (bottom). Renderer places one target handle at the top
+    // and N source handles across the bottom; edges route
+    // accordingly (see StraightCenterEdge).
+    directional: true,
   },
   {
     type: "h",
@@ -108,6 +123,9 @@ export const VERTEX_TYPES: VertexTypeMeta[] = [
     // without a font that ships the Greek block, so the gate used
     // to render differently across machines.
     glyph: createElement(AndGateGlyph),
+    // And gate is directional like W: one input at the top, many
+    // outputs at the bottom.
+    directional: true,
   },
 ];
 
