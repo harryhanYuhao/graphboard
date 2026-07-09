@@ -20,6 +20,24 @@ export function isDirectionalVertex(vertexType: VertexType): boolean {
   return VERTEX_TYPE_MAP[vertexType]?.directional === true;
 }
 
+// Vertex types whose label is interpreted as a *phase expression*
+// rather than free-form text. For Z/X spiders and Z/X boxes the
+// label-as-phase convention applies (see `AGENTS.md` §"Label as
+// phase"); for H / W / AND / empty the label is decoration only.
+//
+// This is the single source of truth for "should I parse this label
+// as a phase?" — the property panel live preview, the Rust compute
+// entry point, and any future test that needs the same predicate
+// all go through here.
+export function isSpiderType(vertexType: VertexType): boolean {
+  return (
+    vertexType === "z" ||
+    vertexType === "x" ||
+    vertexType === "zbox" ||
+    vertexType === "xbox"
+  );
+}
+
 // Tailwind class for the corner radius matching each shape. The
 // "empty" string for triangles is intentional — triangles are
 // clipped to their silhouette, so a CSS border-radius on the box

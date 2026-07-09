@@ -14,6 +14,7 @@
 
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { renderLabel } from "@/lib/label/renderLabel";
 
 export type VertexLabelEditorProps = {
   value: string;
@@ -82,8 +83,21 @@ export function VertexLabelEditor({
   // User has typed a custom label — show it. The type's default
   // glyph is intentionally hidden in this state; clearing the label
   // reveals the glyph again.
+  //
+  // Labels are routed through `renderLabel`, which KaTeX-renders
+  // any `$...$` / `$$...$$` content and otherwise returns plain text
+  // (HTML-escaped). `renderLabel` is XSS-safe — see its doc comment
+  // for the trust / fallback rules. We use `dangerouslySetInnerHTML`
+  // here because KaTeX output is HTML, not text; the escape happens
+  // upstream.
   if (value) {
-    return <span onDoubleClick={startEditing}>{value}</span>;
+    const rendered = renderLabel(value);
+    return (
+      <span
+        onDoubleClick={startEditing}
+        dangerouslySetInnerHTML={{ __html: rendered.html }}
+      />
+    );
   }
 
   // No user label — show the type's default glyph (e.g. the And

@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_VERTEX_TYPE,
   isDirectionalVertex,
+  isSpiderType,
   VERTEX_TYPES,
   VERTEX_TYPE_MAP,
 } from "./vertex-types";
@@ -106,4 +107,26 @@ describe("DEFAULT_VERTEX_TYPE", () => {
   it("resolves to a registered type", () => {
     expect(VERTEX_TYPE_MAP[DEFAULT_VERTEX_TYPE]).toBeDefined();
   });
+});
+
+describe("isSpiderType", () => {
+  // The label-as-phase convention (see AGENTS.md) applies only to
+  // the four spider / box types. Adding a new vertex type without
+  // updating this predicate would silently mis-classify its label
+  // — the property panel would either show a phase hint where
+  // none makes sense, or hide it where it should appear.
+
+  it.each<VertexType>(["z", "x", "zbox", "xbox"])(
+    "is true for spider / box type '%s'",
+    (t) => {
+      expect(isSpiderType(t)).toBe(true);
+    },
+  );
+
+  it.each<VertexType>(["empty", "w", "h", "and"])(
+    "is false for non-spider type '%s'",
+    (t) => {
+      expect(isSpiderType(t)).toBe(false);
+    },
+  );
 });

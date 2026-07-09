@@ -19,10 +19,15 @@
 
 import { useMemo, useState } from "react";
 import { useGraphStore } from "@/store/graph-store";
-import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
+import {
+  VERTEX_TYPES,
+  isSpiderType,
+} from "@/lib/graph/vertex-types";
 import { normalizeRotation } from "@/lib/graph/serialization";
 import type { VertexType } from "@/lib/graph/types";
 import { useTrackedDraft } from "@/lib/hooks/useTrackedDraft";
+import { renderLabel } from "@/lib/label/renderLabel";
+import { parsePhase } from "@/lib/phase/parser";
 import { VertexSwatch } from "./VertexSwatch";
 
 export function VertexPropertyPanel() {
@@ -184,6 +189,17 @@ export function VertexPropertyPanel() {
             placeholder="Label"
             className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
           />
+
+          {/* Live preview — shows how the label renders (KaTeX for
+              `$...$` / `$$...$$`, plain text otherwise) and, for spider
+              types where the label is interpreted as a phase
+              expression, the parsed value or error. Driven off the
+              draft so the user sees feedback as they type, before
+              commit. */}
+          <LabelPreview
+            label={labelDraft}
+            vertexType={selectedVertex.data.vertexType}
+          />
         </div>
 
         {/* Rotation — number input (precise) + slider (gestural) + reset.
@@ -253,4 +269,98 @@ export function VertexPropertyPanel() {
       </div>
     </div>
   );
+}
+
+// ---- Live label preview -----------------------------------------------------
+//
+// Two stacked hints below the label input:
+//
+//   - "Renders": what the label will look like inside the vertex body
+//     (KaTeX for `$...$` / `$$...$$`, plain text otherwise). Lets the
+//     user see their LaTeX take shape as they type.
+//
+//   - "Phase" (spider types only): the parsed value of the label as
+//     a phase expression, in radians plus a π multiple. Errors get a
+//     red message — the compute entry point (Phase 4) will silently
+//     fall back to phase 0 in this case, but surfacing the error here
+//     gives the user a chance to fix it before they hit Compute.
+//
+// The preview is hidden when both (a) the label is empty and (b) the
+// vertex type isn't a spider — for empty labels on H / W / AND /
+// empty there's nothing meaningful to show.
+
+function LabelPreview({
+  label,
+  vertexType,
+}: {
+  label: string;
+  vertexType: VertexType;
+}) {
+  const isSpider = isSpiderType(vertexType);
+  if (label === "" && !isSpider) return null;
+
+  const rendered = renderLabel(label);
+
+  return (
+    <div className="mt-1.5 rounded border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs">
+      <div className="flex items-baseline gap-2">
+        <span className="w-12 shrink-0 text-[10px] uppercase tracking-wide text-slate-400">
+          Renders
+        </span>
+        {label === "" ? (
+          <span className="italic text-slate-400">empty</span>
+        ) : (
+          // `renderLabel` is XSS-safe — plain text path is
+          // HTML-escaped, and the KaTeX path uses `trust: false` so
+          // user LaTeX can't smuggle links into the editor canvas.
+          <span
+            className="text-slate-900"
+            dangerouslySetInnerHTML={{ __html: rendered.html }}
+          />
+        )}
+      </div>
+      {isSpider && <PhaseHint label={label} />}
+    </div>
+  );
+}
+
+function PhaseHint({ label }: { label: string }) {
+  const r = parsePhase(label);
+  if (r.ok) {
+    // Empty label → parsePhase returns Ok(0). Show "0 rad" so the
+    // user knows an empty spider is identity, not undefined.
+    return (
+      <div className="mt-1 flex items-baseline gap-2 border-t border-slate-100 pt-1">
+        <span className="w-12 shrink-0 text-[10px] uppercase tracking-wide text-slate-400">
+          Phase
+        </span>
+        <span className="text-slate-900">
+          {r.value.toFixed(4)} rad
+          {r.value !== 0 && (
+            <span className="ml-1.5 text-slate-500">
+              ({formatPiMultiple(r.value)}π)
+            </span>
+          )}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1 flex items-baseline gap-2 border-t border-slate-100 pt-1">
+      <span className="w-12 shrink-0 text-[10px] uppercase tracking-wide text-slate-400">
+        Phase
+      </span>
+      <span className="text-rose-600">{r.error}</span>
+    </div>
+  );
+}
+
+// Express `rad` as a multiple of π with up to 4 decimal places.
+// Researchers think in multiples of π; showing both rad and π
+// avoids the mental gymnastics of converting 3.1416 back to π.
+function formatPiMultiple(rad: number): string {
+  const ratio = rad / Math.PI;
+  // `toFixed(4)` is enough resolution for typical phase inputs;
+  // a researcher typing `0.123456789` sees it all the way through.
+  return ratio.toFixed(4);
 }

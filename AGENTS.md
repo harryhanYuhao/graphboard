@@ -80,10 +80,30 @@ Typecheck runs through `next build` and the VS Code TS SDK
 - Styling is **Tailwind CSS v4** (config-less, via `@tailwindcss/postcss`);
   write utility classes inline. Icons from `lucide-react`.
 - IDs via `nanoid`.
-- **Vertex types** are the ZXW generators (`"z" | "empty" | "x" | "w" | "h"`,
+- **Vertex types** are the ZXW generators (`"z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and"`),
   see `src/lib/graph/vertex-types.ts`). `VERTEX_TYPES` is the single source
   of truth for shape/color/size consumed by both `VertexNode` and
   `VertexTypeMenu` — keep them in sync when adding/changing a type.
+
+### Label as phase (spider / box types)
+
+For `z`, `x`, `zbox`, `xbox` the vertex `label` carries **the phase
+expression**, not a free-form name. For `empty`, `w`, `h`, `and` the
+label is decoration only. The split is exposed via
+`isSpiderType(vertexType)` in `src/lib/graph/vertex-types.ts` — that's
+the single source of truth for "should this label be parsed as a
+phase?".
+
+- A label that is exactly `$...$` or `$$...$$` is rendered with KaTeX
+  (see `src/lib/label/renderLabel.ts`) and parsed as a phase by
+  `src/lib/phase/parser.ts`. Anything else renders as plain text.
+- An empty label on a spider means phase 0 (identity).
+- Phase grammar (v1, numeric only): numbers, `\pi`, `+ - * / ( )`,
+  unary minus / plus. Free variables (`\alpha`, `\beta`, …) are
+  errors in v1; Phase 6 introduces symbolic arithmetic.
+
+The Rust compute layer (Phase 3+) ports the same grammar so labels
+parse identically on both sides of the WASM boundary.
 
 ## Persistence & export gotchas
 
