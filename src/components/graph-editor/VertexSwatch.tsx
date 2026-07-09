@@ -23,7 +23,12 @@ export function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
   return (
     <div
       className={[
-        "h-5 w-5 shrink-0 flex item-center justify-center border-1",
+        // `border-1` from the previous version isn't a real Tailwind
+        // class — the visible border for non-triangle types comes
+        // from the conditional `border` below. Triangles are clipped
+        // to their silhouette so a CSS border on the box would draw
+        // outside the visible shape, hence the explicit skip.
+        "h-5 w-5 shrink-0 flex items-center justify-center",
         isTriangle ? "" : "border",
         shapeRadius,
         meta.className,
@@ -32,7 +37,13 @@ export function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
         .join(" ")}
       style={{ clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined }}
     >
-      <span className="text-justify">{meta.defaultText}</span>
+      {/* Render the type's default glyph (e.g. the And gate's SVG Λ)
+          when present, otherwise fall back to the default text.
+          `block h-full w-full` on the wrapper makes the SVG fill the
+          swatch uniformly; the text fallback is unaffected. */}
+      <span className="block h-full w-full">
+        {meta.glyph ?? meta.defaultText}
+      </span>
     </div>
   );
 }

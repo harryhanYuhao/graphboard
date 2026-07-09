@@ -15,7 +15,7 @@ import {
   OctagonX,
   Undo2,
   FolderInput,
-  FileDown,
+  FolderOutput,
   CircleQuestionMark
 } from "lucide-react";
 import { useStore } from "zustand";
@@ -159,7 +159,7 @@ export function GraphToolbar() {
           void importJson();
         }}
       >
-        <FileDown size={18} />
+        <FolderInput size={18} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -168,7 +168,7 @@ export function GraphToolbar() {
           void exportJson();
         }}
       >
-        <FolderInput size={18} />
+        <FolderOutput size={18} />
       </ToolbarButton>
 
       <ToolbarButton

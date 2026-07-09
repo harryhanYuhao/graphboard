@@ -100,6 +100,7 @@ function hydrateNode(
   viewById: Map<string, NodeView>,
 ): VertexNode {
   const view = viewById.get(graphNode.id);
+
   return {
     id: graphNode.id,
     type: "vertex",

@@ -61,8 +61,15 @@ export function VertexNode({
     .filter(Boolean)
     .join(" ");
 
-  // Size is applied via inline style
-  const dimension = data.label !== "" ? `${meta.size * 0.35}rem` : `${meta.size * 0.25}rem`;
+  // Size is applied via inline style. A vertex "has content" if it
+  // has a non-empty user label *or* a type-level default glyph
+  // (e.g. the And gate's SVG Λ). Without content, the body shrinks
+  // to the small size; with content, it grows to give the label /
+  // glyph room.
+  const hasContent = data.label !== "" || meta.glyph != null;
+  const dimension = hasContent
+    ? `${meta.size * 0.35}rem`
+    : `${meta.size * 0.25}rem`;
 
   const handleClassName = "!absolute !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !-rounded-full !border-0 !bg-transparent";
 
@@ -142,8 +149,18 @@ export function VertexNode({
             className="w-full bg-transparent text-center text-inherit outline-none"
             style={{ fontSize: "inherit" }}
           />
-        ) : (
+        ) : data.label ? (
+          // User has typed a custom label — show it. The type's
+          // default glyph is intentionally hidden in this state;
+          // clearing the label reveals the glyph again.
           <span>{data.label}</span>
+        ) : (
+          // No user label — show the type's default glyph (e.g. the
+          // And gate's SVG Λ) so the body has something inside.
+          // `h-full w-full` on the SVG lets it fill the body box
+          // uniformly regardless of the type's `size` or label
+          // length.
+          meta.glyph
         )}
       </div>
     </div>

@@ -4,7 +4,9 @@
 // how each one is drawn. Consumed by the vertex renderer (VertexNode) and the
 // add-vertex side menu (VertexTypeMenu) so shapes/colors stay in sync.
 
+import { createElement, type ReactNode } from "react";
 import type { VertexType } from "./types";
+import { AndGateGlyph } from "@/components/graph-editor/VertexGlyphs";
 
 type VertexShape = "circle" | "square" | "triangle";
 
@@ -19,7 +21,18 @@ export type VertexTypeMeta = {
   // Tailwind classes applied to the shape body (fill + text + border color).
   className: string;
 
+  // Default text content for the vertex body, used as the initial
+  // `VertexData.label` when a vertex of this type is created. The user
+  // can override this by typing a custom label.
   defaultText: string,
+
+  // Optional default visual glyph (e.g. an SVG) shown when the vertex
+  // label is empty. Used for types whose "default" interior isn't a
+  // font character (the And gate's Λ used to be — now an SVG, see
+  // VertexGlyphs.tsx). Glyphs render in addition to (not instead of)
+  // the type's color/shape, so they automatically pick up the
+  // `className` text color via `currentColor`.
+  glyph?: ReactNode,
 };
 
 // clip-path for the triangle body (also used for the menu swatch).
@@ -88,7 +101,13 @@ export const VERTEX_TYPES: VertexTypeMeta[] = [
     shape: "square",
     size: 4,
     className: "bg-white text-slate-900 border-grey-900 border-2 text-sm",
-    defaultText: "Λ"
+    defaultText: "",
+    // The And gate's interior is a logical-AND shape, drawn as an
+    // SVG (see VertexGlyphs.tsx) rather than the Λ font glyph. The
+    // font character is missing or visually inconsistent on systems
+    // without a font that ships the Greek block, so the gate used
+    // to render differently across machines.
+    glyph: createElement(AndGateGlyph),
   },
 ];
 
