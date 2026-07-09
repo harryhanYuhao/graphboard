@@ -11,23 +11,8 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { useGraphStore } from "./graph-store";
-import type { EditorMode, GraphEdge, VertexNode } from "@/lib/graph/types";
-
-function makeVertex(id: string, overrides: Partial<VertexNode> = {}): VertexNode {
-  return {
-    id,
-    type: "vertex",
-    position: { x: 0, y: 0 },
-    origin: [0.5, 0.5],
-    selected: false,
-    data: { label: "", vertexType: "z" },
-    ...overrides,
-  };
-}
-
-function makeEdge(id: string, source: string, target: string): GraphEdge {
-  return { id, source, target, type: "straight-center", selected: false };
-}
+import { EDGE_TYPES, type EditorMode } from "@/lib/graph/types";
+import { makeEdge, makeVertexWith as makeVertex } from "@/test-utils/factories";
 
 function resetStore() {
   useGraphStore.setState({
@@ -38,7 +23,7 @@ function resetStore() {
     hasHydrated: false,
     pendingEdgeSources: [],
     selectedVertexType: "z",
-    isConfirmDialogueOpen: false,
+    confirmDialogue: null,
     isHelpOpen: false,
     clipboard: null,
   });
@@ -110,7 +95,7 @@ describe("selectAll / clearSelection", () => {
     useGraphStore.setState({
       nodes: [makeVertex("a", { selected: true })],
       edges: [
-        { id: "e1", source: "a", target: "a", type: "straight-center", selected: true },
+        { id: "e1", source: "a", target: "a", type: EDGE_TYPES.straightCenter, selected: true },
       ],
     });
     useGraphStore.getState().clearSelection();

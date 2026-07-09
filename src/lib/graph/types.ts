@@ -5,6 +5,48 @@ import type { Edge, Node } from "@xyflow/react";
 // ZXW generators. Each type renders with a distinct shape and color.
 export type VertexType = "z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and";
 
+// ---- React Flow handle & edge identifiers ---------------------------------
+//
+// These string constants are the contract between the runtime edge layer
+// (`createGraphEdge` in operations.ts), the serializer (handle-id ↔ index
+// translation in serialization.ts), and the renderer (`VertexNode` and
+// `StraightCenterEdge`). Centralizing them here ensures a typo at one site
+// can't silently break edge routing at another.
+//
+// Numeric handle indices on the persisted side are documented in
+// `serialization.ts` (`handleIdToIndex` / `indexToHandleId`).
+
+// React Flow handle ids used on VertexNode. `center-source` /
+// `center-target` are the full-size transparent overlays at the body
+// center; `top` is the small visible dot that anchors the directional
+// W / And-gate target.
+export const HANDLE_IDS = {
+  centerSource: "center-source",
+  centerTarget: "center-target",
+  top: "top",
+} as const satisfies Record<string, string>;
+
+export type HandleId = (typeof HANDLE_IDS)[keyof typeof HANDLE_IDS];
+
+// React Flow edge type discriminator. Today there's only one
+// (`straight-center`); registering the constant here means future
+// renderer variants slot in without grepping for string literals.
+export const EDGE_TYPES = {
+  straightCenter: "straight-center",
+} as const satisfies Record<string, string>;
+
+export type EdgeType = (typeof EDGE_TYPES)[keyof typeof EDGE_TYPES];
+
+// ---- Persisted document identifiers ----------------------------------------
+//
+// Stable ids used by `createEmptyGraphDocument` and the export entry point
+// so the on-disk / on-the-wire payload is greppable without sprinkling
+// string literals across `serialization.ts`.
+export const PERSISTED_IDS = {
+  localDocument: "local-document",
+  exportedDocument: "exported-document",
+} as const;
+
 export type VertexData = {
   label: string;
   vertexType: VertexType;

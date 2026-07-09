@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, renderHook } from "@testing-library/react";
 import { useGraphStore } from "@/store/graph-store";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { makeVertex } from "@/test-utils/factories";
 
 // `useReactFlow` requires a `ReactFlowProvider` context which we don't
 // mount here. Mock just that one export, share the fitView spy via
@@ -78,8 +79,8 @@ describe("modifier-bearing shortcuts", () => {
   it("Ctrl/Cmd+A selects everything and preventDefaults", () => {
     useGraphStore.setState({
       nodes: [
-        { id: "a", type: "vertex", position: { x: 0, y: 0 }, origin: [0.5, 0.5], selected: false, data: { label: "", vertexType: "z" } },
-        { id: "b", type: "vertex", position: { x: 0, y: 0 }, origin: [0.5, 0.5], selected: false, data: { label: "", vertexType: "z" } },
+        makeVertex("a"),
+        makeVertex("b"),
       ],
     });
     renderHook(() => useKeyboardShortcuts());
@@ -111,7 +112,7 @@ describe("modifier-bearing shortcuts", () => {
   it("Ctrl+D triggers copySelected + paste", () => {
     useGraphStore.setState({
       nodes: [
-        { id: "a", type: "vertex", position: { x: 0, y: 0 }, origin: [0.5, 0.5], selected: true, data: { label: "", vertexType: "z" } },
+        makeVertex("a", { x: 0, y: 0 }, true),
       ],
     });
     renderHook(() => useKeyboardShortcuts());
@@ -213,8 +214,8 @@ describe("single-key shortcuts", () => {
   it("Delete deletes the selection", () => {
     useGraphStore.setState({
       nodes: [
-        { id: "a", type: "vertex", position: { x: 0, y: 0 }, origin: [0.5, 0.5], selected: true, data: { label: "", vertexType: "z" } },
-        { id: "b", type: "vertex", position: { x: 0, y: 0 }, origin: [0.5, 0.5], selected: false, data: { label: "", vertexType: "z" } },
+        makeVertex("a", { x: 0, y: 0 }, true),
+        makeVertex("b"),
       ],
     });
     renderHook(() => useKeyboardShortcuts());
@@ -226,7 +227,7 @@ describe("single-key shortcuts", () => {
   it("Backspace also deletes the selection", () => {
     useGraphStore.setState({
       nodes: [
-        { id: "a", type: "vertex", position: { x: 0, y: 0 }, origin: [0.5, 0.5], selected: true, data: { label: "", vertexType: "z" } },
+        makeVertex("a", { x: 0, y: 0 }, true),
       ],
     });
     renderHook(() => useKeyboardShortcuts());
@@ -253,7 +254,7 @@ describe("Escape ladder", () => {
     useGraphStore.setState({
       mode: "add-edge",
       nodes: [
-        { id: "a", type: "vertex", position: { x: 0, y: 0 }, origin: [0.5, 0.5], selected: true, data: { label: "", vertexType: "z" } },
+        makeVertex("a", { x: 0, y: 0 }, true),
       ],
     });
     renderHook(() => useKeyboardShortcuts());

@@ -1,3 +1,12 @@
+// src/components/graph-editor/ConfirmationDialog.tsx
+//
+// The store owns the dialogue state
+// (`confirmDialogue: ConfirmDialogueState | null`); this component
+// is purely presentational. 
+// Must be a client component because it uses React hooks 
+
+"use client";
+
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
@@ -83,7 +92,7 @@ export function ConfirmationDialog({
           >
             {title}
           </h2>
-          
+
           <p
             id="dialog-description"
             className="text-gray-600"
@@ -101,7 +110,7 @@ export function ConfirmationDialog({
           >
             {cancelText}
           </button>
-          
+
           <button
             ref={confirmRef}
             onClick={onConfirm}

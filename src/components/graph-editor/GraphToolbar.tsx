@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
-import type { EditorMode } from "@/lib/graph/types";
 
 function ToolbarButton(props: {
   active?: boolean;
@@ -70,10 +69,6 @@ export function GraphToolbar() {
   const canUndo = useStore(useGraphStore.temporal, (state) => state.pastStates.length > 0);
   const canRedo = useStore(useGraphStore.temporal, (state) => state.futureStates.length > 0);
 
-  const setEditorMode = (nextMode: EditorMode) => {
-    setMode(nextMode);
-  };
-
 
   return (
     <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
@@ -98,7 +93,7 @@ export function GraphToolbar() {
       <ToolbarButton
         title="Select (S)"
         active={mode === "select"}
-        onClick={() => setEditorMode("select")}
+        onClick={() => setMode("select")}
       >
         <MousePointer2 size={18} />
       </ToolbarButton>
@@ -106,7 +101,7 @@ export function GraphToolbar() {
       <ToolbarButton
         title="Add vertex (V)"
         active={mode === "add-vertex"}
-        onClick={() => setEditorMode("add-vertex")}
+        onClick={() => setMode("add-vertex")}
       >
         <PlusCircle size={18} />
       </ToolbarButton>
@@ -114,7 +109,7 @@ export function GraphToolbar() {
       <ToolbarButton
         title="Add edge (E)"
         active={mode === "add-edge"}
-        onClick={() => setEditorMode("add-edge")}
+        onClick={() => setMode("add-edge")}
       >
         <GitBranch size={18} />
       </ToolbarButton>

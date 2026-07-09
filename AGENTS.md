@@ -19,19 +19,30 @@ Uses **pnpm** (see `pnpm-workspace.yaml`).
 - `pnpm build` — production build into `.next/`
 - `pnpm start` — serve the production build
 - `pnpm lint` — ESLint (`eslint-config-next`, core-web-vitals + TypeScript)
+- `pnpm test` / `pnpm test:watch` / `pnpm test:ui` — vitest (jsdom env).
+  Pure-function helpers and store actions are covered; renderer
+  components have a thin test surface (snapshotting a styled body
+  pixel-for-pixel isn't worth the maintenance burden today).
 
-No test suite is configured. No dedicated typecheck script — `tsc` runs
-through `next build` and the VS Code TS SDK (`.vscode/settings.json`).
+Typecheck runs through `next build` and the VS Code TS SDK
+(`.vscode/settings.json`); no dedicated `typecheck` script.
 
 ## Layout
 
 - `src/app/` — Next.js App Router entry (`page.tsx` → `GraphEditor`, single page).
 - `src/components/graph-editor/` — editor UI (canvas, toolbar, custom node/edge).
 - `src/store/graph-store.ts` — Zustand store, single source of truth for graph state.
+- `src/store/selectors.ts` — pure selector functions over `GraphStore` state
+  (e.g. `selectSelectedNodeIds`, `hasSelection`).
 - `src/lib/graph/` — pure graph logic: `types.ts`, `operations.ts`
   (create/delete), `serialization.ts` (document + `localStorage`),
   `vertex-types.ts` (ZXW generator metadata).
+- `src/lib/hooks/` — small reusable React hooks (e.g. `useTrackedDraft`).
 - `src/lib/download.ts`, `src/lib/filename.ts` — JSON export helpers.
+- `src/test-utils/factories.ts` — shared `makeVertex` / `makeEdge`
+  factories for vitest. Use these in new tests so a future change
+  to the `VertexNode` / `GraphEdge` types surfaces here, not in
+  every test file.
 - `src/types/file-system-access.d.ts` — typings for the File System Access API.
 
 ## Architecture rules

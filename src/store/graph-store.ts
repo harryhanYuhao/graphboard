@@ -8,14 +8,15 @@ import {
 } from "@xyflow/react";
 import { create } from "zustand";
 import { temporal } from "zundo";
-import type {
-  EditorMode,
-  GraphEdge,
-  VertexNode,
-  VertexType,
+import {
+  PERSISTED_IDS,
+  type EditorMode,
+  type GraphEdge,
+  type VertexNode,
+  type VertexType,
 } from "@/lib/graph/types";
 import {
-  createGraphEdge,
+  computeVertexClick,
   createVertexNode,
   deleteSelectedElements,
   cloneSubgraphForClipboard,
@@ -23,8 +24,10 @@ import {
   getSelectedSubgraph,
   pasteSubgraph,
   selectAllElements,
+  type VertexClickModifiers,
 } from "@/lib/graph/operations";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/graph/vertex-types";
+import { selectSelectedNodeIds } from "@/store/selectors";
 import {
   createEmptyGraphDocument,
   hydrateDocument,
@@ -38,14 +41,16 @@ import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 
 import { toSafeFilename } from "@/lib/filename";
 
-// Modifier flags captured at click time and forwarded into handleVertexClick
-// so the store doesn't need to reach back into the DOM event.
-export type VertexClickModifiers = {
-  // Cmd (mac) or Ctrl (win/linux) — used to add to the pending source list
-  // instead of committing.
-  modifier: boolean;
-  // Shift — used to commit without clearing the pending source list.
-  shift: boolean;
+// One shape for the destructive-action confirmation dialog. `null`
+// means "no dialog open"; consumers should `confirmDialogue?.onConfirm`
+// rather than reading the action off the store directly.
+export type ConfirmDialogueState = {
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  buttonClassName: string;
+  onConfirm: () => void;
 };
 
 type GraphStore = {
@@ -60,17 +65,10 @@ type GraphStore = {
   pendingEdgeSources: string[];
   selectedVertexType: VertexType;
 
-  isConfirmDialogueOpen: boolean;
-  confirmDialogueTitle: string;
-  confirmDialogueMsg: string;
-  confirmDialogueConfirmText: string;
-  confirmDialogueCancelText: string;
-  confirmDialogueButtonClassName: string;
-  // Pending action the dialog will run when the user confirms. Defaults to a
-  // no-op so reads from the store are always safe (e.g. when the dialog is
-  // closed). This is *state*, not an action — it gets overwritten on every
-  // openConfirmDialogue call.
-  pendingConfirmAction: () => void;
+  // Destructive-action confirmation dialog. `null` when no dialog is
+  // open; the dialog component renders nothing when it receives a
+  // null/undefined `state` prop. See `ConfirmDialogueState` above.
+  confirmDialogue: ConfirmDialogueState | null;
 
   // Keyboard-shortcuts help dialog. Pure UI — no pending action — but kept
   // in the store so the global `?` keybinding and the toolbar button share
@@ -149,19 +147,77 @@ function partialize(state: GraphStore) {
   return { nodes, edges };
 }
 
-// Module-level stash for the pre-drag graph snapshot, so the drag-stop
-// handler can push it into the undo stack as a single entry.
-let preDragSnapshot: { nodes: VertexNode[]; edges: GraphEdge[] } | null = null;
+// Module-level stash for in-flight continuous-edit snapshots. Each
+// gesture (drag, property-panel slider, future colour picker, …) owns
+// its own controller so two overlapping gestures don't trample each
+// other's pre-state — see `makeGestureController` below.
+type GraphSnapshot = { nodes: VertexNode[]; edges: GraphEdge[] };
 
-// Module-level stash for the pre-panel-edit graph snapshot, so the
-// panel's continuous-edit guard (rotation slider today, possibly more
-// later) can collapse its many intermediate commits into one undo step.
-// Kept distinct from `preDragSnapshot` so the two gestures don't
-// trample each other's snapshot if they ever overlap.
-let preVertexPropertyEditSnapshot: {
-  nodes: VertexNode[];
-  edges: GraphEdge[];
-} | null = null;
+// Split a stream of React Flow change events into structural changes
+// (only `remove` today — future kinds may join) and visual-only changes
+// (everything else: dimension, position, select). Apply each kind with
+// the right undo policy:
+//   - structural: regular undo tracking; the user expects to be able
+//     to undo a delete.
+//   - visual: paused undo tracking; the user does not expect every
+//     drag tick or select toggle to land on the undo stack.
+//
+// Shared between `onNodesChange` and `onEdgesChange` so the two streams
+// always behave identically.
+function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
+  changes: C[];
+  current: T[];
+  apply: (changes: C[], current: T[]) => T[];
+  setSlice: (next: T[]) => void;
+}) {
+  const structuralChanges = params.changes.filter(
+    (c) => c.type === "remove",
+  );
+  const visualChanges = params.changes.filter(
+    (c) => c.type !== "remove",
+  );
+
+  if (visualChanges.length > 0) {
+    useGraphStore.temporal.getState().pause();
+    params.setSlice(params.apply(visualChanges, params.current));
+    useGraphStore.temporal.getState().resume();
+  }
+
+  if (structuralChanges.length > 0) {
+    params.setSlice(params.apply(structuralChanges, params.current));
+  }
+}
+
+// Owns one continuous-edit gesture's pause/snapshot bookkeeping. The
+// pattern mirrors React Flow's drag model: while the gesture is
+// active, the temporal store is paused (so intermediate commits
+// don't each create an undo entry); on end, the pre-gesture snapshot
+// is pushed into `pastStates` so undo restores to before the gesture
+// started.
+function makeGestureController() {
+  let snapshot: GraphSnapshot | null = null;
+
+  return {
+    begin: (capture: GraphSnapshot) => {
+      snapshot = capture;
+      useGraphStore.temporal.getState().pause();
+    },
+    end: () => {
+      const temporalState = useGraphStore.temporal.getState();
+      temporalState.resume();
+      if (snapshot) {
+        useGraphStore.temporal.setState({
+          pastStates: [...temporalState.pastStates, snapshot],
+          futureStates: [],
+        });
+      }
+      snapshot = null;
+    },
+  };
+}
+
+const dragGesture = makeGestureController();
+const vertexPropertyEditGesture = makeGestureController();
 
 export const useGraphStore = create<GraphStore>()(
   temporal(
@@ -175,13 +231,7 @@ export const useGraphStore = create<GraphStore>()(
       pendingEdgeSources: [],
       selectedVertexType: DEFAULT_VERTEX_TYPE,
 
-      isConfirmDialogueOpen: false,
-      confirmDialogueTitle: "",
-      confirmDialogueMsg: "",
-      confirmDialogueConfirmText: "Confirm",
-      confirmDialogueCancelText: "Cancel",
-      confirmDialogueButtonClassName: "bg-red-600 hover:bg-red-700",
-      pendingConfirmAction: () => { },
+      confirmDialogue: null,
 
       isHelpOpen: false,
 
@@ -213,9 +263,7 @@ export const useGraphStore = create<GraphStore>()(
           // Auto-promote currently-selected vertices into the pending source
           // list. Merge with anything already pending so toggling add-edge
           // off and back on preserves work-in-progress.
-          const selectedIds = get()
-            .nodes.filter((node) => node.selected)
-            .map((node) => node.id);
+          const selectedIds = selectSelectedNodeIds(get().nodes);
 
           const merged = Array.from(
             new Set([...get().pendingEdgeSources, ...selectedIds]),
@@ -234,55 +282,21 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       onNodesChange: (changes) => {
-        // Separate structural changes (remove) from visual-only changes
-        // (dimensions, select, position). Only structural changes should
-        // create undo snapshots; the others are side effects of rendering
-        // or user navigation, not meaningful graph edits.
-        const structuralChanges = changes.filter(
-          (c) => c.type === "remove",
-        );
-        const visualChanges = changes.filter(
-          (c) => c.type !== "remove",
-        );
-
-        // Apply visual changes without recording them in the undo stack.
-        if (visualChanges.length > 0) {
-          useGraphStore.temporal.getState().pause();
-          set({
-            nodes: applyNodeChanges(visualChanges, get().nodes),
-          });
-          useGraphStore.temporal.getState().resume();
-        }
-
-        // Apply structural changes with undo tracking.
-        if (structuralChanges.length > 0) {
-          set({
-            nodes: applyNodeChanges(structuralChanges, get().nodes),
-          });
-        }
+        applyReactiveFlowChanges({
+          changes,
+          current: get().nodes,
+          apply: applyNodeChanges,
+          setSlice: (nodes) => set({ nodes }),
+        });
       },
 
       onEdgesChange: (changes) => {
-        const structuralChanges = changes.filter(
-          (c) => c.type === "remove",
-        );
-        const visualChanges = changes.filter(
-          (c) => c.type !== "remove",
-        );
-
-        if (visualChanges.length > 0) {
-          useGraphStore.temporal.getState().pause();
-          set({
-            edges: applyEdgeChanges(visualChanges, get().edges),
-          });
-          useGraphStore.temporal.getState().resume();
-        }
-
-        if (structuralChanges.length > 0) {
-          set({
-            edges: applyEdgeChanges(structuralChanges, get().edges),
-          });
-        }
+        applyReactiveFlowChanges({
+          changes,
+          current: get().edges,
+          apply: applyEdgeChanges,
+          setSlice: (edges) => set({ edges }),
+        });
       },
 
       addVertexAt: (position) => {
@@ -294,91 +308,25 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       handleVertexClick: (vertexId, modifiers) => {
+        // `handleVertexClick` is only meaningful in add-edge mode —
+        // outside it the click belongs to React Flow's selection
+        // machinery and the store stays out of the way.
         const state = get();
-
         if (state.mode !== "add-edge") return;
 
-        const { pendingEdgeSources, nodes, edges } = state;
+        // The six-case dispatch lives in `computeVertexClick` (see
+        // operations.ts). It returns a partial state patch or `null`
+        // for no-op clicks (e.g. modifier-click on an already-pending
+        // vertex).
+        const patch = computeVertexClick({
+          vertexId,
+          modifiers,
+          pendingEdgeSources: state.pendingEdgeSources,
+          nodes: state.nodes,
+          edges: state.edges,
+        });
 
-        // Cmd/Ctrl click: add this vertex to the pending source list
-        // (idempotent — if it's already there, the wrong gesture was used
-        // to toggle it off and there's nothing to do).
-        if (modifiers.modifier) {
-          if (pendingEdgeSources.includes(vertexId)) return;
-
-          set({
-            pendingEdgeSources: [...pendingEdgeSources, vertexId],
-          });
-
-          return;
-        }
-
-        // Existing source→target pairs we won't recreate. Includes self-loops
-        // (a→a) — there's no special-case carve-out.
-        const existingPairs = new Set(
-          edges.map((edge) => `${edge.source}->${edge.target}`),
-        );
-
-        const buildFanOut = (clearAfter: boolean) => {
-          const newEdges = pendingEdgeSources
-            .filter(
-              (sourceId) =>
-                !existingPairs.has(`${sourceId}->${vertexId}`),
-            )
-            // Pass `nodes` so the new edge can pick the right target
-            // handle id ("top" for directional vertices, otherwise the
-            // centered target). Without it, createGraphEdge falls back
-            // to "center-target" — safe but suboptimal for W/And.
-            .map((sourceId) => createGraphEdge(sourceId, vertexId, nodes));
-
-          // Nothing added and nothing to clear — leave state alone.
-          if (newEdges.length === 0 && !clearAfter) return;
-
-          if (clearAfter) {
-            set({
-              edges:
-                newEdges.length > 0 ? [...edges, ...newEdges] : edges,
-              pendingEdgeSources: [],
-              nodes: nodes.map((node) => ({ ...node, selected: false })),
-            });
-          } else {
-            set({ edges: [...edges, ...newEdges] });
-          }
-        };
-
-        // Shift click: connect every pending source to this target but
-        // keep the pending list intact so the user can broadcast the same
-        // sources to multiple targets. Empty pending degrades to the
-        // plain-click-on-empty behavior of starting a fresh pending list.
-        if (modifiers.shift) {
-          if (pendingEdgeSources.length === 0) {
-            set({ pendingEdgeSources: [vertexId] });
-            return;
-          }
-
-          buildFanOut(false);
-          return;
-        }
-
-        // Plain click.
-        if (pendingEdgeSources.length === 0) {
-          set({ pendingEdgeSources: [vertexId] });
-          return;
-        }
-
-        // Click on a vertex already in the pending list: toggle it off.
-        if (pendingEdgeSources.includes(vertexId)) {
-          set({
-            pendingEdgeSources: pendingEdgeSources.filter(
-              (id) => id !== vertexId,
-            ),
-          });
-          return;
-        }
-
-        // Plain click with a fresh target: commit the fan-out and reset
-        // both the pending list and any selection.
-        buildFanOut(true);
+        if (patch) set(patch);
       },
 
       clearPendingEdgeSources: () => {
@@ -391,9 +339,7 @@ export const useGraphStore = create<GraphStore>()(
       // boxed nodes by the time this fires, so we can read them straight
       // from the store. Duplicates and already-pending IDs are deduped.
       addSelectedToPendingSources: () => {
-        const selectedIds = get()
-          .nodes.filter((node) => node.selected)
-          .map((node) => node.id);
+        const selectedIds = selectSelectedNodeIds(get().nodes);
 
         if (selectedIds.length === 0) return;
 
@@ -502,7 +448,7 @@ export const useGraphStore = create<GraphStore>()(
         // `updatedAt` is stamped inside `saveGraphDocument` so callers
         // don't have to keep clocks in sync.
         saveGraphDocument({
-          id: "local-document",
+          id: PERSISTED_IDS.localDocument,
           title: state.title,
           nodes: state.nodes,
           edges: state.edges,
@@ -628,7 +574,7 @@ export const useGraphStore = create<GraphStore>()(
           nodes: hydrated.nodes,
           edges: hydrated.edges,
           mode: "select",
-          isConfirmDialogueOpen: false,
+          confirmDialogue: null,
           isHelpOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
@@ -653,25 +599,22 @@ export const useGraphStore = create<GraphStore>()(
         confirmButtonClassName = "bg-red-600 hover:bg-red-700",
       }) => {
         set({
-          isConfirmDialogueOpen: true,
-          confirmDialogueTitle: title,
-          confirmDialogueMsg: message,
-          confirmDialogueConfirmText: confirmText,
-          confirmDialogueCancelText: cancelText,
-          confirmDialogueButtonClassName: confirmButtonClassName,
-          pendingConfirmAction: onConfirm,
+          confirmDialogue: {
+            title,
+            message,
+            confirmText,
+            cancelText,
+            buttonClassName: confirmButtonClassName,
+            onConfirm,
+          },
         });
       },
 
       closeConfirmDialogue: () => {
-        set({
-          isConfirmDialogueOpen: false,
-          confirmDialogueTitle: "",
-          confirmDialogueMsg: "",
-          // Reset to a no-op so stray reads after close don't re-fire the
-          // last action.
-          pendingConfirmAction: () => { },
-        });
+        // Drop the whole dialogue in one go. Reads after close see null
+        // and components that key off the dialogue cleanly render their
+        // closed state.
+        set({ confirmDialogue: null });
       },
 
       openHelp: () => {
@@ -694,44 +637,24 @@ export const useGraphStore = create<GraphStore>()(
       onNodeDragStart: () => {
         // Snapshot the pre-drag graph state, then pause tracking so
         // intermediate drag positions are not recorded in the undo stack.
-        preDragSnapshot = partialize(get());
-        useGraphStore.temporal.getState().pause();
+        dragGesture.begin(partialize(get()));
       },
 
       onNodeDragStop: () => {
-        const temporalState = useGraphStore.temporal.getState();
-
-        // Resume tracking first so future operations are recorded normally.
-        temporalState.resume();
-
-        // Push the pre-drag snapshot into pastStates so that undo
-        // correctly restores the vertex positions from before the drag.
-        if (preDragSnapshot) {
-          useGraphStore.temporal.setState({
-            pastStates: [...temporalState.pastStates, preDragSnapshot],
-            futureStates: [],
-          });
-          preDragSnapshot = null;
-        }
+        // Resume tracking and push the pre-drag snapshot into pastStates
+        // so undo restores vertex positions to before the drag.
+        dragGesture.end();
       },
 
       onVertexPropertyEditStart: () => {
-        preVertexPropertyEditSnapshot = partialize(get());
-        useGraphStore.temporal.getState().pause();
+        // Same idea as onNodeDragStart, but for the property panel's
+        // continuous edits (rotation slider today; future pickers reuse
+        // this without a new code path).
+        vertexPropertyEditGesture.begin(partialize(get()));
       },
 
       onVertexPropertyEditEnd: () => {
-        const temporalState = useGraphStore.temporal.getState();
-
-        temporalState.resume();
-
-        if (preVertexPropertyEditSnapshot) {
-          useGraphStore.temporal.setState({
-            pastStates: [...temporalState.pastStates, preVertexPropertyEditSnapshot],
-            futureStates: [],
-          });
-          preVertexPropertyEditSnapshot = null;
-        }
+        vertexPropertyEditGesture.end();
       },
     }),
     {

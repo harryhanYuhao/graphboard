@@ -14,6 +14,9 @@
 
 import {
   CURRENT_SCHEMA_VERSION,
+  EDGE_TYPES,
+  HANDLE_IDS,
+  PERSISTED_IDS,
   type EdgeView,
   type GraphDocument,
   type GraphEdge,
@@ -150,9 +153,10 @@ function hydrateEdge(
       vertexTypeById.get(graphEdge.target),
       "target",
     ),
-    // Renderer-level discriminator; "straight-center" is the only edge
-    // type today, but it stays in the runtime layer.
-    type: "straight-center",
+    // Renderer-level discriminator; today there is only one edge type
+    // (`EDGE_TYPES.straightCenter`), but the constant lives here so
+    // future variants slot in without grepping for string literals.
+    type: EDGE_TYPES.straightCenter,
   };
 }
 
@@ -186,14 +190,15 @@ export function hydrateDocument(doc: GraphDocument): HydratedDocument {
 // values.
 
 // Convert a runtime handle id to the persisted numeric index. The
-// "bottom" handle (always a source-type slot) is index 1; everything
-// else (target-type slots, including the directional "top" dot) is
-// index 0. Unknown / absent handles return undefined so the field
-// gets omitted from the JSON output entirely — the deserializer then
-// falls back to its per-role default.
+// bottom handle (always a source-type slot, HANDLE_IDS.centerSource)
+// is index 1; everything else (target-type slots, including the
+// directional HANDLE_IDS.top dot) is index 0. Unknown / absent
+// handles return undefined so the field gets omitted from the JSON
+// output entirely — the deserializer then falls back to its
+// per-role default.
 function handleIdToIndex(handleId: string | null | undefined): number | undefined {
   if (handleId == null) return undefined;
-  if (handleId === "center-source") return 1;
+  if (handleId === HANDLE_IDS.centerSource) return 1;
   return 0;
 }
 
@@ -202,12 +207,14 @@ function handleIdToIndex(handleId: string | null | undefined): number | undefine
 // target) and the vertex's directional flag.
 //
 // Defaults (when the field is absent on disk):
-//   - source side → bottom slot (1) → "center-source". This matches
-//     the user-facing rule for W / And gate ("default shall be the
-//     bottom handle"); for non-directional vertices both handles are
-//     at the body center anyway, so the choice is cosmetic.
-//   - target side → top slot (0) → "top" for directional vertices
-//     (the visible input dot), "center-target" otherwise.
+//   - source side → bottom slot (1) → HANDLE_IDS.centerSource. This
+//     matches the user-facing rule for W / And gate ("default shall
+//     be the bottom handle"); for non-directional vertices both
+//     handles are at the body center anyway, so the choice is
+//     cosmetic.
+//   - target side → top slot (0) → HANDLE_IDS.top for directional
+//     vertices (the visible input dot), HANDLE_IDS.centerTarget
+//     otherwise.
 function indexToHandleId(
   index: number | undefined,
   vertexType: VertexType | undefined,
@@ -219,16 +226,16 @@ function indexToHandleId(
   if (role === "source") {
     // Source side is always the bottom slot, regardless of vertex
     // type — the data leaves from there.
-    return "center-source";
+    return HANDLE_IDS.centerSource;
   }
 
   // Target side: top slot, with the directional case picking the
-  // visible "top" handle id. Unknown indices fall through to the
-  // default.
+  // visible HANDLE_IDS.top handle id. Unknown indices fall through
+  // to the default.
   if (index === undefined || index === 0) {
-    return isDirectional ? "top" : "center-target";
+    return isDirectional ? HANDLE_IDS.top : HANDLE_IDS.centerTarget;
   }
-  return "center-target";
+  return HANDLE_IDS.centerTarget;
 }
 
 // ---- Public API ------------------------------------------------------------
@@ -238,7 +245,7 @@ export function createEmptyGraphDocument(): GraphDocument {
 
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    id: "local-document",
+    id: PERSISTED_IDS.localDocument,
     title: "Untitled Graph",
     graph: { nodes: [], edges: [] },
     view: { nodes: [], edges: [] },
@@ -316,7 +323,7 @@ export function exportGraphJson(params: {
   const now = new Date().toISOString();
 
   const document = projectDocument({
-    id: "exported-document",
+    id: PERSISTED_IDS.exportedDocument,
     title: params.title,
     nodes: params.nodes,
     edges: params.edges,

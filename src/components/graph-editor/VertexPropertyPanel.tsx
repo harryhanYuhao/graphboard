@@ -22,6 +22,7 @@ import { useGraphStore } from "@/store/graph-store";
 import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
 import { normalizeRotation } from "@/lib/graph/serialization";
 import type { VertexType } from "@/lib/graph/types";
+import { useTrackedDraft } from "@/lib/hooks/useTrackedDraft";
 import { VertexSwatch } from "./VertexSwatch";
 
 export function VertexPropertyPanel() {
@@ -44,50 +45,37 @@ export function VertexPropertyPanel() {
     return selected.length === 1 ? selected[0] : null;
   }, [nodes]);
 
-  // Local draft for the label input so we don't push every keystroke into
-  // the store (which would clutter the undo stack). Tracked alongside the
-  // vertex id and the last-known label so we can reset on selection switch
-  // or when an external edit (undo, programmatic change) updates the label.
-  const [labelDraft, setLabelDraft] = useState("");
-  const [trackedId, setTrackedId] = useState<string | null>(null);
-  const [trackedLabel, setTrackedLabel] = useState<string | null>(null);
+  // Local drafts so we don't push every keystroke / slider tick into
+  // the store (which would clutter the undo stack). Each draft tracks
+  // the source value + the selected vertex's id, so a switch to a
+  // different vertex — even one with the same label / rotation —
+  // resets the draft.
+  const [labelDraft, setLabelDraft, labelDidReset] = useTrackedDraft({
+    source: selectedVertex?.data.label ?? "",
+    trackKey: selectedVertex?.id ?? null,
+  });
 
-  // Rotation draft + tracker. Same pattern as the label: local copy so
-  // we don't push every keystroke / slider tick into the store, with a
-  // tracked value to detect external changes (undo, etc.).
-  const [rotationDraft, setRotationDraft] = useState(0);
-  const [trackedRotation, setTrackedRotation] = useState<number | null>(null);
   // True for the duration of a slider drag, so the drift check below
   // doesn't reset the draft on every tick. The store IS being updated
   // on every tick (for live preview) — the draft is too — so resetting
   // it would be a no-op write but it would also force a `return null`
   // on this render and cause a brief mount/unmount flicker of the
-  // panel. State (not a ref) because the drift check needs to read it
-  // during render, which the react-hooks/refs rule forbids for refs.
+  // panel. State (not a ref) because the hook reads it during render.
   const [isDraggingRotationSlider, setIsDraggingRotationSlider] =
     useState(false);
 
-  // Reset the drafts when the tracked vertex id / label / rotation drifts
-  // from the store. Done during render (not in an effect) — the React-
-  // recommended replacement for `useEffect` that just mirrors props into
-  // local state. See https://react.dev/learn/you-might-not-need-an-effect
-  if (
-    selectedVertex &&
-    (trackedId !== selectedVertex.id ||
-      trackedLabel !== selectedVertex.data.label ||
-      (trackedRotation !== selectedVertex.rotation &&
-        !isDraggingRotationSlider))
-  ) {
-    setTrackedId(selectedVertex.id);
-    setTrackedLabel(selectedVertex.data.label);
-    setLabelDraft(selectedVertex.data.label);
-    setTrackedRotation(selectedVertex.rotation);
-    setRotationDraft(selectedVertex.rotation);
-    // Bail out of this render; the next render uses the fresh state.
-    return null;
-  }
+  const [rotationDraft, setRotationDraft, rotationDidReset] = useTrackedDraft({
+    source: selectedVertex?.rotation ?? 0,
+    trackKey: selectedVertex?.id ?? null,
+    skipDriftCheck: isDraggingRotationSlider,
+  });
 
   if (!selectedVertex) return null;
+
+  // Either draft just queued a reset this render — bail so the panel
+  // doesn't flash stale data for one frame before the reset applies
+  // on the next render.
+  if (labelDidReset || rotationDidReset) return null;
 
   const commitLabel = () => {
     const trimmed = labelDraft.trim();

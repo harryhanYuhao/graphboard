@@ -11,31 +11,21 @@ import {
 } from "@/lib/graph/vertex-types";
 
 export function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
-  const isTriangle = meta.shape === "triangle";
-
-  const shapeRadius =
-    meta.shape === "circle"
-      ? "rounded-full"
-      : meta.shape === "square"
-        ? "rounded-md"
-        : "";
-
   return (
     <div
       className={[
-        // `border-1` from the previous version isn't a real Tailwind
-        // class — the visible border for non-triangle types comes
-        // from the conditional `border` below. Triangles are clipped
-        // to their silhouette so a CSS border on the box would draw
-        // outside the visible shape, hence the explicit skip.
+        // The visible border for non-triangle types comes from the
+        // conditional `border` below. Triangles are clipped to their
+        // silhouette so a CSS border on the box would draw outside
+        // the visible shape, hence the explicit skip.
         "h-5 w-5 shrink-0 flex items-center justify-center",
-        isTriangle ? "" : "border",
-        shapeRadius,
+        meta.isTriangle ? "" : "border",
+        meta.radiusClass,
         meta.className,
       ]
         .filter(Boolean)
         .join(" ")}
-      style={{ clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined }}
+      style={{ clipPath: meta.isTriangle ? TRIANGLE_CLIP_PATH : undefined }}
     >
       {/* Render the type's default glyph (e.g. the And gate's SVG Λ)
           when present, otherwise fall back to the default text.

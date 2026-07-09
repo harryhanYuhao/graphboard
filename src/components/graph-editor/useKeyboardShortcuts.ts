@@ -17,6 +17,7 @@
 import { useEffect } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { useGraphStore } from "@/store/graph-store";
+import { hasSelection } from "@/store/selectors";
 import type { VertexType } from "@/lib/graph/types";
 import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
 
@@ -137,10 +138,7 @@ export function useKeyboardShortcuts(): void {
             clearPendingEdgeSources();
             return;
           }
-          const hasSelection =
-            state.nodes.some((node) => node.selected) ||
-            state.edges.some((edge) => edge.selected);
-          if (hasSelection) {
+          if (hasSelection(state.nodes, state.edges)) {
             clearSelection();
             return;
           }

@@ -13,6 +13,7 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useShallow } from "zustand/react/shallow";
 
 import { VertexNode } from "./VertexNode";
 import { GraphToolbar } from "./GraphToolbar";
@@ -22,14 +23,32 @@ import { ConfirmationDialog } from "./ConfirmationDialog";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useGraphStore } from "@/store/graph-store";
-import type { GraphEdge, VertexNode as VertexNodeType } from "@/lib/graph/types";
+import {
+  EDGE_TYPES,
+  type GraphEdge,
+  type VertexNode as VertexNodeType,
+} from "@/lib/graph/types";
 import { StraightCenterEdge } from "./StraightCenterEdge";
 
 function GraphEditorInner() {
-  const nodes = useGraphStore((state) => state.nodes);
-  const edges = useGraphStore((state) => state.edges);
-  const mode = useGraphStore((state) => state.mode);
-  const hasHydrated = useGraphStore((state) => state.hasHydrated);
+  // Group state slices by concern so the component re-renders only
+  // when a slice it actually reads changes. `useShallow` makes the
+  // multi-field bundle a single shallow comparison; the actions
+  // below are stable references and don't need shallow.
+  const { nodes, edges, mode, hasHydrated } = useGraphStore(
+    useShallow((state) => ({
+      nodes: state.nodes,
+      edges: state.edges,
+      mode: state.mode,
+      hasHydrated: state.hasHydrated,
+    })),
+  );
+  const { confirmDialogue, isHelpOpen } = useGraphStore(
+    useShallow((state) => ({
+      confirmDialogue: state.confirmDialogue,
+      isHelpOpen: state.isHelpOpen,
+    })),
+  );
 
   const hydrate = useGraphStore((state) => state.hydrate);
   const onNodesChange = useGraphStore((state) => state.onNodesChange);
@@ -43,20 +62,8 @@ function GraphEditorInner() {
   );
   const onNodeDragStart = useGraphStore((state) => state.onNodeDragStart);
   const onNodeDragStop = useGraphStore((state) => state.onNodeDragStop);
-
-  const isConfirmOpen = useGraphStore((state) => state.isConfirmDialogueOpen);
-  const confirmTitle = useGraphStore((state) => state.confirmDialogueTitle);
-  const confirmMessage = useGraphStore((state) => state.confirmDialogueMsg);
-  const confirmText = useGraphStore((state) => state.confirmDialogueConfirmText);
-  const cancelText = useGraphStore((state) => state.confirmDialogueCancelText);
-  const confirmButtonClassName = useGraphStore(
-    (state) => state.confirmDialogueButtonClassName,
-  );
-  const onConfirm = useGraphStore((state) => state.pendingConfirmAction);
-
+  const handleVertexClick = useGraphStore((state) => state.handleVertexClick);
   const closeConfirm = useGraphStore((state) => state.closeConfirmDialogue);
-
-  const isHelpOpen = useGraphStore((state) => state.isHelpOpen);
   const closeHelp = useGraphStore((state) => state.closeHelp);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
@@ -69,12 +76,11 @@ function GraphEditorInner() {
   );
   const edgeTypes = useMemo<EdgeTypes>(
     () => ({
-      "straight-center": StraightCenterEdge,
+      [EDGE_TYPES.straightCenter]: StraightCenterEdge,
     }),
     [],
   );
 
-  const handleVertexClick = useGraphStore((state) => state.handleVertexClick);
   const handleNodeClick = useCallback(
     (event: React.MouseEvent, node: VertexNodeType) => {
       if (mode !== "add-edge") return;
@@ -178,13 +184,21 @@ function GraphEditorInner() {
       <VertexPropertyPanel />
 
       <ConfirmationDialog
-        isOpen={isConfirmOpen}
-        title={confirmTitle}
-        message={confirmMessage}
-        confirmText={confirmText}
-        cancelText={cancelText}
-        confirmButtonClassName={confirmButtonClassName}
-        onConfirm={onConfirm}
+        isOpen={confirmDialogue !== null}
+        title={confirmDialogue?.title ?? ""}
+        message={confirmDialogue?.message ?? ""}
+        confirmText={confirmDialogue?.confirmText ?? "Confirm"}
+        cancelText={confirmDialogue?.cancelText ?? "Cancel"}
+        confirmButtonClassName={
+          confirmDialogue?.buttonClassName ?? "bg-red-600 hover:bg-red-700"
+        }
+        onConfirm={() => {
+          // Snapshot the action before closing 
+          // closeConfirmDialogue nulls out the dialogue, 
+          const action = confirmDialogue?.onConfirm;
+          closeConfirm();
+          action?.();
+        }}
         onCancel={closeConfirm}
       />
 

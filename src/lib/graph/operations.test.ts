@@ -17,31 +17,8 @@ import {
   pasteSubgraph,
   selectAllElements,
 } from "./operations";
-import type { GraphEdge, VertexNode } from "./types";
-
-function makeVertex(
-  id: string,
-  position: { x: number; y: number },
-  selected = false,
-): VertexNode {
-  return {
-    id,
-    type: "vertex",
-    position,
-    origin: [0.5, 0.5],
-    selected,
-    data: { label: "", vertexType: "z" },
-  };
-}
-
-function makeEdge(
-  id: string,
-  source: string,
-  target: string,
-  selected = false,
-): GraphEdge {
-  return { id, source, target, type: "straight-center", selected };
-}
+import { EDGE_TYPES, HANDLE_IDS, type VertexNode } from "./types";
+import { makeEdge, makeVertex } from "@/test-utils/factories";
 
 describe("createVertexNode", () => {
   it("produces a node with a unique id and the given position", () => {
@@ -67,11 +44,11 @@ describe("createGraphEdge", () => {
     const edge = createGraphEdge("a", "b");
     expect(edge.source).toBe("a");
     expect(edge.target).toBe("b");
-    expect(edge.type).toBe("straight-center");
+    expect(edge.type).toBe(EDGE_TYPES.straightCenter);
     expect(edge.id).toBeTruthy();
-    // Source side is always the bottom slot ("center-source") — the
-    // side edges leave from, regardless of vertex type.
-    expect(edge.sourceHandle).toBe("center-source");
+    // Source side is always the bottom slot (HANDLE_IDS.centerSource)
+    // — the side edges leave from, regardless of vertex type.
+    expect(edge.sourceHandle).toBe(HANDLE_IDS.centerSource);
     // Without a node list we can't pick the right target handle, so
     // it stays unset and the serializer falls back to the default.
     expect(edge.targetHandle).toBeUndefined();
@@ -83,7 +60,7 @@ describe("createGraphEdge", () => {
       { ...makeVertex("b", { x: 0, y: 0 }), data: { label: "", vertexType: "and" } },
     ];
     const edge = createGraphEdge("a", "b", nodes);
-    expect(edge.targetHandle).toBe("top");
+    expect(edge.targetHandle).toBe(HANDLE_IDS.top);
   });
 
   it("falls back to the centered target handle for non-directional targets", () => {
@@ -92,7 +69,7 @@ describe("createGraphEdge", () => {
       { ...makeVertex("b", { x: 0, y: 0 }), data: { label: "", vertexType: "x" } },
     ];
     const edge = createGraphEdge("a", "b", nodes);
-    expect(edge.targetHandle).toBe("center-target");
+    expect(edge.targetHandle).toBe(HANDLE_IDS.centerTarget);
   });
 });
 

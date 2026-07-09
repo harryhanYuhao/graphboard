@@ -1,7 +1,7 @@
 "use client";
 
 import { BaseEdge, type EdgeProps, useInternalNode } from "@xyflow/react";
-import { VERTEX_TYPE_MAP } from "@/lib/graph/vertex-types";
+import { isDirectionalVertex } from "@/lib/graph/vertex-types";
 import type { VertexType } from "@/lib/graph/types";
 
 // Compute the connection point for one endpoint of an edge. Directional
@@ -22,8 +22,7 @@ function getEndpointPoint(
   // we only care about the vertexType discriminator.
   const data = node.data as { vertexType?: VertexType } | undefined;
   const vertexType = data?.vertexType;
-  const meta = vertexType ? VERTEX_TYPE_MAP[vertexType] : undefined;
-  const isDirectional = meta?.directional === true;
+  const isDirectional = vertexType ? isDirectionalVertex(vertexType) : false;
 
   if (isDirectional && role === "target") {
     // Directional target endpoint sits on the node's top edge — the

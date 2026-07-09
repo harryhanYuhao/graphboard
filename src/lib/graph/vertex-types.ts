@@ -10,7 +10,38 @@ import { AndGateGlyph } from "@/components/graph-editor/VertexGlyphs";
 
 type VertexShape = "circle" | "square" | "triangle";
 
-export type VertexTypeMeta = {
+// `true` for vertex types that are asymmetric — one input at the
+// top, many outputs at the bottom. The renderer (VertexNode) and
+// the edge component (StraightCenterEdge) both key off this flag;
+// symmetric types behave as before (edges meet at the body center).
+// Centralised here so the loose `meta.directional === true` checks
+// in those two files become a single named function call.
+export function isDirectionalVertex(vertexType: VertexType): boolean {
+  return VERTEX_TYPE_MAP[vertexType]?.directional === true;
+}
+
+// Tailwind class for the corner radius matching each shape. The
+// "empty" string for triangles is intentional — triangles are
+// clipped to their silhouette, so a CSS border-radius on the box
+// wouldn't follow the visible edges anyway. `rounded-sm` is kept
+// for squares (instead of the `rounded-md` originally used in the
+// swatch) so the live editor renders the same shape it always has.
+function shapeRadiusClass(shape: VertexShape): string {
+  switch (shape) {
+    case "circle":
+      return "rounded-full";
+    case "square":
+      return "rounded-sm";
+    case "triangle":
+      return "";
+  }
+}
+
+// Base shape metadata declared inline per type in `VERTEX_TYPES`.
+// `radiusClass` and `isTriangle` are derived from `shape` so they
+// can't drift between the entry and the consumers — see the
+// `enrich` step below.
+type VertexTypeMetaBase = {
   type: VertexType;
   label: string;
 
@@ -45,10 +76,21 @@ export type VertexTypeMeta = {
   directional?: boolean,
 };
 
+export type VertexTypeMeta = VertexTypeMetaBase & {
+  // Derived from `shape` at module load. Pre-computed so the live
+  // vertex and the type-menu swatch can never disagree on the
+  // rounding class.
+  radiusClass: string;
+  // Convenience boolean — replaces the
+  // `meta.shape === "triangle"` checks scattered across
+  // VertexNode / VertexSwatch.
+  isTriangle: boolean;
+};
+
 // clip-path for the triangle body (also used for the menu swatch).
 export const TRIANGLE_CLIP_PATH = "polygon(50% 0%, 0% 100%, 100% 100%)";
 
-export const VERTEX_TYPES: VertexTypeMeta[] = [
+const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
   {
     type: "zbox",
     label: "Z box",
@@ -128,6 +170,16 @@ export const VERTEX_TYPES: VertexTypeMeta[] = [
     directional: true,
   },
 ];
+
+function enrich(base: VertexTypeMetaBase): VertexTypeMeta {
+  return {
+    ...base,
+    radiusClass: shapeRadiusClass(base.shape),
+    isTriangle: base.shape === "triangle",
+  };
+}
+
+export const VERTEX_TYPES: VertexTypeMeta[] = RAW_VERTEX_TYPES.map(enrich);
 
 export const VERTEX_TYPE_MAP: Record<VertexType, VertexTypeMeta> =
   Object.fromEntries(VERTEX_TYPES.map((meta) => [meta.type, meta])) as Record<
