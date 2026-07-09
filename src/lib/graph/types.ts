@@ -18,7 +18,13 @@ export type VertexData = {
 // `measured`, `internals.positionAbsolute`, etc. They are never persisted —
 // see the persistence layer below.
 
-export type VertexNode = Node<VertexData, "vertex">;
+// Runtime `VertexNode` carries a top-level `rotation` field. The field
+// lives outside `data` deliberately: rotation is a visual concern and
+// belongs in the view slice (see `NodeView` below), not in `VertexData`
+// which is part of the graph slice the future compute layer consumes.
+export type VertexNode = Node<VertexData, "vertex"> & {
+  rotation: number;
+};
 
 export type GraphEdge = Edge;
 
@@ -63,11 +69,18 @@ export type GraphSlice = {
   edges: GraphEdgeRecord[];
 };
 
-// View entry for a node — position today, more visual fields later.
-// Future additions: rotation, group/parent id, per-node style overrides.
+// View entry for a node — position and rotation today; more visual fields
+// later. Future additions: group/parent id, per-node style overrides.
+//
+// `rotation` is in degrees, applied to the vertex body via CSS transform.
+// It is *visual only* — the future compute layer (Rust/WASM) reads
+// `graph` and never sees this field. Optional in persisted documents
+// for backward compatibility with pre-rotation saves; missing values
+// hydrate to 0.
 export type NodeView = {
   id: string;
   position: { x: number; y: number };
+  rotation?: number;
 };
 
 // View entry for an edge — placeholder for future curvature, label position,

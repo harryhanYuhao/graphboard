@@ -102,6 +102,7 @@ type GraphStore = {
   addSelectedToPendingSources: () => void;
   updateVertexLabel: (nodeId: string, label: string) => void;
   updateVertexType: (nodeId: string, vertexType: VertexType) => void;
+  updateVertexRotation: (nodeId: string, rotation: number) => void;
   copySelected: () => void;
   paste: () => void;
   cutSelected: () => void;
@@ -132,6 +133,15 @@ type GraphStore = {
 
   onNodeDragStart: () => void;
   onNodeDragStop: () => void;
+
+  // Bounding box for any continuous "live preview" edit in the property
+  // panel (e.g. dragging the rotation slider). The pattern mirrors
+  // onNodeDragStart/Stop: pause the undo stack during the gesture, then
+  // inject a single pre-gesture snapshot so undo restores to before the
+  // edit, not to some intermediate drag step. Generic on purpose — a
+  // future color picker or scale slider can reuse it.
+  onVertexPropertyEditStart: () => void;
+  onVertexPropertyEditEnd: () => void;
 };
 
 function partialize(state: GraphStore) {
@@ -142,6 +152,16 @@ function partialize(state: GraphStore) {
 // Module-level stash for the pre-drag graph snapshot, so the drag-stop
 // handler can push it into the undo stack as a single entry.
 let preDragSnapshot: { nodes: VertexNode[]; edges: GraphEdge[] } | null = null;
+
+// Module-level stash for the pre-panel-edit graph snapshot, so the
+// panel's continuous-edit guard (rotation slider today, possibly more
+// later) can collapse its many intermediate commits into one undo step.
+// Kept distinct from `preDragSnapshot` so the two gestures don't
+// trample each other's snapshot if they ever overlap.
+let preVertexPropertyEditSnapshot: {
+  nodes: VertexNode[];
+  edges: GraphEdge[];
+} | null = null;
 
 export const useGraphStore = create<GraphStore>()(
   temporal(
@@ -583,6 +603,14 @@ const existingPairs = new Set(
         });
       },
 
+      updateVertexRotation: (nodeId, rotation) => {
+        set({
+          nodes: get().nodes.map((node) =>
+            node.id === nodeId ? { ...node, rotation } : node,
+          ),
+        });
+      },
+
       reset: () => {
         // Empty v2 doc → hydrate to runtime shape for the store. We don't
         // reuse the persisted `nodes`/`edges` directly because after the
@@ -680,6 +708,25 @@ const existingPairs = new Set(
             futureStates: [],
           });
           preDragSnapshot = null;
+        }
+      },
+
+      onVertexPropertyEditStart: () => {
+        preVertexPropertyEditSnapshot = partialize(get());
+        useGraphStore.temporal.getState().pause();
+      },
+
+      onVertexPropertyEditEnd: () => {
+        const temporalState = useGraphStore.temporal.getState();
+
+        temporalState.resume();
+
+        if (preVertexPropertyEditSnapshot) {
+          useGraphStore.temporal.setState({
+            pastStates: [...temporalState.pastStates, preVertexPropertyEditSnapshot],
+            futureStates: [],
+          });
+          preVertexPropertyEditSnapshot = null;
         }
       },
     }),

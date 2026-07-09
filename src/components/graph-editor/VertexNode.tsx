@@ -20,6 +20,13 @@ export function VertexNode({
     (state) => state.pendingEdgeSources,
   );
   const updateVertexLabel = useGraphStore((state) => state.updateVertexLabel);
+  // `rotation` lives on the runtime node (not in `data` — it's a view
+  // field), so we read it through the store with a per-id selector.
+  // Returning a primitive keeps re-renders cheap: this component only
+  // re-renders when *its* rotation actually changes.
+  const rotation = useGraphStore(
+    (state) => state.nodes.find((node) => node.id === id)?.rotation ?? 0,
+  );
 
   const isPendingEdgeSource = pendingEdgeSources.includes(id);
 
@@ -107,6 +114,13 @@ export function VertexNode({
           height: dimension,
           clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined,
           filter: highlightFilter,
+          // Rotate the body around its own center. Handles stay at the
+          // (un-rotated) top/bottom edges so connection points don't
+          // move — typical graph-editor convention for a visual
+          // rotation of the decoration without disturbing the
+          // graph-theoretic connection geometry.
+          transform: rotation ? `rotate(${rotation}deg)` : undefined,
+          transformOrigin: "center",
         }}
       >
         {isEditing ? (

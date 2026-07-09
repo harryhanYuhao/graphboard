@@ -16,6 +16,7 @@ export function createVertexNode(
     type: "vertex",
     position,
     origin: [0.5, 0.5],
+    rotation: 0,
     data: {
       label: VERTEX_TYPE_MAP[vertexType]?.defaultText ?? "",
       vertexType,

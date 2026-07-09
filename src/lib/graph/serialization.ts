@@ -25,6 +25,17 @@ import {
 
 const LOCAL_STORAGE_KEY = "graph-board-document";
 
+// Collapse any angle (possibly negative or > 360) to the canonical
+// [0, 360) range. 360 and 0 are equivalent visually, but 0 is the
+// shorter representation. Used at both commit and projection so disk
+// and live state stay in the same canonical form.
+export function normalizeRotation(rotation: number): number {
+  if (!Number.isFinite(rotation)) return 0;
+  const wrapped = ((rotation % 360) + 360) % 360;
+  // Snap 359.999... that came from % float math back to 0.
+  return wrapped === 360 ? 0 : wrapped;
+}
+
 // ---- Projection (runtime → persisted) -------------------------------------
 
 export type ProjectInput = {
@@ -41,7 +52,15 @@ export function projectDocument(input: ProjectInput): GraphDocument {
   const viewNodes: NodeView[] = [];
   for (const node of input.nodes) {
     graphNodes.push({ id: node.id, data: node.data });
-    viewNodes.push({ id: node.id, position: node.position });
+    // `rotation` is normalized to the [0, 360) range so persisted
+    // documents don't accumulate drift from the user's typed values
+    // (e.g. typing 720 collapses to 0). Mirrors the panel's commit
+    // behavior, so the disk format is always canonical.
+    viewNodes.push({
+      id: node.id,
+      position: node.position,
+      rotation: normalizeRotation(node.rotation ?? 0),
+    });
   }
 
   const graphEdges: GraphEdgeRecord[] = [];
@@ -85,6 +104,9 @@ function hydrateNode(
     id: graphNode.id,
     type: "vertex",
     position: view?.position ?? { x: 0, y: 0 },
+    // Pre-rotation documents have no `rotation` view entry — treat
+    // absence as 0 so existing saved graphs hydrate unchanged.
+    rotation: normalizeRotation(view?.rotation ?? 0),
     data: graphNode.data,
     // `origin` pins React Flow's handle anchor at the node center so
     // connections snap there. Renderer-level detail, not persisted.

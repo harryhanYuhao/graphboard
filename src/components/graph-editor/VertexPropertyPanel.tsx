@@ -1,8 +1,8 @@
 // src/components/graph-editor/VertexPropertyPanel.tsx
 //
 // Floating popover shown when exactly one vertex is selected. Lets the user
-// change the vertex's type (ZXW generator) and edit its label without
-// needing to double-click the vertex body.
+// change the vertex's type (ZXW generator), edit its label, and adjust its
+// rotation without needing to double-click the vertex body.
 //
 // Positioning: anchored to the vertex's flow-space position transformed
 // into screen space via React Flow's `flowToScreenPosition`. Re-anchors
@@ -20,6 +20,7 @@ import { useMemo, useState } from "react";
 import { useReactFlow, useViewport } from "@xyflow/react";
 import { useGraphStore } from "@/store/graph-store";
 import { VERTEX_TYPES, VERTEX_TYPE_MAP } from "@/lib/graph/vertex-types";
+import { normalizeRotation } from "@/lib/graph/serialization";
 import type { VertexType } from "@/lib/graph/types";
 import { VertexSwatch } from "./VertexSwatch";
 
@@ -41,6 +42,15 @@ export function VertexPropertyPanel() {
   const nodes = useGraphStore((state) => state.nodes);
   const updateVertexLabel = useGraphStore((state) => state.updateVertexLabel);
   const updateVertexType = useGraphStore((state) => state.updateVertexType);
+  const updateVertexRotation = useGraphStore(
+    (state) => state.updateVertexRotation,
+  );
+  const onVertexPropertyEditStart = useGraphStore(
+    (state) => state.onVertexPropertyEditStart,
+  );
+  const onVertexPropertyEditEnd = useGraphStore(
+    (state) => state.onVertexPropertyEditEnd,
+  );
   const { flowToScreenPosition } = useReactFlow();
   // Subscribe to viewport so the panel re-anchors on pan/zoom. The hook
   // re-renders on transform changes; we only read it for the side effect.
@@ -72,18 +82,37 @@ export function VertexPropertyPanel() {
   const [trackedId, setTrackedId] = useState<string | null>(null);
   const [trackedLabel, setTrackedLabel] = useState<string | null>(null);
 
-  // Reset the draft when the tracked vertex id or underlying label drifts
+  // Rotation draft + tracker. Same pattern as the label: local copy so
+  // we don't push every keystroke / slider tick into the store, with a
+  // tracked value to detect external changes (undo, etc.).
+  const [rotationDraft, setRotationDraft] = useState(0);
+  const [trackedRotation, setTrackedRotation] = useState<number | null>(null);
+  // True for the duration of a slider drag, so the drift check below
+  // doesn't reset the draft on every tick. The store IS being updated
+  // on every tick (for live preview) — the draft is too — so resetting
+  // it would be a no-op write but it would also force a `return null`
+  // on this render and cause a brief mount/unmount flicker of the
+  // panel. State (not a ref) because the drift check needs to read it
+  // during render, which the react-hooks/refs rule forbids for refs.
+  const [isDraggingRotationSlider, setIsDraggingRotationSlider] =
+    useState(false);
+
+  // Reset the drafts when the tracked vertex id / label / rotation drifts
   // from the store. Done during render (not in an effect) — the React-
   // recommended replacement for `useEffect` that just mirrors props into
   // local state. See https://react.dev/learn/you-might-not-need-an-effect
   if (
     selectedVertex &&
     (trackedId !== selectedVertex.id ||
-      trackedLabel !== selectedVertex.data.label)
+      trackedLabel !== selectedVertex.data.label ||
+      (trackedRotation !== selectedVertex.rotation &&
+        !isDraggingRotationSlider))
   ) {
     setTrackedId(selectedVertex.id);
     setTrackedLabel(selectedVertex.data.label);
     setLabelDraft(selectedVertex.data.label);
+    setTrackedRotation(selectedVertex.rotation);
+    setRotationDraft(selectedVertex.rotation);
     // Bail out of this render; the next render uses the fresh state.
     return null;
   }
@@ -103,6 +132,35 @@ export function VertexPropertyPanel() {
     if (next !== selectedVertex.data.vertexType) {
       updateVertexType(selectedVertex.id, next);
     }
+  };
+
+  // Commit a rotation value to the store and canonicalize the local
+  // draft to the normalized form (e.g. user typed 720 → input shows 0
+  // after commit, canvas stays at 0°). The value is passed in rather
+  // than read from `rotationDraft` to dodge stale-closure hazards
+  // when this is called from a slider onChange that just set the draft.
+  const commitRotation = (value: number) => {
+    if (!Number.isFinite(value)) {
+      setRotationDraft(selectedVertex.rotation);
+      return;
+    }
+
+    const normalized = normalizeRotation(value);
+
+    if (Math.abs(normalized - selectedVertex.rotation) > 0.001) {
+      updateVertexRotation(selectedVertex.id, normalized);
+    }
+
+    if (value !== normalized) {
+      setRotationDraft(normalized);
+    }
+  };
+
+  const handleResetRotation = () => {
+    if (selectedVertex.rotation !== 0) {
+      updateVertexRotation(selectedVertex.id, 0);
+    }
+    setRotationDraft(0);
   };
 
   return (
@@ -172,6 +230,71 @@ export function VertexPropertyPanel() {
             }}
             placeholder="Label"
             className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
+          />
+        </div>
+
+        {/* Rotation — number input (precise) + slider (gestural) + reset.
+            Stored in the view slice, not the graph slice (see types.ts).
+            Slider drag is wrapped in a pause/resume so the many
+            intermediate commits during a drag collapse into one undo
+            step — same trick the canvas uses for node dragging. */}
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="mb-1 flex items-center justify-between">
+            <label className="block text-xs text-slate-600">Rotation</label>
+            <button
+              type="button"
+              onClick={handleResetRotation}
+              className="text-[11px] text-slate-500 hover:text-slate-900"
+            >
+              Reset
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              step={1}
+              value={Number.isFinite(rotationDraft) ? rotationDraft : ""}
+              onChange={(event) => setRotationDraft(Number(event.target.value))}
+              onBlur={() => commitRotation(rotationDraft)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  (event.target as HTMLInputElement).blur();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setRotationDraft(selectedVertex.rotation);
+                  (event.target as HTMLInputElement).blur();
+                }
+              }}
+              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
+            />
+            <span className="text-xs text-slate-500">°</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={360}
+            step={1}
+            value={Number.isFinite(rotationDraft) ? rotationDraft : 0}
+            // Pointer capture keeps pointerup firing on the slider even
+            // if the cursor leaves the bounds mid-drag — without this
+            // a fast drag past the edge would leak a paused temporal.
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setIsDraggingRotationSlider(true);
+              onVertexPropertyEditStart();
+            }}
+            onPointerUp={(event) => {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+              setIsDraggingRotationSlider(false);
+              onVertexPropertyEditEnd();
+            }}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setRotationDraft(next);
+              commitRotation(next);
+            }}
+            className="mt-2 w-full accent-slate-700"
           />
         </div>
       </div>
