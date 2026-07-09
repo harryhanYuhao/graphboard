@@ -157,53 +157,75 @@ export function VertexNode({
       )}
 
       <div
-        className={className}
         style={{
+          // The filter lives on this wrapper rather than the body
+          // so the drop-shadow is computed against the body's
+          // *clipped* silhouette (the triangle for W). When filter
+          // and clip-path sit on the same element, the CSS spec
+          // applies the filter first and the clip-path second —
+          // meaning the shadow is cast around the full rectangle and
+          // almost everything outside the triangle gets clipped away
+          // before reaching the page. Splitting them onto a wrapper
+          // puts the clip-path "before" the filter in the rendering
+          // pipeline (parent renders its children first, then the
+          // parent's filter sees the already-clipped result), so the
+          // shadow follows the actual visible shape. For non-triangle
+          // vertices this is a no-op: the body has no clip-path, so
+          // the wrapper's filter sees the same content the body
+          // would have.
           width: dimension,
           height: dimension,
-          clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined,
           filter: highlightFilter,
-          // Rotate the body around its own center. Handles stay at the
-          // (un-rotated) top/bottom edges so connection points don't
-          // move — typical graph-editor convention for a visual
-          // rotation of the decoration without disturbing the
-          // graph-theoretic connection geometry.
-          transform: rotation ? `rotate(${rotation}deg)` : undefined,
-          transformOrigin: "center",
         }}
       >
-        {isEditing ? (
-          <input
-            ref={inputRef}
-            autoFocus
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                inputRef.current?.blur();
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                cancelEdit();
-              }
-            }}
-            className="w-full bg-transparent text-center text-inherit outline-none"
-            style={{ fontSize: "inherit" }}
-          />
-        ) : data.label ? (
-          // User has typed a custom label — show it. The type's
-          // default glyph is intentionally hidden in this state;
-          // clearing the label reveals the glyph again.
-          <span>{data.label}</span>
-        ) : (
-          // No user label — show the type's default glyph (e.g. the
-          // And gate's SVG Λ) so the body has something inside.
-          // `h-full w-full` on the SVG lets it fill the body box
-          // uniformly regardless of the type's `size` or label
-          // length.
-          meta.glyph
-        )}
+        <div
+          className={className}
+          style={{
+            width: "100%",
+            height: "100%",
+            clipPath: isTriangle ? TRIANGLE_CLIP_PATH : undefined,
+            // Rotate the body around its own center. Handles stay at the
+            // (un-rotated) top/bottom edges so connection points don't
+            // move — typical graph-editor convention for a visual
+            // rotation of the decoration without disturbing the
+            // graph-theoretic connection geometry.
+            transform: rotation ? `rotate(${rotation}deg)` : undefined,
+            transformOrigin: "center",
+          }}
+        >
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  inputRef.current?.blur();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                }
+              }}
+              className="w-full bg-transparent text-center text-inherit outline-none"
+              style={{ fontSize: "inherit" }}
+            />
+          ) : data.label ? (
+            // User has typed a custom label — show it. The type's
+            // default glyph is intentionally hidden in this state;
+            // clearing the label reveals the glyph again.
+            <span>{data.label}</span>
+          ) : (
+            // No user label — show the type's default glyph (e.g. the
+            // And gate's SVG Λ) so the body has something inside.
+            // `h-full w-full` on the SVG lets it fill the body box
+            // uniformly regardless of the type's `size` or label
+            // length.
+            meta.glyph
+          )}
+        </div>
       </div>
     </div>
   );
