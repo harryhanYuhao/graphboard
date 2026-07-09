@@ -130,12 +130,13 @@ describe("modifier-bearing shortcuts", () => {
   });
 
   it("Ctrl+S calls save and preventDefaults", () => {
-    // Stub the implementation: the real save() writes to localStorage,
-    // which throws under jsdom if `localStorage` isn't on the global
-    // (which can happen intermittently across test isolation boundaries
-    // in vitest). The browser swallows event-listener throws silently,
-    // so without this stub the spy assertion would still pass while
-    // vitest catches the throw as an unhandled error.
+    // The real `save()` writes to localStorage. We stub it so the
+    // assertion below is about the *dispatch*, not about whether the
+    // store correctly wrote a JSON document to disk (that's covered
+    // by `serialization.test.ts` and `graph-store.test.ts`'s save/
+    // hydrate round-trip). The browser swallows event-listener
+    // throws silently, so without this stub the spy assertion would
+    // still pass while vitest caught the throw as an unhandled error.
     const saveSpy = vi
       .spyOn(useGraphStore.getState(), "save")
       .mockImplementation(() => {});
@@ -370,5 +371,154 @@ describe("modifier-bearing keys outside the known set", () => {
     window.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+// ---- Coverage for shortcuts not exercised by the original file ----
+
+describe("Cmd/Ctrl+C (copy) / Cmd+V (paste) / Cmd+X (cut)", () => {
+  function fireMod(key: string, shift = false) {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      ctrlKey: true,
+      shiftKey: shift,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+    return event;
+  }
+
+  it("Ctrl+C fills the clipboard without changing the canvas", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { x: 0, y: 0 }, true),
+        makeVertex("b"),
+      ],
+    });
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = fireMod("c");
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(useGraphStore.getState().nodes).toHaveLength(2);
+    expect(useGraphStore.getState().clipboard?.nodes).toHaveLength(1);
+  });
+
+  it("Ctrl+V pastes the clipboard onto the canvas", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { x: 0, y: 0 }, true)],
+      clipboard: {
+        nodes: [makeVertex("a")],
+        edges: [],
+        pasteCount: 0,
+      },
+    });
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = fireMod("v");
+
+    expect(event.defaultPrevented).toBe(true);
+    // Original + pasted copy → 2 nodes.
+    expect(useGraphStore.getState().nodes).toHaveLength(2);
+  });
+
+  it("Ctrl+X cuts: removes the selection and fills the clipboard", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { x: 0, y: 0 }, true),
+        makeVertex("b"),
+      ],
+    });
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = fireMod("x");
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["b"]);
+    expect(useGraphStore.getState().clipboard?.nodes.map((n) => n.id)).toEqual([
+      "a",
+    ]);
+  });
+
+  it("does not handle Ctrl+Shift+C / V / X (those are not bound)", () => {
+    // The hook treats those keys (with shift) as out-of-set and
+    // leaves them alone — shift modifies the gesture for `z` and `y`
+    // but is meaningless for the clipboard shortcuts.
+    const c = fireMod("c", true);
+    const v = fireMod("v", true);
+    const x = fireMod("x", true);
+    expect(c.defaultPrevented).toBe(false);
+    expect(v.defaultPrevented).toBe(false);
+    expect(x.defaultPrevented).toBe(false);
+  });
+});
+
+describe("Cmd/Ctrl+Y (redo alternative)", () => {
+  it("Ctrl+Y calls redo and preventDefaults", () => {
+    const redoSpy = vi.spyOn(useGraphStore.temporal.getState(), "redo");
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "y",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(redoSpy).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    redoSpy.mockRestore();
+  });
+
+  it("Cmd+Y also calls redo on macOS-style modifier", () => {
+    const redoSpy = vi.spyOn(useGraphStore.temporal.getState(), "redo");
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "y",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(redoSpy).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    redoSpy.mockRestore();
+  });
+});
+
+describe("Ctrl+Z without shift does not trigger redo", () => {
+  it("plain Ctrl+Z calls undo, not redo", () => {
+    const undoSpy = vi.spyOn(useGraphStore.temporal.getState(), "undo");
+    const redoSpy = vi.spyOn(useGraphStore.temporal.getState(), "redo");
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "z",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(undoSpy).toHaveBeenCalledTimes(1);
+    expect(redoSpy).not.toHaveBeenCalled();
+    undoSpy.mockRestore();
+    redoSpy.mockRestore();
+  });
+});
+
+describe("vertex-type shortcut outside add-vertex mode does not match", () => {
+  it("press '5' in select mode is a no-op", () => {
+    // The number-key branch is gated on mode === "add-vertex", so any
+    // other mode swallows the key silently.
+    useGraphStore.setState({ mode: "select", selectedVertexType: "z" });
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(document.body, { key: "5" });
+    expect(useGraphStore.getState().selectedVertexType).toBe("z");
   });
 });

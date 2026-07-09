@@ -339,3 +339,278 @@ describe("isStateEmpty", () => {
     expect(useGraphStore.getState().isStateEmpty()).toBe(false);
   });
 });
+
+// ---- New coverage: actions added since the original test file ----
+
+describe("setVertexType", () => {
+  it.each<[EditorMode]>([["z"], ["x"], ["w"], ["h"]])(
+    "updates selectedVertexType to '%s'",
+    (next) => {
+      useGraphStore.getState().setVertexType(next);
+      expect(useGraphStore.getState().selectedVertexType).toBe(next);
+    },
+  );
+});
+
+describe("updateVertexRotation", () => {
+  it("changes only the targeted node's rotation", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { rotation: 0 }), makeVertex("b", { rotation: 0 })],
+    });
+    useGraphStore.getState().updateVertexRotation("a", 45);
+    const nodes = useGraphStore.getState().nodes;
+    expect(nodes[0].rotation).toBe(45);
+    expect(nodes[1].rotation).toBe(0);
+  });
+
+  it("leaves other vertex fields untouched", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { rotation: 10, data: { label: "hi", vertexType: "z" } })],
+    });
+    useGraphStore.getState().updateVertexRotation("a", 90);
+    const node = useGraphStore.getState().nodes[0];
+    expect(node.data).toEqual({ label: "hi", vertexType: "z" });
+    expect(node.position).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("confirmDialogue open/close", () => {
+  it("openConfirmDialogue stores a full dialogue state", () => {
+    const onConfirm = () => {};
+    useGraphStore.getState().openConfirmDialogue({
+      title: "Delete?",
+      message: "This will remove the vertex.",
+      onConfirm,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      confirmButtonClassName: "bg-red-600",
+    });
+    const dialogue = useGraphStore.getState().confirmDialogue;
+    expect(dialogue).toEqual({
+      title: "Delete?",
+      message: "This will remove the vertex.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      buttonClassName: "bg-red-600",
+      onConfirm,
+    });
+  });
+
+  it("openConfirmDialogue uses sensible defaults for optional fields", () => {
+    useGraphStore.getState().openConfirmDialogue({
+      title: "Delete?",
+      message: "...",
+      onConfirm: () => {},
+    });
+    const dialogue = useGraphStore.getState().confirmDialogue!;
+    expect(dialogue.confirmText).toBe("Confirm");
+    expect(dialogue.cancelText).toBe("Cancel");
+    expect(dialogue.buttonClassName).toBe("bg-red-600 hover:bg-red-700");
+  });
+
+  it("closeConfirmDialogue drops the entire dialogue in one go", () => {
+    useGraphStore.getState().openConfirmDialogue({
+      title: "X",
+      message: "y",
+      onConfirm: () => {},
+    });
+    useGraphStore.getState().closeConfirmDialogue();
+    expect(useGraphStore.getState().confirmDialogue).toBeNull();
+  });
+
+  it("calling onConfirm runs the supplied closure", () => {
+    let called = 0;
+    useGraphStore.getState().openConfirmDialogue({
+      title: "X",
+      message: "y",
+      onConfirm: () => {
+        called++;
+      },
+    });
+    useGraphStore.getState().confirmDialogue!.onConfirm();
+    expect(called).toBe(1);
+  });
+});
+
+describe("save / hydrate round-trip via localStorage", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("save writes a v1-shape document to localStorage", () => {
+    useGraphStore.setState({
+      title: "Persisted",
+      nodes: [makeVertex("a", { x: 10, y: 20 })],
+      edges: [],
+    });
+    useGraphStore.getState().save();
+
+    const raw = localStorage.getItem("graph-board-document");
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.title).toBe("Persisted");
+    expect(parsed.graph.nodes).toHaveLength(1);
+    expect(parsed.graph.nodes[0].id).toBe("a");
+  });
+
+  it("hydrate restores nodes, edges, title, and flips hasHydrated", () => {
+    // Seed localStorage directly so we don't depend on save() here.
+    localStorage.setItem(
+      "graph-board-document",
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "local-document",
+        title: "From disk",
+        graph: {
+          nodes: [{ id: "x", data: { label: "lbl", vertexType: "z" } }],
+          edges: [],
+        },
+        view: { nodes: [{ id: "x", position: { x: 5, y: 7 } }], edges: [] },
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      }),
+    );
+
+    useGraphStore.getState().hydrate();
+    const state = useGraphStore.getState();
+    expect(state.title).toBe("From disk");
+    expect(state.nodes).toHaveLength(1);
+    expect(state.nodes[0].id).toBe("x");
+    expect(state.nodes[0].position).toEqual({ x: 5, y: 7 });
+    expect(state.hasHydrated).toBe(true);
+  });
+});
+
+describe("reset", () => {
+  it("clears nodes/edges, resets mode, and persists the empty doc", () => {
+    localStorage.clear();
+    useGraphStore.setState({
+      title: "Busy graph",
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdge("e1", "a", "b")],
+      mode: "add-edge",
+      pendingEdgeSources: ["a"],
+      clipboard: { nodes: [], edges: [], pasteCount: 0 },
+      isHelpOpen: true,
+      confirmDialogue: { title: "x", message: "y", confirmText: "c", cancelText: "x", buttonClassName: "z", onConfirm: () => {} },
+    });
+
+    useGraphStore.getState().reset();
+
+    const state = useGraphStore.getState();
+    expect(state.nodes).toEqual([]);
+    expect(state.edges).toEqual([]);
+    expect(state.mode).toBe("select");
+    expect(state.pendingEdgeSources).toEqual([]);
+    expect(state.clipboard).toBeNull();
+    expect(state.isHelpOpen).toBe(false);
+    expect(state.confirmDialogue).toBeNull();
+    expect(state.title).toBe("Untitled Graph");
+    // Reset writes the empty doc so a refresh keeps the cleared state.
+    expect(localStorage.getItem("graph-board-document")).not.toBeNull();
+  });
+});
+
+describe("onNodesChange / onEdgesChange (visual vs structural split)", () => {
+  it("applies a 'select' change without recording it in the undo stack", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a")] });
+    const pastBefore = useGraphStore.temporal.getState().pastStates.length;
+    useGraphStore.getState().onNodesChange([{ id: "a", type: "select", selected: true }]);
+    const pastAfter = useGraphStore.temporal.getState().pastStates.length;
+    expect(useGraphStore.getState().nodes[0].selected).toBe(true);
+    expect(pastAfter).toBe(pastBefore);
+  });
+
+  it("applies a 'position' change without recording it in the undo stack", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
+    const pastBefore = useGraphStore.temporal.getState().pastStates.length;
+    useGraphStore
+      .getState()
+      .onNodesChange([{ id: "a", type: "position", position: { x: 100, y: 100 } }]);
+    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 100, y: 100 });
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(pastBefore);
+  });
+
+  it("records 'remove' changes in the undo stack", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a"), makeVertex("b")] });
+    const pastBefore = useGraphStore.temporal.getState().pastStates.length;
+    useGraphStore.getState().onNodesChange([{ id: "a", type: "remove" }]);
+    expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["b"]);
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(pastBefore + 1);
+  });
+
+  it("handles a mixed batch (visual + structural) correctly", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a"), makeVertex("b")] });
+    useGraphStore.getState().onNodesChange([
+      { id: "a", type: "select", selected: true },
+      { id: "b", type: "remove" },
+    ]);
+    const { nodes } = useGraphStore.getState();
+    expect(nodes.map((n) => n.id)).toEqual(["a"]);
+    expect(nodes[0].selected).toBe(true);
+  });
+
+  it("'select' on edges also bypasses the undo stack", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdge("e1", "a", "b")],
+    });
+    const pastBefore = useGraphStore.temporal.getState().pastStates.length;
+    useGraphStore
+      .getState()
+      .onEdgesChange([{ id: "e1", type: "select", selected: true }]);
+    expect(useGraphStore.getState().edges[0].selected).toBe(true);
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(pastBefore);
+  });
+});
+
+describe("drag gesture (onNodeDragStart/Stop)", () => {
+  it("pauses the temporal store during the drag and pushes the pre-drag snapshot on stop", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { position: { x: 0, y: 0 } }),
+        makeVertex("b", { position: { x: 50, y: 0 } }),
+      ],
+      edges: [],
+    });
+    // The setState above already pushed one undo entry — capture the
+    // baseline so we can assert the *delta*, not an absolute count.
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+
+    useGraphStore.getState().onNodeDragStart();
+    // While the drag is active, applying visual changes should not
+    // land on the undo stack — they live in the future until stop.
+    useGraphStore
+      .getState()
+      .onNodesChange([{ id: "a", type: "position", position: { x: 100, y: 100 } }]);
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
+
+    useGraphStore.getState().onNodeDragStop();
+    // Stop injects the pre-drag snapshot so undo restores the
+    // original positions.
+    const pastAfter = useGraphStore.temporal.getState().pastStates;
+    expect(pastAfter.length).toBe(baseline + 1);
+    expect(pastAfter[pastAfter.length - 1].nodes.map((n) => n.position)).toEqual([
+      { x: 0, y: 0 },
+      { x: 50, y: 0 },
+    ]);
+  });
+});
+
+describe("vertex-property-edit gesture (onVertexPropertyEditStart/End)", () => {
+  it("snapshots pre-edit state and pushes it on end (same trick as drag)", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { rotation: 0 })],
+    });
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+
+    useGraphStore.getState().onVertexPropertyEditStart();
+    useGraphStore.getState().updateVertexRotation("a", 45);
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
+
+    useGraphStore.getState().onVertexPropertyEditEnd();
+    const pastAfter = useGraphStore.temporal.getState().pastStates;
+    expect(pastAfter.length).toBe(baseline + 1);
+    expect(pastAfter[pastAfter.length - 1].nodes[0].rotation).toBe(0);
+  });
+});

@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   clearAllSelections,
   cloneSubgraphForClipboard,
+  computeVertexClick,
   createGraphEdge,
   createVertexNode,
   deleteSelectedElements,
@@ -231,5 +232,217 @@ describe("selectAllElements / clearAllSelections", () => {
     const result = selectAllElements(allSelected);
     expect(result.nodes.every((n) => n.selected)).toBe(true);
     expect(result.edges.every((e) => e.selected)).toBe(true);
+  });
+});
+
+// ---- computeVertexClick ---------------------------------------------------
+//
+// The click dispatcher. Six mutually-exclusive cases; the store
+// integration tests cover the happy paths, but the per-case unit tests
+// below nail down the edge behavior (no-op on already-pending modifier
+// click, empty fan-out, selection cleared on commit, etc.) that the
+// store would otherwise only exercise end-to-end.
+
+describe("computeVertexClick", () => {
+  const baseNodes = (): VertexNode[] => [
+    makeVertex("a", { x: 0, y: 0 }),
+    makeVertex("b", { x: 50, y: 0 }),
+  ];
+
+  describe("(1) modifier click", () => {
+    it("appends the vertex to pending sources", () => {
+      const result = computeVertexClick({
+        vertexId: "a",
+        modifiers: { modifier: true, shift: false },
+        pendingEdgeSources: [],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result).toEqual({ pendingEdgeSources: ["a"] });
+    });
+
+    it("returns null when the vertex is already pending (no-op)", () => {
+      // Modifier-click is for adding, not removing. Removing is the
+      // plain-click case. A no-op here keeps the keyboard/mouse
+      // gesture set consistent: only the un-modified click toggles.
+      const result = computeVertexClick({
+        vertexId: "a",
+        modifiers: { modifier: true, shift: false },
+        pendingEdgeSources: ["a"],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result).toBeNull();
+    });
+
+    it("does not create an edge", () => {
+      const result = computeVertexClick({
+        vertexId: "b",
+        modifiers: { modifier: true, shift: false },
+        pendingEdgeSources: ["a"],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result?.edges).toBeUndefined();
+    });
+  });
+
+  describe("(2/3) first click with empty pending", () => {
+    it("plain click seeds pending with the vertex", () => {
+      const result = computeVertexClick({
+        vertexId: "a",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: [],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result).toEqual({ pendingEdgeSources: ["a"] });
+    });
+
+    it("shift click also seeds pending (then the user can fan out)", () => {
+      const result = computeVertexClick({
+        vertexId: "a",
+        modifiers: { modifier: false, shift: true },
+        pendingEdgeSources: [],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result).toEqual({ pendingEdgeSources: ["a"] });
+    });
+  });
+
+  describe("(4) plain click on already-pending vertex", () => {
+    it("toggles the vertex out of pending sources", () => {
+      const result = computeVertexClick({
+        vertexId: "a",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: ["a", "b"],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result).toEqual({ pendingEdgeSources: ["b"] });
+    });
+
+    it("shift click falls through to fan-out instead of toggling", () => {
+      // Shift+click on a pending vertex must still produce edges —
+      // otherwise shift would be a toggle-removal gesture too.
+      const result = computeVertexClick({
+        vertexId: "a",
+        modifiers: { modifier: false, shift: true },
+        pendingEdgeSources: ["a", "b"],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result?.edges?.length).toBe(2);
+      expect(result?.pendingEdgeSources).toBeUndefined();
+    });
+  });
+
+  describe("(5) shift click with non-empty pending", () => {
+    it("fans out edges and keeps pending sources intact", () => {
+      const result = computeVertexClick({
+        vertexId: "c",
+        modifiers: { modifier: false, shift: true },
+        pendingEdgeSources: ["a", "b"],
+        nodes: [...baseNodes(), makeVertex("c", { x: 100, y: 0 })],
+        edges: [],
+      });
+      expect(result?.edges).toHaveLength(2);
+      expect(result?.pendingEdgeSources).toBeUndefined();
+    });
+
+    it("does not clear the selection (only the plain-click case does)", () => {
+      const nodes = [
+        { ...makeVertex("a", { x: 0, y: 0 }), selected: true },
+        makeVertex("b", { x: 0, y: 0 }),
+        makeVertex("c", { x: 0, y: 0 }),
+      ];
+      const result = computeVertexClick({
+        vertexId: "c",
+        modifiers: { modifier: false, shift: true },
+        pendingEdgeSources: ["a", "b"],
+        nodes,
+        edges: [],
+      });
+      expect(result?.nodes).toBeUndefined();
+    });
+  });
+
+  describe("(6) plain click with non-empty pending + fresh target", () => {
+    it("fans out edges, clears pending, and clears selection", () => {
+      const nodes = [
+        { ...makeVertex("a", { x: 0, y: 0 }), selected: true },
+        { ...makeVertex("b", { x: 50, y: 0 }), selected: true },
+        makeVertex("c", { x: 100, y: 0 }),
+      ];
+      const result = computeVertexClick({
+        vertexId: "c",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: ["a", "b"],
+        nodes,
+        edges: [],
+      });
+      expect(result?.edges).toHaveLength(2);
+      expect(result?.pendingEdgeSources).toEqual([]);
+      expect(result?.nodes?.every((n) => !n.selected)).toBe(true);
+    });
+
+    it("still resets state when the fan-out yields no new edges", () => {
+      // Existing edges a→c and b→c mean the fan-out produces nothing
+      // new, but the plain-click gesture is still a commit-and-reset,
+      // so pending sources and the selection get cleared even though
+      // the edge list is unchanged.
+      const result = computeVertexClick({
+        vertexId: "c",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: ["a", "b"],
+        nodes: [
+          ...baseNodes(),
+          makeVertex("c", { x: 100, y: 0 }),
+        ],
+        edges: [makeEdge("e1", "a", "c"), makeEdge("e2", "b", "c")],
+      });
+      expect(result?.edges).toEqual([
+        makeEdge("e1", "a", "c"),
+        makeEdge("e2", "b", "c"),
+      ]);
+      expect(result?.pendingEdgeSources).toEqual([]);
+      expect(result?.nodes?.every((n) => !n.selected)).toBe(true);
+    });
+
+    it("skips duplicate pairs but still emits any non-duplicate ones", () => {
+      // a→c already exists; b→c is new. The patch should add only
+      // b→c, not duplicate a→c.
+      const result = computeVertexClick({
+        vertexId: "c",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: ["a", "b"],
+        nodes: [
+          ...baseNodes(),
+          makeVertex("c", { x: 100, y: 0 }),
+        ],
+        edges: [makeEdge("e1", "a", "c")],
+      });
+      expect(result?.edges).toHaveLength(2); // the existing a→c + the new b→c
+      expect(result?.edges?.map((e) => e.source).sort()).toEqual(["a", "b"]);
+    });
+
+    it("picks the directional 'top' handle id when the target is W / And", () => {
+      const nodes: VertexNode[] = [
+        makeVertex("a", { x: 0, y: 0 }),
+        {
+          ...makeVertex("c", { x: 100, y: 0 }),
+          data: { label: "", vertexType: "w" },
+        },
+      ];
+      const result = computeVertexClick({
+        vertexId: "c",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: ["a"],
+        nodes,
+        edges: [],
+      });
+      expect(result?.edges?.[0].targetHandle).toBe(HANDLE_IDS.top);
+    });
   });
 });

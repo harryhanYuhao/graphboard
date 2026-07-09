@@ -142,14 +142,10 @@ export type VertexClickPatch = {
 export function computeVertexClick(
   ctx: VertexClickContext,
 ): VertexClickPatch | null {
-  // (1) Modifier click — append (or no-op).
+  // (1) Modifier click — append (or no-op if already pending).
   if (ctx.modifiers.modifier) {
     if (ctx.pendingEdgeSources.includes(ctx.vertexId)) {
-      return {
-        pendingEdgeSources: ctx.pendingEdgeSources.filter(
-          id => id !== ctx.vertexId
-        )
-      };
+      return null;
     }
     return {
       pendingEdgeSources: [...ctx.pendingEdgeSources, ctx.vertexId],

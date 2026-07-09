@@ -163,10 +163,14 @@ type GraphSnapshot = { nodes: VertexNode[]; edges: GraphEdge[] };
 //     drag tick or select toggle to land on the undo stack.
 //
 // Shared between `onNodesChange` and `onEdgesChange` so the two streams
-// always behave identically.
+// always behave identically. The structural change is applied first so
+// the subsequent visual apply sees the post-deletion slice — otherwise
+// a single batch with both a `select` and a `remove` would either drop
+// the deletion (visual first) or the selection update (structural
+// first on stale data).
 function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
   changes: C[];
-  current: T[];
+  getCurrent: () => T[];
   apply: (changes: C[], current: T[]) => T[];
   setSlice: (next: T[]) => void;
 }) {
@@ -177,14 +181,14 @@ function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
     (c) => c.type !== "remove",
   );
 
-  if (visualChanges.length > 0) {
-    useGraphStore.temporal.getState().pause();
-    params.setSlice(params.apply(visualChanges, params.current));
-    useGraphStore.temporal.getState().resume();
+  if (structuralChanges.length > 0) {
+    params.setSlice(params.apply(structuralChanges, params.getCurrent()));
   }
 
-  if (structuralChanges.length > 0) {
-    params.setSlice(params.apply(structuralChanges, params.current));
+  if (visualChanges.length > 0) {
+    useGraphStore.temporal.getState().pause();
+    params.setSlice(params.apply(visualChanges, params.getCurrent()));
+    useGraphStore.temporal.getState().resume();
   }
 }
 
@@ -284,7 +288,7 @@ export const useGraphStore = create<GraphStore>()(
       onNodesChange: (changes) => {
         applyReactiveFlowChanges({
           changes,
-          current: get().nodes,
+          getCurrent: () => get().nodes,
           apply: applyNodeChanges,
           setSlice: (nodes) => set({ nodes }),
         });
@@ -293,7 +297,7 @@ export const useGraphStore = create<GraphStore>()(
       onEdgesChange: (changes) => {
         applyReactiveFlowChanges({
           changes,
-          current: get().edges,
+          getCurrent: () => get().edges,
           apply: applyEdgeChanges,
           setSlice: (edges) => set({ edges }),
         });
