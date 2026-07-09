@@ -14,7 +14,10 @@
 
 import "@testing-library/jest-dom/vitest";
 
-if (typeof window !== "undefined" && typeof globalThis.localStorage === "undefined") {
+// Node ≥24 ships a native `localStorage` global that throws unless
+// `--localstorage-file` is passed. Always override it with jsdom's
+// working implementation so tests that touch localStorage don't break.
+if (typeof window !== "undefined") {
   Object.defineProperty(globalThis, "localStorage", {
     value: window.localStorage,
     writable: true,
