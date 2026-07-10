@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "NODE_OPTIONS='--localstorage-file=/tmp/graph-board-test-localstorage' vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "ping:wasm": "tsx scripts/ping-wasm.mts"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.1",
@@ -36,6 +38,7 @@
     "jsdom": "^29.1.1",
     "prettier": "^3.9.4",
     "tailwindcss": "^4",
+    "tsx": "^4.19.0",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

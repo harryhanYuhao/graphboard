@@ -15,14 +15,14 @@
 - Vertex types live in `src/lib/graph/vertex-types.ts`. Today there are **eight**
   selectable types — `z`, `empty`, `x`, `w`, `h`, `zbox`, `xbox`, `and`
   (the AGENTS.md snippet that lists only five is stale; we fix it in passing).
-- Vertex data is `{ label: string, vertexType: VertexType }`. **No dedicated
-  phase field** — by user decision, `label` *is* the phase for spider types
+- Vertex data is `{ label: string, vertexType: VertexType }`. 
+ `label` *is* the phase for spider types
   (`z`, `x`, `zbox`, `xbox`); for other vertex types it's free-form text.
   Empty label on a spider = phase 0. Phase 1 below pins this convention in
   code; Phase 0 adds the matching LaTeX rendering that the user types into.
-- The user's stated architecture decision: a single Rust crate compiled to
-  WASM (`wasm-pack`), consumed from a thin frontend wrapper. Reconfirmed in
-  user memory and AGENTS.md ("future Rust/WASM compute layer").
+- a single Rust crate compiled to WASM (`wasm-pack`),
+ consumed from a thin frontend wrapper. As shown in
+  AGENTS.md ("future Rust/WASM compute layer").
 
 ### Goal of this plan
 
@@ -32,7 +32,7 @@ A working end-to-end pipeline:
 React Flow graph  →  GraphDocument (JSON)  →  Rust/WASM  →  TensorResult
 ```
 
-…that returns a numerically meaningful tensor for arbitrary ZXW graphs
+which returns a numerical tensor for arbitrary ZXW graphs
 (including phase semantics carried in `label`), with a `Compute` button in
 the toolbar to drive it and a result panel to display shape + values.
 
@@ -44,20 +44,12 @@ the toolbar to drive it and a result panel to display shape + values.
 | `empty`, `w`, `h`, `and` | Free-form text. Not parsed for compute. |
 
 **LaTeX detection rule** (UI): if the label contains `$…$` or `$$…$$`,
-render with KaTeX; otherwise plain text. Standard Markdown convention.
-Applies to **all** vertex types (so a user can put math in any label as
-decoration); the *parse* step only fires for the four spider types.
+render with KaTeX; otherwise plain text.
+Applies to **all** vertex types,the *parse* step only fires for the four spider types.
 
 ---
 
 ## 1. Phase 0 — LaTeX rendering for `label`
-
-**Why first.** Phase expressions in ZXW are math (α, β, π/4, e^{iφ}). Without
-LaTeX, the only way to write a phase is raw text ("alpha", "pi/4") — ugly and
-ambiguous. KaTeX gives us proper rendering with one tiny dep, and it's
-useful independently of compute (any vertex can show math in its label).
-
-**Scope.** Small, self-contained UI feature. ~half a day.
 
 **Implementation.**
 
@@ -114,23 +106,25 @@ and are cross-tested for agreement.
 
 ```
 phase   := term (('+' | '-') term)*
-term    := factor (('*' | '/') factor)*
-factor  := number | '\pi' | 'pi' | 'PI' | '(' phase ')' | unary
-unary   := '-' factor
+term    := factor (('*' | '/' | '×' | '÷') factor)*
+factor  := number | '\pi' | 'π' | 'pi' | 'PI' | '(' phase ')' | unary
+unary   := '-' factor | '+' factor
 number  := [0-9]+ ('.' [0-9]+)?
 ```
 
-- `\pi` evaluates to a constant (≈ 3.14159…).
+- Pi evaluates to a constant (≈ 3.14159…). Four accepted spellings:
+  `\pi`, the unicode character `π`, and the bare ASCII words `pi` / `PI`.
 - Any other named token (`\alpha`, `\beta`, `\theta`, …) is an **error** in
   v1 — Phase 6 introduces symbolic arithmetic.
-- Whitespace ignored. Unicode minus `−` accepted alongside ASCII `-`.
+- Whitespace ignored. Unicode `−` (U+2212), `×` (U+00D7), and `÷` (U+00F7)
+  accepted alongside ASCII `-` / `*` / `/`.
 
 **Parser API.**
 
 ```ts
 // src/lib/phase/parser.ts
 export type PhaseResult =
-  | { ok: true; radians: number }
+  | { ok: true; value: number }
   | { ok: false; error: string };
 
 export function parsePhase(input: string): PhaseResult;
@@ -275,15 +269,47 @@ pub enum PhaseError {
     UnexpectedToken { found: String, position: usize },
     Empty,
     TrailingInput { position: usize },
+    NonFinite(f64),
 }
 
 pub fn parse_phase(input: &str) -> Result<f64, PhaseError>;
 ```
 
+**Behaviour checklist — JS quirks the Rust port must mirror exactly.**
+These come from the JS implementation and are easy to drop on a port.
+The cross-language fixture below pins each one with a test case, so a
+port that misses any of them fails CI.
+
+1. **`PhaseResult` field is `value`, not `radians`.** The plan's earlier
+   TS snippet used `radians`; the landed shape is `{ ok: true, value:
+   number } | …`. Use `value` in Rust so WASM-bound serde types don't
+   drift.
+2. **Unicode `×` (U+00D7) and `÷` (U+00F7) accepted** as synonyms for
+   `*` / `/`. Plan originally mentioned only Unicode `−`; JS also takes
+   `×` / `÷` so the user can paste from a typeset source without
+   retyping. Plus `π` (U+03C0) is a fourth pi spelling alongside `\pi` /
+   `pi` / `PI`.
+3. **Unary `+` exists** (and `--3` works via two stacked unary `-`).
+   Easy to forget; fixture has a case.
+4. **Identifier-aware error messages.** `parsePhase("pi2")` returns
+   "Unknown variable 'pi2'", not silent `pi` + orphan `2`. The word
+   consumer refuses to match `pi` when followed by `[A-Za-z0-9]`; same
+   rule for `\<word>` (`\alpha2` → "Unknown variable '\alpha2'", not
+   just `'\alpha'`). Rust port's `try_consume_word` needs the same
+   boundary check.
+5. **Finiteness gate.** JS ends with `Number.isFinite(value)`. Rust port
+   must call `f64::is_finite()` — otherwise a division that produces
+   `inf` or `NaN` propagates into the tensor builder and corrupts every
+   downstream contraction. Returns `PhaseError::NonFinite(value)`.
+
 **Cross-language tests.** A shared test fixture (a JSON table of inputs and
 expected outputs) lives at `crates/zxw/tests/fixtures/phase_grammar.json`.
 Both `crates/zxw/tests/phase_grammar.rs` and `src/lib/phase/parser.test.ts`
 load it and assert equality — guarantees the parsers stay in sync.
+
+> **Pre-Phase-3 prep.** Phase 1's `parser.test.ts` is currently 52 inline
+> cases. Refactor it to be data-driven from the JSON fixture before the
+> Rust port lands, so adding a new case is a one-file edit.
 
 ### 4.2 The `Tensor` type
 
@@ -417,6 +443,36 @@ Default: **dense JSON**, shape + flat array of `{re, im}` pairs:
 
 Sparse output (Phase 6+ if needed) — only non-zero entries + their
 indices. Skipped for v1 because the typical output arity is small.
+
+### 5.5 Label parse fallback (D2)
+
+The compute entry point catches per-spider phase-parse errors and
+substitutes phase 0 so a single unparseable label can't fail the whole
+computation. The caught error is attached to the result so the UI can
+surface it.
+
+```rust
+pub struct TensorResult {
+    pub shape: Vec<usize>,
+    pub data: Vec<(f64, f64)>,          // (re, im) pairs
+    pub warnings: Vec<String>,          // per-spider parse fallbacks go here
+}
+```
+
+Rules:
+
+- **Empty label on a spider** → `parsePhase("")` returns `Ok(0)`. Clean
+  default; no warning.
+- **LaTeX-wrapped numeric like `"$0.5$"`** → strip delimiters, parse.
+  No warning.
+- **Unparseable label like `"Z"`** (a free-form name a user typed into
+  a spider) → catch the error, append to `warnings`, substitute phase 0
+  for that spider. Don't hard-fail the computation.
+- **Non-spider labels** (H, W, AND, empty) are never parsed; they
+  contribute nothing to `warnings` regardless of content.
+
+UI side (§6.3) renders `warnings` as a collapsible "warnings (N)" block
+above the result.
 
 ---
 

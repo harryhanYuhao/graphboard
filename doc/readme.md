@@ -28,4 +28,18 @@ Click the vertex icon and click on the canvas to create different vertices.
 
 To create edge, enter the edge mode (by clicking edge icon on menu), and click two vertices in terms to create edge. 
 
+## Building the WASM compute layer
+
+The Rust compute layer lives at `crates/zxw/`. It is built to WebAssembly
+and served as a static asset at `public/wasm/zxw/`.
+
+- `pnpm build:wasm` — runs `wasm-pack build` and writes the output to
+  `public/wasm/zxw/` (gitignored).
+- `cargo test -p zxw` — runs the Rust-side tests natively.
+- `pnpm ping:wasm` — builds + smoke-tests the wasm pipeline (calls
+  `ping()`, asserts `"pong"`).
+
+Requires a Rust toolchain (1.96+) and `wasm-pack` (0.15+).
+Re-run `pnpm build:wasm` after any change to Rust source. 
+
 

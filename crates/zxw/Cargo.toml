@@ -1,0 +1,30 @@
+[package]
+name = "zxw"
+version = "0.1.0"
+edition = "2021"
+description = "ZXW calculus tensor evaluation, compiled to WASM for the graph-board frontend"
+license = "MIT OR Apache-2.0"
+
+[features]
+# Default build is native (cargo test). The wasm feature pulls in
+# wasm-bindgen + serde-wasm-bindgen for the browser-bound build.
+default = []
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen"]
+
+[lib]
+# `cdylib` is what wasm-pack needs to emit a wasm binary; `rlib` is
+# what `cargo test` needs to link against the crate from integration
+# tests in `tests/`. Without both, either build target fails.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+num-complex = "0.4"
+ndarray = "0.15"
+thiserror = "1"
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+
+[dev-dependencies]
+approx = "0.5"          # float-approx for tensor equality in tests

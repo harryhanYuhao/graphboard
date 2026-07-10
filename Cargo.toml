@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/zxw"]
+default-members = ["crates/zxw"]
+
+# Virtual root package: wasm-pack 0.15.0 fails with "missing field
+# `package`" when the workspace root has no `[package]` table 
+[package]
+name = "graph-board"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Tighter release profile for the wasm artifact — the runtime cost of
+# `lto + opt-level = "z" + codegen-units = 1` is a slower Rust build,
+# which is fine because we only rebuild the wasm when Rust source
+# changes; the frontend dev loop is unaffected.
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
+panic = "abort"     # smaller WASM

@@ -39,6 +39,11 @@ Typecheck runs through `next build` and the VS Code TS SDK
   `vertex-types.ts` (ZXW generator metadata).
 - `src/lib/hooks/` — small reusable React hooks (e.g. `useTrackedDraft`).
 - `src/lib/download.ts`, `src/lib/filename.ts` — JSON export helpers.
+- `crates/zxw/` — Rust compute layer (ZXW calculus tensor evaluation).
+  See `doc/plans/zxw-compute-backend.md` for the full plan; the
+  short version is below.
+- `scripts/build-wasm.sh` — `wasm-pack build` driver.
+- `scripts/ping-wasm.mts` — smoke test for the WASM pipeline.
 - `src/test-utils/factories.ts` — shared `makeVertex` / `makeEdge`
   factories for vitest. Use these in new tests so a future change
   to the `VertexNode` / `GraphEdge` types surfaces here, not in
@@ -84,6 +89,30 @@ Typecheck runs through `next build` and the VS Code TS SDK
   see `src/lib/graph/vertex-types.ts`). `VERTEX_TYPES` is the single source
   of truth for shape/color/size consumed by both `VertexNode` and
   `VertexTypeMenu` — keep them in sync when adding/changing a type.
+
+### Rust compute layer (Phase 2+)
+
+The Rust crate `crates/zxw/` is the compute boundary — it consumes the
+`graph` slice of a `GraphDocument` (see §"Document shape (v1)" below)
+and returns a tensor result. Same crate, two build targets:
+
+- **Native** — `cargo test -p zxw`, `cargo build -p zxw`. No WASM, no
+  browser. Used by Rust-side unit + integration tests.
+- **WASM** — `pnpm build:wasm`. Runs `wasm-pack build crates/zxw
+  --target web --features wasm --out-dir public/wasm/zxw`. Output is
+  gitignored; the Next.js dev server serves it as a static asset.
+
+When to rebuild the wasm: any time Rust source changes. The dev server
+itself doesn't watch the wasm, so refresh the browser after a rebuild.
+
+When the frontend (Phase 5) calls into the wasm, it goes through
+`src/lib/compute/index.ts` — a thin wrapper that lazy-imports
+`public/wasm/zxw/zxw.js` and hops the `GraphSlice` through
+`serde_wasm-bindgen`. The compute wrapper reads only `doc.graph`, never
+`doc.view`.
+
+Public plan: `doc/plans/zxw-compute-backend.md`. Treat that doc as the
+contract — if you change the compute boundary, update the plan too.
 
 ### Label as phase (spider / box types)
 
