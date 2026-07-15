@@ -1,0 +1,17 @@
+{
+  "name": "zxw",
+  "type": "module",
+  "description": "ZXW calculus tensor evaluation, compiled to WASM for the graph-board frontend",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "files": [
+    "zxw_bg.wasm",
+    "zxw.js",
+    "zxw.d.ts"
+  ],
+  "main": "zxw.js",
+  "types": "zxw.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

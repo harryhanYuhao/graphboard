@@ -44,9 +44,4 @@ CLAUDE.md
 
 .harness
 
-# Rust / wasm-pack
-# Cargo workspace target dir lives at the repo root, not per-crate.
-/target
 
-# wasm-pack output is built on demand — never committed.
-# public/wasm/
