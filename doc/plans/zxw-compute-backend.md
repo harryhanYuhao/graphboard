@@ -412,6 +412,13 @@ Use a `union-find` of vertex IDs → group IDs, with each group owning one
 `Tensor` and a vector of `free_axes` (one per member's remaining legs).
 Simplest bookkeeping that works.
 
+**Progress callback.** The `compute_tensor` entry point (§5.5) accepts an
+optional `on_progress: Option<&dyn Fn(usize, usize)>` invoked after each
+edge is contracted with `(contracted_so_far, total_edges)`. When `None`
+(native tests, or when the caller doesn't need progress), the loop skips the
+call with zero overhead. The callback crosses the WASM boundary in Phase 5
+via `wasm_bindgen`'s `Closure` type — see §6.1.
+
 ### 5.2 Complexity
 
 Naive is fine for graphs with ≤ ~12 open legs / ≤ ~30 total legs. Past that,
@@ -452,6 +459,13 @@ computation. The caught error is attached to the result so the UI can
 surface it.
 
 ```rust
+/// Top-level entry point: build per-vertex tensors, contract along edges,
+/// return the resulting tensor (or an error).
+pub fn compute_tensor(
+    graph: &GraphSlice,
+    on_progress: Option<&dyn Fn(usize, usize)>,
+) -> Result<TensorResult, ComputeError>;
+
 pub struct TensorResult {
     pub shape: Vec<usize>,
     pub data: Vec<(f64, f64)>,          // (re, im) pairs
@@ -471,68 +485,356 @@ Rules:
 - **Non-spider labels** (H, W, AND, empty) are never parsed; they
   contribute nothing to `warnings` regardless of content.
 
-UI side (§6.3) renders `warnings` as a collapsible "warnings (N)" block
+UI side (§6.4) renders `warnings` as a collapsible "warnings (N)" block
 above the result.
 
 ---
 
-## 6. Phase 5 — WASM bindings + frontend wrapper
+## 6. Phase 5 — WASM bindings + Web Worker + frontend
+
+> **Design decision.** The v1 plan called for a direct lazy-import → call
+> pattern. That blocks the main thread during contraction and provides no
+> progress or cancellation. Phase 5 now uses a **Web Worker** from the
+> start — the worker owns the WASM instance, the main thread communicates
+> via message-passing, and the frontend wrapper API accepts an
+> `AbortSignal` + `onProgress` callback. This is the foundation; future
+> phases (optimal contraction ordering, symbolic arithmetic) slot in
+> behind the same worker boundary without changing the UI.
 
 ### 6.1 Rust side (`wasm.rs`, feature-gated)
+
+**API version constant.** The WASM module exports a version string so the
+frontend can assert compatibility before calling any compute function. The
+constant is injected at build time from `Cargo.toml`'s `version`:
 
 ```rust
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
+/// Return the crate version string. The frontend asserts it matches the
+/// expected value before calling any compute function — prevents subtle
+/// serde_wasm_bindgen errors when a browser caches an old .wasm file
+/// after a deploy that changes the JsValue contract.
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn compute_tensor(input: JsValue) -> Result<JsValue, JsValue> {
+pub fn compute_api_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+```
+
+**Progress callback.** The contraction loop calls back into JS periodically.
+Use `js_sys::Function` (a raw JS function reference) so the Rust side stays
+agnostic of the caller environment (worker, test harness, etc.):
+
+```rust
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn compute_tensor(
+    input: JsValue,
+    on_progress: Option<js_sys::Function>,
+) -> Result<JsValue, JsValue> {
     let graph: zxw::GraphSlice = serde_wasm_bindgen::from_value(input)
         .map_err(|e| JsValue::from_str(&format!("invalid input: {e}")))?;
-    let result = zxw::compute_tensor(&graph)
+
+    // Wrap the JS callback in a Rust closure. When None, the contraction
+    // loop skips the progress call with zero overhead.
+    let progress: Option<Box<dyn Fn(usize, usize)>> = on_progress.map(|f| {
+        Box::new(move |current: usize, total: usize| {
+            let _ = f.call2(
+                &JsValue::NULL,
+                &JsValue::from_f64(current as f64),
+                &JsValue::from_f64(total as f64),
+            );
+        }) as Box<dyn Fn(usize, usize)>
+    });
+
+    let result = zxw::compute_tensor(&graph, progress.as_deref())
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     serde_wasm_bindgen::to_value(&result)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 ```
 
-Re-export `zxw::*` from `lib.rs`; the WASM module is a thin shim.
+The native `compute_tensor` (in `lib.rs`, not `#[wasm_bindgen]`) accepts
+`Option<&dyn Fn(usize, usize)>` directly — no `JsValue` translation needed.
+This keeps unit tests simple: pass `None` for progress, or a Rust closure
+that pushes into a `Vec` for assertion.
 
-### 6.2 Frontend side
+### 6.2 Web Worker architecture
 
-Create `src/lib/compute/index.ts`:
+The frontend does **not** import the WASM module directly. Instead, it
+spawns a `Worker` that owns the module. The main thread and worker
+communicate via structured-clone message-passing.
+
+**Message protocol** (`src/lib/compute/types.ts`):
 
 ```ts
-// Thin client over the WASM module. Lazy-initialises.
-let initPromise: Promise<unknown> | null = null;
+import type { GraphSlice } from "@/lib/graph/types";
+import type { TensorResult } from "./result-types";
 
-async function ensureWasm(): Promise<typeof import("../../../public/wasm/zxw")> {
-  if (!initPromise) {
-    initPromise = import("../../../public/wasm/zxw").then((m) => m.default());
+// ── Main → Worker ──────────────────────────────────────────────
+export type WorkerRequest =
+  | { type: "compute"; requestId: string; graph: GraphSlice }
+  | { type: "cancel"; requestId: string }
+  | { type: "version-check" };
+
+// ── Worker → Main ──────────────────────────────────────────────
+export type WorkerResponse =
+  | { type: "progress"; requestId: string; contracted: number; total: number }
+  | { type: "result";  requestId: string; result: TensorResult }
+  | { type: "error";   requestId: string; error: string }
+  | { type: "version-ok";       version: string }
+  | { type: "version-mismatch"; expected: string; actual: string };
+```
+
+Every message carries a `requestId` so the main-thread client can
+multiplex concurrent calls (though v1 only allows one at a time — the
+"Compute" button is disabled while a computation is in flight).
+
+**Worker script** (`src/lib/compute/worker.ts`):
+
+```ts
+// This file runs in a Web Worker context — no DOM, no React, no store.
+// It loads the WASM module once at startup and services compute
+// requests sent from the main thread.
+
+let wasm: typeof import("../../../public/wasm/zxw") | null = null;
+
+async function ensureWasm() {
+  if (!wasm) {
+    wasm = await import("../../../public/wasm/zxw");
+    await wasm.default(); // init() — fetches the .wasm artifact
   }
-  await initPromise;
-  return import("../../../public/wasm/zxw");
+  return wasm;
 }
 
-export async function computeTensor(graph: GraphSlice): Promise<TensorResult> {
-  const wasm = await ensureWasm();
-  // Hand wasm the GraphSlice directly — it deserialises via serde_wasm_bindgen.
-  return wasm.compute_tensor(graph) as TensorResult;
+self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
+  const msg = e.data;
+
+  switch (msg.type) {
+    case "version-check": {
+      const w = await ensureWasm();
+      self.postMessage({
+        type: "version-ok",
+        version: w.compute_api_version(),
+      });
+      break;
+    }
+
+    case "compute": {
+      const w = await ensureWasm();
+      try {
+        // Progress callback: the Rust contraction loop calls this
+        // after each edge, and we relay it to the main thread.
+        const onProgress = (current: number, total: number) => {
+          self.postMessage({
+            type: "progress",
+            requestId: msg.requestId,
+            contracted: current,
+            total,
+          });
+        };
+
+        const result = w.compute_tensor(msg.graph, onProgress);
+        self.postMessage({ type: "result", requestId: msg.requestId, result });
+      } catch (err) {
+        self.postMessage({
+          type: "error",
+          requestId: msg.requestId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      break;
+    }
+
+    case "cancel": {
+      // v1 cooperative cancellation: the Rust progress callback can
+      // throw to unwind the contraction. The worker catches the throw
+      // and sends an "error" with "cancelled" so the main-thread
+      // promise rejects with an AbortError.
+      //
+      // Until cooperative cancellation is wired through the WASM
+      // boundary, "cancel" is a no-op on the worker side. The
+      // main-thread client discards responses for cancelled
+      // requestIds, and the UI shows "Cancelling…" until the
+      // current contraction finishes naturally.
+      break;
+    }
+  }
+};
+```
+
+**Cooperative cancellation (future enhancement).** The Rust `on_progress`
+closure can be designed to return a `Result<(), CancelToken>` so the loop
+can break early. For v1 the cancellation is *soft* — the UI discards the
+result of a cancelled request, and the computation runs to completion in
+the worker (wasting CPU but not blocking the main thread). Full cooperative
+cancellation is a follow-up item tracked in Phase 6.
+
+### 6.3 Frontend wrapper (`src/lib/compute/index.ts`)
+
+The main-thread client that components import. It owns the worker lifecycle,
+performs a version check on first use, and exposes an `AbortSignal`-aware
+`computeTensor`:
+
+```ts
+import { nanoid } from "nanoid";
+import type { GraphSlice } from "@/lib/graph/types";
+import type { WorkerRequest, WorkerResponse } from "./types";
+import type { TensorResult } from "./result-types";
+
+// ── Worker lifecycle ───────────────────────────────────────────
+
+const EXPECTED_WASM_VERSION = "0.1.0";
+
+let workerPromise: Promise<Worker> | null = null;
+
+async function getWorker(): Promise<Worker> {
+  if (!workerPromise) {
+    workerPromise = (async () => {
+      const worker = new Worker(
+        new URL("./worker.ts", import.meta.url),
+        { type: "module" },
+      );
+
+      // Version handshake — fail early if the deployed .wasm doesn't
+      // match what this frontend build expects.
+      const version = await new Promise<string>((resolve, reject) => {
+        const onMsg = (e: MessageEvent<WorkerResponse>) => {
+          const m = e.data;
+          if (m.type === "version-ok") {
+            worker.removeEventListener("message", onMsg);
+            resolve(m.version);
+          } else if (m.type === "version-mismatch") {
+            worker.removeEventListener("message", onMsg);
+            worker.terminate();
+            reject(
+              new Error(
+                `WASM version mismatch: frontend expects ${m.expected}, ` +
+                `deployed module is ${m.actual}. Clear browser cache or ` +
+                `redeploy the matching WASM artifact.`,
+              ),
+            );
+          }
+        };
+        worker.addEventListener("message", onMsg);
+        worker.postMessage({ type: "version-check" } satisfies WorkerRequest);
+      });
+
+      if (version !== EXPECTED_WASM_VERSION) {
+        worker.terminate();
+        throw new Error(
+          `WASM version mismatch: expected ${EXPECTED_WASM_VERSION}, ` +
+          `got ${version}`,
+        );
+      }
+
+      return worker;
+    })();
+  }
+  return workerPromise;
+}
+
+// ── Public API ─────────────────────────────────────────────────
+
+export type ComputeCallbacks = {
+  /** Called after each edge is contracted: (contracted, total). */
+  onProgress?: (contracted: number, total: number) => void;
+  /** Abort to cancel the computation. The promise rejects with an
+   *  AbortError; the worker keeps running (v1 soft cancel). */
+  signal?: AbortSignal;
+};
+
+export async function computeTensor(
+  graph: GraphSlice,
+  callbacks?: ComputeCallbacks,
+): Promise<TensorResult> {
+  const worker = await getWorker();
+  const requestId = nanoid();
+  const { signal, onProgress } = callbacks ?? {};
+
+  return new Promise<TensorResult>((resolve, reject) => {
+    // If already aborted, fail immediately.
+    if (signal?.aborted) {
+      reject(new DOMException("Computation cancelled", "AbortError"));
+      return;
+    }
+
+    const onMessage = (e: MessageEvent<WorkerResponse>) => {
+      const msg = e.data;
+      if (msg.requestId !== requestId) return; // not ours
+
+      switch (msg.type) {
+        case "progress":
+          onProgress?.(msg.contracted, msg.total);
+          break;
+        case "result":
+          cleanup();
+          resolve(msg.result);
+          break;
+        case "error":
+          cleanup();
+          reject(new Error(msg.error));
+          break;
+      }
+    };
+
+    const onAbort = () => {
+      worker.postMessage({ type: "cancel", requestId });
+      cleanup();
+      reject(new DOMException("Computation cancelled", "AbortError"));
+    };
+
+    const cleanup = () => {
+      worker.removeEventListener("message", onMessage);
+      signal?.removeEventListener("abort", onAbort);
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    worker.addEventListener("message", onMessage);
+    worker.postMessage({ type: "compute", requestId, graph });
+  });
 }
 ```
 
-### 6.3 UI hookup
+**Key properties of this design:**
 
-- New toolbar button (next to Export JSON): `Compute`. Calls
-  `computeTensor(doc.graph)` and shows the result in a side panel.
-- Result panel: shape summary + dense value table for small outputs
-  (≤ 32 entries). For larger outputs, show first 32 + "total: N".
-- Errors (parse failure, unknown vertex type, inconsistent graph) surface
-  inline with the panel; the panel reuses the existing `window.alert`
-  pattern for now and we revisit when there's a second use case for
-  proper toasts.
-- Per-vertex parse warnings (from the fallback-to-phase-0 rule) appear
-  as a collapsible "warnings (3)" section above the result.
+- **Lazy.** The worker (and the WASM binary) are only loaded on the first
+  `computeTensor` call, not at page load.
+- **Version-gated.** If the deployed `.wasm` is the wrong version, the
+  error is surfaced immediately as a rejected Promise with a clear message
+  ("clear browser cache or redeploy").
+- **Abort-safe.** The caller passes an `AbortController.signal`; aborting
+  it rejects the promise. v1 uses *soft cancel* (the worker keeps running
+  but the UI discards the result). Full cooperative cancel is a Phase 6
+  enhancement.
+- **Testable.** Vitest can mock the `Worker` constructor, or the worker
+  module can be imported directly in a Node context (with `initSync` and a
+  mock `postMessage`).
+
+### 6.4 UI hookup
+
+- **Toolbar button** (next to Export JSON): `Compute`. Disabled while a
+  computation is in flight. Reads `doc.graph` from the store, creates an
+  `AbortController`, and calls `computeTensor(graph, { onProgress, signal })`.
+- **Progress bar.** While computing, the toolbar shows a determinate
+  progress bar (`contracted / total` edges) fed by `onProgress`. A
+  **Cancel** button next to it calls `abortController.abort()`.
+- **Result panel.** Opens as a side sheet or modal on success. Contents:
+  - Shape summary (e.g. `2 × 2 × 2`).
+  - Dense value table for ≤ 64 entries. Larger outputs: first 32 entries +
+    "… and N more".
+  - Per-vertex parse warnings rendered as a collapsible **"Warnings (N)"**
+    section (see §5.5 fallback rules).
+- **Error display.** Worker-failed-to-load, version mismatch, and compute
+  errors (unknown vertex type, inconsistent graph, phase parse failures
+  that couldn't fall back) surface as an inline error card replacing the
+  result panel. Reuses the existing toast/alert pattern until a proper
+  notification system is warranted.
+- **Worker teardown.** The worker is long-lived (one per page session). It
+  is terminated on page unload via `window.addEventListener("beforeunload",
+  () => worker.terminate())`, but otherwise stays warm for subsequent
+  compute requests.
 
 ---
 
@@ -560,6 +862,10 @@ supports it:
   returning a symbolic expression rather than a number.
 - **Sparse tensors** — for big diagrams the dense representation blows up.
   CSR/COO with a small symbolic hash would help.
+- **Cooperative cancellation** — the Rust progress callback returns
+  `Result<(), CancelToken>` so the contraction loop can unwind early when
+  the user hits Cancel. v1 soft-cancel already works from the UI side; this
+  makes the worker stop wasting CPU.
 
 These all live behind the same `compute_tensor` boundary so the frontend
 doesn't change.
@@ -610,26 +916,23 @@ Acceptance is gated on each phase passing the next rung:
   Multi-edges between the same pair? Decide per builder whether to
   reject loudly or contract silently.
 
+- **Worker initialisation cost.** The worker + WASM binary are loaded
+  lazily on first `computeTensor` call, which adds ~200–500 ms of
+  cold-start latency (network fetch + WASM instantiation). For a
+  Compute button that's clicked once per editing session this is fine,
+  but if the interaction model evolves to "recompute on every edit"
+  the worker should be pre-warmed on page load (or the WASM module
+  should be preloaded via `<link rel="preload">`).
+
+- **Soft cancel wastes CPU.** v1 cancellation is "soft" — the worker
+  runs to completion and the UI discards the result. For graphs with
+  30+ edges this wastes seconds of CPU. Full cooperative cancellation
+  (the Rust progress callback returns a `Result` that unwinds the
+  contraction loop) is tracked as a Phase 6 enhancement.
+
+> **Previously open, now resolved by the Phase 5 design:**
+> - Main-thread blocking → Web Worker moves computation off the main thread.
+> - No progress or cancellation → `onProgress` callback + `AbortSignal`.
+> - WASM version drift → `compute_api_version()` handshake on worker init.
+
 ---
-
-## 11. Decisions to lock in before Phase 0 starts
-
-These are the ones I want you to call before any code lands:
-
-- **D1.** Phase unit in user-facing label: any LaTeX the user types
-  (e.g. `$\pi/4$`, `$\alpha$`, `0.5\pi`). My rec: any LaTeX, parser
-  is permissive about spacing.
-- **D2.** Phase parsing tolerance: silent fallback to phase 0 with a
-  warning when the label doesn't parse, vs hard error? My rec: silent
-  fallback + warning, so old hand-edited graphs don't break.
-- **D3.** Empty vertex: scalar 1, 1-leg identity, or something else?
-  My rec: scalar 1 (matches ZX-calculus "ground" symbol).
-- **D4.** Should box types (`zbox`, `xbox`) be in v1 at all, given the
-  single-label limitation? Options: (a) ship them as single-phase for
-  v1 (loose semantics), (b) skip them entirely until Phase 6 introduces
-  multi-phase encoding, (c) invent a multi-label encoding now
-  (`labels: string[]`). My rec: (b) — skip until Phase 6.
-- **D5.** Numerical arithmetic (`f64`) vs exact (`Rational × π`) for
-  v1? My rec: numerical `f64`. Exact is Phase 6.
-
-Once these are settled I'll spin up a branch and execute Phase 0 + Phase 1.

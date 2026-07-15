@@ -26,26 +26,11 @@ if ! command -v wasm-pack >/dev/null 2>&1; then
 fi
 
 echo "→ building zxw crate for web (wasm-pack)"
-# Two wasm-pack 0.15.0 CLI quirks this command works around:
-#
-# 1. clap's BuildOptions uses `allow_hyphen_values = true,
-#    trailing_var_arg = true`. The first hyphen-prefixed token clap
-#    sees gets eaten as the optional `path` positional, and EVERY
-#    subsequent arg goes to `extra_options` (forwarded verbatim to
-#    `cargo build`). The path positional must therefore come FIRST
-#    in the arg list — otherwise unknown flags like `--features` get
-#    mis-parsed, and known flags like `--out-dir` get forwarded to
-#    cargo, which (since cargo 1.79) rejects `--out-dir` ("renamed
-#    to `--artifact-dir`", and `--artifact-dir` is nightly-only on
-#    stable).
-#
-# 2. The workspace root (`/Users/virus/dev/graph-board/Cargo.toml`)
+# 1. The workspace root (`/Users/virus/dev/graph-board/Cargo.toml`)
 #    declares a dummy `[package]` (`publish = false`) plus a stub
 #    `src/lib.rs`, because wasm-pack walks up to the workspace root
-#    and rejects a workspace-only root manifest ("missing field
-#    `package`"). The `default-members = ["crates/zxw"]` line makes
-#    cargo's "build the workspace" default point at the real crate
-#    rather than the dummy root.
+#    and rejects a workspace-only root manifest. `default-members = ["crates/zxw"]` 
+#    makes cargo's "build the workspace" points to the correct one
 wasm-pack build \
   crates/zxw \
   --target web \

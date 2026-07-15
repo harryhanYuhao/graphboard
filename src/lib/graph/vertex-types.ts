@@ -61,6 +61,7 @@ function shapeRadiusClass(shape: VertexShape): string {
 // `enrich` step below.
 type VertexTypeMetaBase = {
   type: VertexType;
+  // Label is also the phase of the vertex
   label: string;
 
   shape: VertexShape;

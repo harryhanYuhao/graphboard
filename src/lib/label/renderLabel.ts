@@ -1,18 +1,16 @@
 // src/lib/label/renderLabel.ts
 //
-// Render a vertex `label` as HTML, with optional KaTeX support. The
-// convention is:
+// Render a vertex `label` as HTML, with optional KaTeX support. 
+// The convention is:
 //
 //   - A label that *is* a single math expression — i.e. its trimmed
 //     form is exactly `$...$` (inline) or `$$...$$` (display) — is
-//     rendered with KaTeX using the appropriate display mode.
+//     rendered with KaTeX
 //   - All other labels are rendered as plain text (HTML-escaped).
 //
 // Mixed inline math embedded in prose (e.g. `when $a = 0$ the value
 // is`) is intentionally *not* supported in v1 — a vertex body is
-// small enough that one math expression per label is plenty, and
-// supporting mixed input would require splitting + per-segment
-// rendering. Phase 6 can revisit if there's demand.
+// small enough that one math expression per label
 //
 // Applies to every vertex type as decoration. Whether the *parsed
 // value* is meaningful for the vertex's compute role (e.g. as a
@@ -26,7 +24,7 @@ import katex from "katex";
  * trimmed label is `$...$` or `$$...$$`. Anything else is plain text.
  *
  * Note: this intentionally does not match embedded `$...$` substrings.
- * A label like `price: $5` is *not* LaTeX.
+ * A label like `$5` is *not* LaTeX.
  */
 export function isLatexLabel(label: string): boolean {
   return extractMathBlock(label) !== null;
@@ -74,12 +72,9 @@ export type RenderedLabel = {
  * can show a different style / hint for math vs. text.
  *
  * KaTeX is called with `throwOnError: true`. On any parse error we
- * fall back to escaped plain text — better to show `$\alpha + $`
- * verbatim than a red `katex-error` span inside a 12px spider body.
+ * fall back to escaped plain text 
  *
- * `trust: false` (the default) blocks `\href`, `\url`, `\includegraphics`
- * — keeps user-typed LaTeX from injecting links or images into the
- * editor canvas.
+ * `trust: false`, which blocks `\href`, `\url`, `\includegraphics`
  */
 export function renderLabel(label: string): RenderedLabel {
   if (!label) return { html: "", isLatex: false };

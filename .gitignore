@@ -49,4 +49,4 @@ CLAUDE.md
 /target
 
 # wasm-pack output is built on demand — never committed.
-public/wasm/
+# public/wasm/
