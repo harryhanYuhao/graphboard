@@ -86,52 +86,38 @@ export function VertexNode({
         labelEditorRef.current?.startEditing();
       }}
     >
-      <VertexHandles isDirectional={isDirectional} dimension={dimension} />
-
       <div
+        className="relative"
         style={{
-          // The filter lives on this wrapper rather than the body
-          // so the drop-shadow is computed against the body's
-          // *clipped* silhouette (the triangle for W). When filter
-          // and clip-path sit on the same element, the CSS spec
-          // applies the filter first and the clip-path second —
-          // meaning the shadow is cast around the full rectangle and
-          // almost everything outside the triangle gets clipped away
-          // before reaching the page. Splitting them onto a wrapper
-          // puts the clip-path "before" the filter in the rendering
-          // pipeline (parent renders its children first, then the
-          // parent's filter sees the already-clipped result), so the
-          // shadow follows the actual visible shape. For non-triangle
-          // vertices this is a no-op: the body has no clip-path, so
-          // the wrapper's filter sees the same content the body
-          // would have.
-          width: dimension,
-          height: dimension,
-          filter: highlightFilter,
+          transform: rotation ? `rotate(${rotation}deg)` : undefined,
+          transformOrigin: "center",
         }}
       >
+        <VertexHandles isDirectional={isDirectional} dimension={dimension} />
+
         <div
-          className={className}
           style={{
-            width: "100%",
-            height: "100%",
-            clipPath: meta.isTriangle ? TRIANGLE_CLIP_PATH : undefined,
-            // Rotate the body around its own center. Handles stay at the
-            // (un-rotated) top/bottom edges so connection points don't
-            // move — typical graph-editor convention for a visual
-            // rotation of the decoration without disturbing the
-            // graph-theoretic connection geometry.
-            transform: rotation ? `rotate(${rotation}deg)` : undefined,
-            transformOrigin: "center",
+            width: dimension,
+            height: dimension,
+            filter: highlightFilter,
           }}
         >
-          <VertexLabelEditor
-            ref={labelEditorRef}
-            value={data.label}
-            glyph={meta.glyph}
-            canStartEditing={mode === "select" || mode === "add-vertex"}
-            onCommit={(label) => updateVertexLabel(id, label)}
-          />
+          <div
+            className={className}
+            style={{
+              width: "100%",
+              height: "100%",
+              clipPath: meta.isTriangle ? TRIANGLE_CLIP_PATH : undefined,
+            }}
+          >
+            <VertexLabelEditor
+              ref={labelEditorRef}
+              value={data.label}
+              glyph={meta.glyph}
+              canStartEditing={mode === "select" || mode === "add-vertex"}
+              onCommit={(label) => updateVertexLabel(id, label)}
+            />
+          </div>
         </div>
       </div>
     </div>
