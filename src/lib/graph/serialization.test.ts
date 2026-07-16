@@ -54,6 +54,15 @@ describe("normalizeRotation", () => {
     expect(normalizeRotation(Infinity)).toBe(0);
     expect(normalizeRotation(-Infinity)).toBe(0);
   });
+
+  it("rounds away float drift from modulo math", () => {
+    // `%` on doubles can leave values like 270.00000000006 or
+    // 89.99999999999. Without rounding, these accumulate across
+    // save/load cycles and make equality checks flaky.
+    expect(normalizeRotation(-90.0000000001)).toBe(270);
+    expect(normalizeRotation(360.0000000001)).toBe(0);
+    expect(normalizeRotation(44.9999999999)).toBe(45);
+  });
 });
 
 describe("projectDocument ↔ hydrateDocument", () => {
@@ -322,6 +331,29 @@ describe("saveGraphDocument / loadGraphDocument (localStorage)", () => {
     });
     expect(loadGraphDocument().title).toBe("ok");
   });
+
+  it("fails soft on a structurally-corrupt document instead of throwing", () => {
+    // Regression guard: pre-fix, `loadGraphDocument` cast the whole
+    // payload to `GraphDocument` after a single `typeof object` check,
+    // so a graph slice missing its `nodes` array would crash
+    // `hydrateDocument` with "nodes.map is not a function" on next
+    // reload. The shared validator now catches this and falls back to
+    // an empty document.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    localStorage.setItem(
+      "graph-board-document",
+      JSON.stringify({
+        schemaVersion: 1,
+        graph: { nodes: "oops", edges: [] },
+        view: { nodes: [], edges: [] },
+      }),
+    );
+
+    expect(() => loadGraphDocument()).not.toThrow();
+    expect(loadGraphDocument().title).toBe("Untitled Graph");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });
 
 describe("exportGraphJson / importGraphJson", () => {
@@ -365,7 +397,9 @@ describe("exportGraphJson / importGraphJson", () => {
   });
 
   it("rejects a document missing the 'graph' slice", () => {
-    const result = importGraphJson(JSON.stringify({ view: {}, id: "x" }));
+    const result = importGraphJson(
+      JSON.stringify({ view: { nodes: [], edges: [] }, id: "x" }),
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatch(/graph/);
@@ -373,10 +407,28 @@ describe("exportGraphJson / importGraphJson", () => {
   });
 
   it("rejects a document missing the 'view' slice", () => {
-    const result = importGraphJson(JSON.stringify({ graph: {}, id: "x" }));
+    const result = importGraphJson(
+      JSON.stringify({ graph: { nodes: [], edges: [] }, id: "x" }),
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatch(/view/);
+    }
+  });
+
+  it("rejects a 'graph' slice whose nodes/edges aren't arrays", () => {
+    // Regression guard for the load-path bug: a hand-edited
+    // localStorage entry used to crash `hydrateDocument` (nodes.map
+    // is not a function) because load trusted the payload shape.
+    const result = importGraphJson(
+      JSON.stringify({
+        graph: { nodes: "not-an-array", edges: [] },
+        view: { nodes: [], edges: [] },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/graph/);
     }
   });
 

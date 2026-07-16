@@ -55,6 +55,10 @@ export type ConfirmDialogueState = {
 
 type GraphStore = {
   title: string;
+
+  // `createdAt`, for autosave is stamped once
+  // when the document is first created (or imported)
+  createdAt: string;
   nodes: VertexNode[];
   edges: GraphEdge[];
   mode: EditorMode;
@@ -195,7 +199,7 @@ function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
 // Owns one continuous-edit gesture's pause/snapshot bookkeeping. The
 // pattern mirrors React Flow's drag model: while the gesture is
 // active, the temporal store is paused (so intermediate commits
-// don't each create an undo entry); on end, the pre-gesture snapshot
+// don't create an undo entry); on end, the pre-gesture snapshot
 // is pushed into `pastStates` so undo restores to before the gesture
 // started.
 function makeGestureController() {
@@ -227,6 +231,9 @@ export const useGraphStore = create<GraphStore>()(
   temporal(
     (set, get) => ({
       title: "Untitled Graph",
+      // Placeholder until `hydrate` runs; replaced with the persisted
+      // document's real `createdAt` on first hydration.
+      createdAt: new Date().toISOString(),
       nodes: [],
       edges: [],
       mode: "select",
@@ -251,6 +258,10 @@ export const useGraphStore = create<GraphStore>()(
 
         set({
           title: hydrated.title,
+          // Preserve the document's original creation timestamp so
+          // subsequent saves don't clobber it (the bug this field
+          // exists to fix).
+          createdAt: hydrated.createdAt,
           nodes: hydrated.nodes,
           edges: hydrated.edges,
           hasHydrated: true,
@@ -450,13 +461,15 @@ export const useGraphStore = create<GraphStore>()(
         const state = get();
 
         // `updatedAt` is stamped inside `saveGraphDocument` so callers
-        // don't have to keep clocks in sync.
+        // don't have to keep clocks in sync. `createdAt` is preserved
+        // from the store so repeated saves don't overwrite the
+        // document's original creation time.
         saveGraphDocument({
           id: PERSISTED_IDS.localDocument,
           title: state.title,
           nodes: state.nodes,
           edges: state.edges,
-          createdAt: new Date().toISOString(),
+          createdAt: state.createdAt,
         });
       },
 
@@ -467,6 +480,7 @@ export const useGraphStore = create<GraphStore>()(
           title: state.title,
           nodes: state.nodes,
           edges: state.edges,
+          createdAt: state.createdAt,
         });
         const filename = toSafeFilename(state.title || "graph-board");
 
@@ -499,6 +513,7 @@ export const useGraphStore = create<GraphStore>()(
 
           set({
             title: hydrated.title,
+            createdAt: hydrated.createdAt,
             nodes: hydrated.nodes,
             edges: hydrated.edges,
             mode: "select",
@@ -509,8 +524,12 @@ export const useGraphStore = create<GraphStore>()(
 
           // Persist immediately so the imported state survives a refresh
           // even if the user closes the tab before the autosave timer fires.
+          // The local document always keeps its own id, regardless of
+          // the id the imported file carried (e.g. an exported doc has
+          // id "exported-document"; importing it must not re-stamp the
+          // local document with that foreign id).
           saveGraphDocument({
-            id: hydrated.id,
+            id: PERSISTED_IDS.localDocument,
             title: hydrated.title,
             nodes: hydrated.nodes,
             edges: hydrated.edges,
@@ -575,6 +594,7 @@ export const useGraphStore = create<GraphStore>()(
 
         set({
           title: hydrated.title,
+          createdAt: hydrated.createdAt,
           nodes: hydrated.nodes,
           edges: hydrated.edges,
           mode: "select",
@@ -585,7 +605,7 @@ export const useGraphStore = create<GraphStore>()(
         });
 
         saveGraphDocument({
-          id: hydrated.id,
+          id: PERSISTED_IDS.localDocument,
           title: hydrated.title,
           nodes: hydrated.nodes,
           edges: hydrated.edges,

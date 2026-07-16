@@ -1,51 +1,55 @@
 "use client";
 
 import { BaseEdge, type EdgeProps, useInternalNode } from "@xyflow/react";
-import { isDirectionalVertex } from "@/lib/graph/vertex-types";
-import type { VertexType } from "@/lib/graph/types";
-
-// Compute the connection point for one endpoint of an edge. Directional
-// vertices (W node, And gate) move their *target* handle to the top
-// edge so the user sees where the input enters; the source side stays
-// at the body center, matching the original centered-handle behavior
-// (which already supports a many-output fan-out from a single handle).
-// Non-directional vertices still meet every edge at their center.
-function getEndpointPoint(
-  node: NonNullable<ReturnType<typeof useInternalNode>>,
-  role: "source" | "target",
-): { x: number; y: number } {
-  const position = node.internals.positionAbsolute;
-  const width = node.measured?.width ?? node.width ?? 48;
-  const height = node.measured?.height ?? node.height ?? 48;
-
-  // `node.data` from React Flow's internal store is typed loosely;
-  // we only care about the vertexType discriminator.
-  const data = node.data as { vertexType?: VertexType } | undefined;
-  const vertexType = data?.vertexType;
-  const isDirectional = vertexType ? isDirectionalVertex(vertexType) : false;
-
-  if (isDirectional && role === "target") {
-    // Directional target endpoint sits on the node's top edge — the
-    // visual anchor the user sees in the editor.
-    return { x: position.x + width / 2, y: position.y };
-  }
-
-  // Source endpoint (and all non-directional endpoints): the node
-  // center. Preserves the pre-existing symmetric behavior for the
-  // output side and for every endpoint on x/z/h/etc.
-  return { x: position.x + width / 2, y: position.y + height / 2 };
-}
+import type { VertexNode as VertexNodeType, VertexType } from "@/lib/graph/types";
+import { getEdgeEndpoint } from "@/lib/graph/edge-geometry";
+import { useGraphStore } from "@/store/graph-store";
+import { nodesById } from "@/store/selectors";
 
 export function StraightCenterEdge(props: EdgeProps) {
-  const sourceNode = useInternalNode(props.source);
-  const targetNode = useInternalNode(props.target);
+  const sourceNode = useInternalNode<VertexNodeType>(props.source);
+  const targetNode = useInternalNode<VertexNodeType>(props.target);
+
+  // Read each endpoint vertex's rotation from the store via the
+  // memoized id→node map (O(1)). Returning a primitive so the edge
+  // re-renders only when the relevant rotation actually changes.
+  // The vertex body is rotated via CSS; the visible top handle of a
+  // directional (W / And) target orbits the center as rotation
+  // changes, so the edge endpoint must follow it — see
+  // `getEdgeEndpoint` for the geometry.
+  const sourceRotation = useGraphStore(
+    (state) => nodesById(state.nodes).get(props.source)?.rotation ?? 0,
+  );
+  const targetRotation = useGraphStore(
+    (state) => nodesById(state.nodes).get(props.target)?.rotation ?? 0,
+  );
 
   if (!sourceNode || !targetNode) {
     return null;
   }
 
-  const sourcePoint = getEndpointPoint(sourceNode, "source");
-  const targetPoint = getEndpointPoint(targetNode, "target");
+  const sourcePoint = getEdgeEndpoint(
+    {
+      positionAbsolute: sourceNode.internals.positionAbsolute,
+      width: sourceNode.measured?.width ?? sourceNode.width ?? 48,
+      height: sourceNode.measured?.height ?? sourceNode.height ?? 48,
+      vertexType: (sourceNode.data as { vertexType?: VertexType } | undefined)
+        ?.vertexType,
+      rotation: sourceRotation,
+    },
+    "source",
+  );
+  const targetPoint = getEdgeEndpoint(
+    {
+      positionAbsolute: targetNode.internals.positionAbsolute,
+      width: targetNode.measured?.width ?? targetNode.width ?? 48,
+      height: targetNode.measured?.height ?? targetNode.height ?? 48,
+      vertexType: (targetNode.data as { vertexType?: VertexType } | undefined)
+        ?.vertexType,
+      rotation: targetRotation,
+    },
+    "target",
+  );
 
   const path = `M ${sourcePoint.x},${sourcePoint.y} L ${targetPoint.x},${targetPoint.y}`;
 

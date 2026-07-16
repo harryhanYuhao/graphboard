@@ -17,6 +17,7 @@ import { makeEdge, makeVertexWith as makeVertex } from "@/test-utils/factories";
 function resetStore() {
   useGraphStore.setState({
     title: "Untitled Graph",
+    createdAt: "2025-01-01T00:00:00.000Z",
     nodes: [],
     edges: [],
     mode: "select",
@@ -478,6 +479,28 @@ describe("save / hydrate round-trip via localStorage", () => {
     expect(state.nodes[0].id).toBe("x");
     expect(state.nodes[0].position).toEqual({ x: 5, y: 7 });
     expect(state.hasHydrated).toBe(true);
+  });
+
+  it("save preserves the document's createdAt across repeated calls", () => {
+    // Regression guard: `save()` used to regenerate `createdAt` on
+    // every call, which clobbered the creation timestamp with "now"
+    // (and the autosave timer fired it on every selection toggle).
+    // The document's creation time must be stable.
+    useGraphStore.setState({
+      title: "Stable",
+      createdAt: "2020-05-05T05:05:05.000Z",
+      nodes: [makeVertex("a", { x: 1, y: 2 })],
+      edges: [],
+    });
+
+    useGraphStore.getState().save();
+    const firstRaw = localStorage.getItem("graph-board-document")!;
+    expect(JSON.parse(firstRaw).createdAt).toBe("2020-05-05T05:05:05.000Z");
+
+    // A second save (e.g. an autosave tick) must not change it.
+    useGraphStore.getState().save();
+    const secondRaw = localStorage.getItem("graph-board-document")!;
+    expect(JSON.parse(secondRaw).createdAt).toBe("2020-05-05T05:05:05.000Z");
   });
 });
 

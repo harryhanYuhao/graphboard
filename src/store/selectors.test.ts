@@ -7,7 +7,7 @@
 // inspection.
 
 import { describe, expect, it } from "vitest";
-import { hasSelection, selectSelectedNodeIds } from "./selectors";
+import { hasSelection, nodesById, selectSelectedNodeIds } from "./selectors";
 import { makeEdge, makeVertex } from "@/test-utils/factories";
 
 describe("selectSelectedNodeIds", () => {
@@ -59,5 +59,35 @@ describe("hasSelection", () => {
 
   it("is false on completely empty inputs", () => {
     expect(hasSelection([], [])).toBe(false);
+  });
+});
+
+describe("nodesById", () => {
+  it("builds an id → node map for O(1) per-node lookups", () => {
+    const a = makeVertex("a", { x: 0, y: 0 });
+    const b = makeVertex("b", { x: 1, y: 1 });
+    const map = nodesById([a, b]);
+    expect(map.get("a")).toBe(a);
+    expect(map.get("b")).toBe(b);
+    expect(map.size).toBe(2);
+  });
+
+  it("caches by array identity — the same input returns the same map", () => {
+    // Per-node store subscribers run the selector body on every store
+    // update; the WeakMap cache must return the same map instance so
+    // the lookup is O(1), not O(n) on every call.
+    const nodes = [makeVertex("a")];
+    expect(nodesById(nodes)).toBe(nodesById(nodes));
+  });
+
+  it("returns an empty map for an empty node list", () => {
+    expect(nodesById([]).size).toBe(0);
+  });
+
+  it("does not mutate the input array", () => {
+    const nodes = [makeVertex("a"), makeVertex("b")];
+    const snapshot = [...nodes];
+    nodesById(nodes);
+    expect(nodes).toEqual(snapshot);
   });
 });

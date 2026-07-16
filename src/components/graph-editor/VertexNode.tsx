@@ -10,6 +10,7 @@ import {
   isDirectionalVertex,
 } from "@/lib/graph/vertex-types";
 import { useGraphStore } from "@/store/graph-store";
+import { nodesById } from "@/store/selectors";
 import { VertexHandles } from "./VertexHandles";
 import {
   VertexLabelEditor,
@@ -30,8 +31,13 @@ export function VertexNode({
   // field), so we read it through the store with a per-id selector.
   // Returning a primitive keeps re-renders cheap: this component only
   // re-renders when *its* rotation actually changes.
+  //
+  // The selector body uses the memoized `nodesById` map (O(1) lookup)
+  // rather than `nodes.find(...)` — the latter made every drag O(n²)
+  // because the selector runs on every store update for every mounted
+  // vertex.
   const rotation = useGraphStore(
-    (state) => state.nodes.find((node) => node.id === id)?.rotation ?? 0,
+    (state) => nodesById(state.nodes).get(id)?.rotation ?? 0,
   );
 
   const isPendingEdgeSource = pendingEdgeSources.includes(id);

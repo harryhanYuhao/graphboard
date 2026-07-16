@@ -34,11 +34,17 @@ const LOCAL_STORAGE_KEY = "graph-board-document";
 // [0, 360) range. 360 and 0 are equivalent visually, but 0 is the
 // shorter representation. Used at both commit and projection so disk
 // and live state stay in the same canonical form.
+//
+// The result is rounded to 6 decimal places: `%` float math can leave
+// drift like 270.00000000006 or 89.99999999999, which would otherwise
+// accumulate across save/load cycles and make equality checks
+// (e.g. the property panel's `rotation !== 0` reset check) flaky.
 export function normalizeRotation(rotation: number): number {
   if (!Number.isFinite(rotation)) return 0;
   const wrapped = ((rotation % 360) + 360) % 360;
-  // Snap 359.999... that came from % float math back to 0.
-  return wrapped === 360 ? 0 : wrapped;
+  // Round away % drift, then collapse the exact-360 case to 0.
+  const rounded = Math.round(wrapped * 1e6) / 1e6;
+  return rounded === 360 ? 0 : rounded;
 }
 
 // ---- Projection (runtime → persisted) -------------------------------------
@@ -288,37 +294,28 @@ export function loadGraphDocument(): GraphDocument {
     return createEmptyGraphDocument();
   }
 
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  // The load path fails soft: a corrupt or future-schema document
+  // logs a warning and falls back to an empty doc rather than
+  // throwing into `hydrateDocument` (where a `nodes.map is not a
+  // function` would crash the editor on next reload).
+  const result = parseDocument(raw);
+  if (!result.ok) {
+    console.warn(`graph-board: ${result.error}; loading empty document.`);
     return createEmptyGraphDocument();
   }
 
-  if (!parsed || typeof parsed !== "object") {
-    return createEmptyGraphDocument();
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  if (
-    typeof obj.schemaVersion === "number" &&
-    obj.schemaVersion > CURRENT_SCHEMA_VERSION
-  ) {
-    console.warn(
-      `graph-board: document schemaVersion ${obj.schemaVersion} is newer than supported ${CURRENT_SCHEMA_VERSION}; loading empty document.`,
-    );
-    return createEmptyGraphDocument();
-  }
-
-  return obj as unknown as GraphDocument;
+  return result.document;
 }
 
 export function exportGraphJson(params: {
   title: string;
   nodes: VertexNode[];
   edges: GraphEdge[];
+  // Preserved from the store so exports retain the document's
+  // original creation time. Defaults to "now" for callers without a
+  // store (e.g. tests) so an export never carries a misleading
+  // creation timestamp.
+  createdAt?: string;
 }): string {
   const now = new Date().toISOString();
 
@@ -327,55 +324,73 @@ export function exportGraphJson(params: {
     title: params.title,
     nodes: params.nodes,
     edges: params.edges,
-    createdAt: now,
+    createdAt: params.createdAt ?? now,
     updatedAt: now,
   });
 
   return JSON.stringify(document, null, 2);
 }
 
-// ---- Import ----------------------------------------------------------------
+// ---- Document parsing (shared by load + import) ----------------------------
 //
-// Parse + validate a JSON string picked from disk. The contract is the v1
-// `{ graph, view }` shape (see `./types.ts`). Pre-v1 "draft" documents —
-// where nodes/edges were React Flow runtime objects dumped straight to
-// disk — are not supported; they're treated as malformed here so the
-// importer surfaces a clear error rather than silently dropping data.
+// Parse + validate a JSON string into a `GraphDocument`. The contract is
+// the v1 `{ graph, view }` shape (see `./types.ts`). Pre-v1 "draft"
+// documents — where nodes/edges were React Flow runtime objects dumped
+// straight to disk — are not supported; they're treated as malformed so
+// callers surface a clear error rather than silently dropping data.
 //
-// Returns a discriminated result rather than throwing so callers (the
-// store action, mostly) can render a user-visible error message without
-// needing to wrap in try/catch.
+// Both `loadGraphDocument` (localStorage) and `importGraphJson` (file
+// picker) route through here so the two entry paths can't drift in
+// robustness — a hand-edited localStorage entry gets the same structural
+// scrutiny as a file picked from disk.
+//
+// Returns a discriminated result rather than throwing so callers pick
+// their own failure policy (load = soft, import = loud).
 
-export type ImportResult =
+export type ParseResult =
   | { ok: true; document: GraphDocument }
   | { ok: false; error: string };
 
-export function importGraphJson(contents: string): ImportResult {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isGraphSlice(
+  value: unknown,
+): value is { nodes: unknown[]; edges: unknown[] } {
+  if (!isRecord(value)) return false;
+  if (!Array.isArray(value.nodes)) return false;
+  if (!Array.isArray(value.edges)) return false;
+  return true;
+}
+
+// Parse a JSON string and validate it matches the v1 document shape.
+// `schemaVersion` is stamped to `CURRENT_SCHEMA_VERSION` on success so
+// downstream consumers don't have to handle the missing-field case.
+export function parseDocument(contents: string): ParseResult {
   let parsed: unknown;
 
   try {
     parsed = JSON.parse(contents);
   } catch {
-    return { ok: false, error: "File is not valid JSON." };
+    return { ok: false, error: "Document is not valid JSON." };
   }
 
-  if (!parsed || typeof parsed !== "object") {
+  if (!isRecord(parsed)) {
     return { ok: false, error: "Document must be a JSON object." };
   }
 
-  const obj = parsed as Record<string, unknown>;
-
-  if (!obj.graph || typeof obj.graph !== "object") {
+  if (!isGraphSlice(parsed.graph)) {
     return {
       ok: false,
-      error: "Document is missing the 'graph' slice (v1 shape required).",
+      error: "Document is missing a valid 'graph' slice (v1 shape required).",
     };
   }
 
-  if (!obj.view || typeof obj.view !== "object") {
+  if (!isGraphSlice(parsed.view)) {
     return {
       ok: false,
-      error: "Document is missing the 'view' slice (v1 shape required).",
+      error: "Document is missing a valid 'view' slice (v1 shape required).",
     };
   }
 
@@ -383,22 +398,40 @@ export function importGraphJson(contents: string): ImportResult {
   // Don't silently accept — surface the mismatch so the user knows to
   // upgrade.
   if (
-    typeof obj.schemaVersion === "number" &&
-    obj.schemaVersion > CURRENT_SCHEMA_VERSION
+    typeof parsed.schemaVersion === "number" &&
+    parsed.schemaVersion > CURRENT_SCHEMA_VERSION
   ) {
     return {
       ok: false,
-      error: `Document schemaVersion ${obj.schemaVersion} is newer than supported (${CURRENT_SCHEMA_VERSION}).`,
+      error: `Document schemaVersion ${parsed.schemaVersion} is newer than supported (${CURRENT_SCHEMA_VERSION}).`,
     };
   }
 
-  // Stamp v1 if absent so downstream consumers don't have to handle the
-  // missing-field case. We trust the validated `graph`/`view` shape above
-  // to determine validity — schemaVersion is just a hint.
+  // Stamp v1 if absent so downstream consumers don't have to handle
+  // the missing-field case. The validated `graph`/`view` shape above
+  // is what determines validity; schemaVersion is just a hint.
   const document: GraphDocument = {
-    ...(obj as unknown as GraphDocument),
+    ...(parsed as unknown as GraphDocument),
     schemaVersion: CURRENT_SCHEMA_VERSION,
   };
 
   return { ok: true, document };
+}
+
+// ---- Import ----------------------------------------------------------------
+//
+// Thin wrapper over `parseDocument` for the file-picker path. The
+// underlying validator is shared with `loadGraphDocument`; the only
+// difference is the error wording ("File is not valid JSON" vs the
+// generic "Document is not valid JSON") so import failures read
+// naturally to the user.
+
+export type ImportResult = ParseResult;
+
+export function importGraphJson(contents: string): ImportResult {
+  const result = parseDocument(contents);
+  if (!result.ok && /not valid JSON/i.test(result.error)) {
+    return { ok: false, error: "File is not valid JSON." };
+  }
+  return result;
 }

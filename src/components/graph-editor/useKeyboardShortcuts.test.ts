@@ -73,6 +73,20 @@ describe("mode-switch shortcuts", () => {
     pressOnBody({ key: "e" });
     expect(useGraphStore.getState().mode).toBe("add-edge");
   });
+
+  it("single-key shortcuts are case-insensitive (Shift+S still switches mode)", () => {
+    // Regression guard: the single-key switch used to compare the raw
+    // `event.key`, so Shift+S (capital) silently did nothing while
+    // lowercase s worked. Caps-lock users hit the same path.
+    useGraphStore.setState({ mode: "add-vertex" });
+    renderHook(() => useKeyboardShortcuts());
+    pressOnBody({ key: "S", shiftKey: true });
+    expect(useGraphStore.getState().mode).toBe("select");
+
+    useGraphStore.setState({ mode: "select" });
+    pressOnBody({ key: "V", shiftKey: true });
+    expect(useGraphStore.getState().mode).toBe("add-vertex");
+  });
 });
 
 describe("modifier-bearing shortcuts", () => {

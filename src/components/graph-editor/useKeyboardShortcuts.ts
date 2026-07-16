@@ -102,7 +102,12 @@ export function useKeyboardShortcuts(): void {
       }
 
       // ---- Single-key shortcuts ----
-      switch (event.key) {
+      //
+      // Lowercase the key so Shift (and caps lock) doesn't silently
+      // disable a binding — the modifier block above already handles
+      // every Shift-prefixed shortcut, so plain `S`, `Shift+S`, and
+      // caps-lock `S` all reach the same mode switch.
+      switch (event.key.toLowerCase()) {
         case "s":
           setMode("select");
           return;
@@ -124,11 +129,11 @@ export function useKeyboardShortcuts(): void {
           // vertex-type index).
           toggleHelp();
           return;
-        case "Backspace":
-        case "Delete":
+        case "backspace":
+        case "delete":
           deleteSelected();
           return;
-        case "Escape": {
+        case "escape": {
           // Three-step escape ladder, applied top-down:
           //   1. If there are pending edge sources, clear those.
           //   2. Otherwise, if anything is selected, clear selection.
