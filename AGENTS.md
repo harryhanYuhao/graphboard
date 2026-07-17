@@ -30,7 +30,17 @@ Typecheck runs through `next build` and the VS Code TS SDK
 ## Layout
 
 - `src/app/` — Next.js App Router entry (`page.tsx` → `GraphEditor`, single page).
-- `src/components/graph-editor/` — editor UI (canvas, toolbar, custom node/edge).
+- `src/components/graph-editor/` — editor UI. `VertexNode.tsx` is the body;
+  it composes `VertexGlyphs.tsx` (SVG shapes), `VertexHandles.tsx` (React
+  Flow `<Handle>`s), `VertexLabelEditor.tsx` (inline phase/text edit), plus
+  `VertexPropertyPanel.tsx`, `VertexSwatch.tsx`, `VertexTypeMenu.tsx`,
+  `GraphToolbar.tsx`, dialog components.
+- `src/lib/graph/edge-geometry.ts` — pure edge-endpoint math (rotation-aware)
+  for `StraightCenterEdge`. Keep geometry here, not in the component, so it
+  is unit-testable without React Flow.
+- `src/lib/keyboard/shortcuts.ts` — **display-only** shortcut registry.
+  `src/components/graph-editor/useKeyboardShortcuts.ts` is the actual
+  dispatch. If you add a shortcut, add it to both.
 - `src/store/graph-store.ts` — Zustand store, single source of truth for graph state.
 - `src/store/selectors.ts` — pure selector functions over `GraphStore` state
   (e.g. `selectSelectedNodeIds`, `hasSelection`).
@@ -57,6 +67,15 @@ Typecheck runs through `next build` and the VS Code TS SDK
   state for graph data. React Flow runs in controlled mode: `nodes`/`edges`
   come from the store, and `onNodesChange`/`onEdgesChange` route back into
   store actions via `applyNodeChanges`/`applyEdgeChanges`.
+- **Undo/redo** is powered by `zundo` (`temporal` middleware) on
+  `useGraphStore.temporal`. Structural mutations (add/delete vertex/edge,
+  label/phase edits) are tracked normally; **visual** changes (drag, select
+  toggle) are deliberately kept off the undo stack by pausing the temporal
+  store for the gesture and pushing a single pre-gesture snapshot on end.
+  Drag handlers (`onNodeDragStart`/`Stop`) own this pause/resume logic — see
+  the long comment block in `graph-store.ts` before touching it. `hydrate`,
+  `importGraphJson`, and `clear` call `temporal.getState().clear()` so a new
+  document doesn't carry the old undo history.
 - **Keep mutation logic in `src/lib/graph/operations.ts`** — call it from the
   store, not inline in components.
 - **Editor modes** (`EditorMode` in `src/lib/graph/types.ts`): `"select" |
@@ -71,11 +90,25 @@ Typecheck runs through `next build` and the VS Code TS SDK
   (which also removes edges connected to deleted nodes). There is no
   marquee/rubber-band selection.
 - **Custom React Flow types** (registered memoized in `GraphEditor.tsx`):
-  - `vertex` → `VertexNode.tsx` — full-size transparent `Handle`s (target +
-    source) overlaid so connections snap to node center.
-  - `straight-center` → `StraightCenterEdge.tsx` — straight line between node
-    *centers* (from `internals.positionAbsolute` + measured size), not
-    React Flow's default border-to-border.
+  - `vertex` → `VertexNode.tsx` — composes `VertexGlyphs` + `VertexHandles` +
+    `VertexLabelEditor`. Handles are placed per `isDirectionalVertex` (see
+    below); a single source handle accepts any number of fan-out connections.
+  - `straight-center` → `StraightCenterEdge.tsx` — straight line whose
+    endpoints come from `src/lib/graph/edge-geometry.ts` (node centers, or
+    the rotating top-edge dot for directional targets), **not** React Flow's
+    default border-to-border.
+- **Handles & directional vertices:** `HANDLE_IDS` in
+  `src/lib/graph/types.ts` (`center-source`, `center-target`, `top`) is the
+  contract shared by operations, serializer, and renderer — don't sprinkle
+  the string literals elsewhere. `isDirectionalVertex(type)` (in
+  `vertex-types.ts`) selects the W / And-gate layout (visible `top` target
+  dot + centered source) vs the symmetric layout (centered target + source).
+  Persisted handle ids are **numeric indices** (0 = top, 1 = bottom),
+  translated by `handleIdToIndex` / `indexToHandleId` in `serialization.ts`.
+- **Vertex rotation** is a **view-slice** concern: the runtime `VertexNode`
+  carries `rotation` as a top-level field (outside `data`), persisted under
+  `view.nodes[].rotation`. It is CSS-only — the compute layer never sees it.
+  It affects edge endpoint math (`edge-geometry.ts`), not the graph.
 
 ## Conventions
 
@@ -86,9 +119,13 @@ Typecheck runs through `next build` and the VS Code TS SDK
   write utility classes inline. Icons from `lucide-react`.
 - IDs via `nanoid`.
 - **Vertex types** are the ZXW generators (`"z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and"`),
-  see `src/lib/graph/vertex-types.ts`). `VERTEX_TYPES` is the single source
-  of truth for shape/color/size consumed by both `VertexNode` and
-  `VertexTypeMenu` — keep them in sync when adding/changing a type.
+  see `src/lib/graph/vertex-types.ts`. `VERTEX_TYPES` is the single source
+  of truth for shape/color/size (and optional `glyph`) consumed by
+  `VertexNode`, `VertexSwatch`, `VertexTypeMenu`, and `VertexPropertyPanel`
+  — keep them in sync when adding/changing a type. The predicates
+  `isSpiderType(type)` (label is a phase) and `isDirectionalVertex(type)`
+  (W / And gate handle layout) are the single sources of truth for those
+  two behaviors.
 
 ### Rust compute layer (Phase 2+)
 
@@ -149,12 +186,13 @@ Persisted documents (`GraphDocument`, see `src/lib/graph/types.ts`) are
 **split** into two parallel slices:
 
 - **`graph`** — graph-theoretic info only. `nodes: { id, data: { label,
-  vertexType } }[]` and `edges: { id, source, target }[]`. This is the
-  contract that the future Rust/WASM compute layer (and any external
-  researcher's tooling) consumes.
-- **`view`** — visual info only. `nodes: { id, position }[]` and `edges:
-  { id }[]` today; future edge curvature, group colors, etc. will live
-  here.
+  vertexType } }[]` and `edges: { id, source, target, sourceHandle?,
+  targetHandle? }[]` (handle fields are numeric indices, see §"Handles"
+  above). This is the contract that the future Rust/WASM compute layer (and
+  any external researcher's tooling) consumes.
+- **`view`** — visual info only. `nodes: { id, position, rotation? }[]` and
+  `edges: { id }[]` today; future edge curvature, group colors, etc. will
+  live here.
 
 The runtime store still holds React Flow's own `Node`/`Edge` objects
 (`VertexNode` / `GraphEdge`) because that's what React Flow consumes.

@@ -14,7 +14,6 @@
   `AGENTS.md` §"Document shape (v1)".
 - Vertex types live in `src/lib/graph/vertex-types.ts`. Today there are **eight**
   selectable types — `z`, `empty`, `x`, `w`, `h`, `zbox`, `xbox`, `and`
-  (the AGENTS.md snippet that lists only five is stale; we fix it in passing).
 - Vertex data is `{ label: string, vertexType: VertexType }`. 
  `label` *is* the phase for spider types
   (`z`, `x`, `zbox`, `xbox`); for other vertex types it's free-form text.
@@ -32,7 +31,7 @@ A working end-to-end pipeline:
 React Flow graph  →  GraphDocument (JSON)  →  Rust/WASM  →  TensorResult
 ```
 
-which returns a numerical tensor for arbitrary ZXW graphs
+which returns a numerical tensor (represented as a matrix) for arbitrary ZXW graphs
 (including phase semantics carried in `label`), with a `Compute` button in
 the toolbar to drive it and a result panel to display shape + values.
 
@@ -49,7 +48,7 @@ Applies to **all** vertex types,the *parse* step only fires for the four spider 
 
 ---
 
-## 1. Phase 0 — LaTeX rendering for `label`
+## 1. Phase 0 — LaTeX rendering for `label` (Finished)
 
 **Implementation.**
 
@@ -68,25 +67,9 @@ Applies to **all** vertex types,the *parse* step only fires for the four spider 
 **Backward compatibility.** Existing labels without `$…$` continue to render
 as plain text. No data migration needed.
 
-**Verification.**
-
-- `pnpm build` clean.
-- Vitest cases for `isLatexLabel` and `renderLabel`:
-  - `"\\alpha"` (no delimiters) → plain text.
-  - `"$\\alpha$"` → KaTeX HTML containing an `annotation` element.
-  - `"$$\\frac{\\pi}{4}$$"` → KaTeX block.
-  - Empty label → empty HTML.
-- Manual: open the editor, type `$\alpha + \frac{\pi}{4}$` into a Z spider
-  label, see it rendered.
-
 ---
 
-## 2. Phase 1 — `label`-as-phase convention + JS phase parser
-
-**Why second.** Phase 0 gives us the *display*. Phase 1 gives us the *meaning*:
-the same string the user typed is what the Rust compute layer will parse at
-runtime. The JS parser in this phase gives the property panel a live preview
-("= 0.785 rad"); Phase 3 ports the same grammar to Rust.
+## 2. Phase 1 — `label`-as-phase convention + JS phase parser (Finished. The Parser can be improved in the future)
 
 **Scope.** Convention (documented, enforced in one place) + a small JS parser.
 
@@ -155,13 +138,13 @@ export function parsePhase(input: string): PhaseResult;
 
 ---
 
-## 3. Phase 2 — Cargo workspace + `zxw` crate + WASM build
+## 3. Phase 2 — Cargo workspace + `zxw` crate + WASM build (Finished, Stubs in place)
 
 ### 3.1 Workspace layout
 
-Single Rust crate with a `wasm` feature flag, kept under a new top-level
-`crates/` directory. A single crate is enough for v1; split into multiple
-crates (`zxw-core` vs `zxw-wasm`) only if compile times or boundaries demand.
+Single Rust crate with a `wasm` feature flag, which is kept under a new top-level
+`crates/` directory.
+In the future this crate could be an independent graph theoretical rust crates can shall be published on crates.io.
 
 ```
 graph-board/
@@ -172,9 +155,7 @@ graph-board/
 │       │   ├── graph.rs              # ZXW graph data model (serde)
 │       │   ├── phase.rs              # LaTeX phase parser (Rust port)
 │       │   ├── tensor.rs             # Tensor / Complex wrappers
-│       │   ├── spiders.rs            # Z/X spider builders
-│       │   ├── boxes.rs              # Z/X box builders
-│       │   ├── nodes.rs              # W / H / empty / and builders
+│       │   ├── nodes.rs              # All the vertex definitions
 │       │   ├── contraction.rs        # Naive sequential contraction
 │       │   ├── error.rs              # thiserror types
 │       │   └── wasm.rs               # #[wasm_bindgen] entry points (gated)
@@ -184,76 +165,23 @@ graph-board/
 │       │   └── contraction.rs        # small graphs, end-to-end
 │       ├── Cargo.toml
 │       └── pkg/                      # wasm-pack output, gitignored
-└── …
+└── ...
 ```
 
-### 3.2 Top-level `Cargo.toml` (workspace)
+### 3.1 WASM build pipeline
 
-```toml
-[workspace]
-resolver = "2"
-members = ["crates/zxw"]
+WASM can be build with `pnpm build:wasm`, which runs the script in `../scripts/build-wasm.sh`, that is a wrapper for `wasm-pack`.
+The output is stored in `../public/wasm/zxw/`.
 
-[profile.release]
-lto = true
-opt-level = "z"
-codegen-units = 1
-panic = "abort"     # smaller WASM
+The build script is
+```../scripts/build-wasm.sh
+
+wasm-pack build \
+  crates/zxw \
+  --target web \
+  --out-dir  ../public/wasm/zxw/ \
+  --features wasm
 ```
-
-### 3.3 `crates/zxw/Cargo.toml`
-
-```toml
-[package]
-name = "zxw"
-version = "0.1.0"
-edition = "2021"
-
-[features]
-default = []
-wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen"]
-
-[dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-num-complex = "0.4"
-ndarray = "0.15"
-thiserror = "1"
-wasm-bindgen = { version = "0.2", optional = true }
-serde-wasm-bindgen = { version = "0.6", optional = true }
-
-[dev-dependencies]
-approx = "0.5"          # float-approx for tensor equality in tests
-```
-
-**Why these crates**
-
-- `ndarray` for N-dim tensor storage + einsum-style contraction. Hand-rolled
-  indexing is doable but ndarray is well-tested and gives us `.remove_axis()`
-  + `.fold_axis()` for free.
-- `num-complex` for `Complex<f64>`. Phases need exact trig for Clifford
-  values (sin/cos of multiples of π/4) — `num-complex::Complex::from_polar`
-  is enough at v1; symbolic-exact arithmetic is a later phase.
-- `serde` + `serde_json` for the `GraphSlice` contract on both sides (WASM
-  uses `serde_wasm_bindgen` to hop into JS values).
-- `thiserror` for ergonomic error enums.
-
-### 3.4 WASM build pipeline
-
-- The `wasm` feature flag in the crate.
-- A top-level script `scripts/build-wasm.sh` that runs
-  `wasm-pack build crates/zxw --target web --features wasm --out-dir ../../public/wasm/zxw`.
-- Output is committed nowhere; `.gitignore` excludes `public/wasm/`. Add a
-  `pnpm` script: `"build:wasm": "bash scripts/build-wasm.sh"`.
-- Dev loop: `pnpm dev` (Next.js) + run `pnpm build:wasm` whenever Rust
-  changes. Document the loop in `doc/readme.md`.
-
-**Verification for Phase 2**
-
-- `cargo test -p zxw` runs the empty crate + compiles cleanly.
-- `pnpm build:wasm` produces `public/wasm/zxw/zxw_bg.wasm` and the JS glue.
-- A trivial `#[wasm_bindgen] fn ping() -> &'static str { "pong" }` round-trips
-  from a one-off `pnpm tsx scripts/ping-wasm.ts` script.
 
 ---
 
