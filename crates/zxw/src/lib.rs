@@ -9,16 +9,15 @@
 // (contraction algorithm), Phase 5 (full WASM bindings + frontend
 // wrapper).
 //
-// See `doc/plans/zxw-compute-backend.md` for the full plan.
+// See `doc/plans.md` for the full plan.
 
-pub mod graph;
-pub mod phase;
-pub mod tensor;
-pub mod spiders;
-pub mod boxes;
-pub mod nodes;
 pub mod contraction;
 pub mod error;
+pub mod graph;
+pub mod nodes;
+pub mod phase;
+pub mod tensor;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
+

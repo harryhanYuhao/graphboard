@@ -50,7 +50,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
 - `src/lib/hooks/` — small reusable React hooks (e.g. `useTrackedDraft`).
 - `src/lib/download.ts`, `src/lib/filename.ts` — JSON export helpers.
 - `crates/zxw/` — Rust compute layer (ZXW calculus tensor evaluation).
-  See `doc/plans/zxw-compute-backend.md` for the full plan; the
+  See `doc/plans.md` for the full plan; the
   short version is below.
 - `scripts/build-wasm.sh` — `wasm-pack build` driver.
 - `scripts/ping-wasm.mts` — smoke test for the WASM pipeline.
@@ -148,7 +148,7 @@ When the frontend (Phase 5) calls into the wasm, it goes through
 `serde_wasm-bindgen`. The compute wrapper reads only `doc.graph`, never
 `doc.view`.
 
-Public plan: `doc/plans/zxw-compute-backend.md`. Treat that doc as the
+Public plan: `doc/plans.md`. Treat that doc as the
 contract — if you change the compute boundary, update the plan too.
 
 ### Label as phase (spider / box types)
