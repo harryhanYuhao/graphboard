@@ -202,6 +202,46 @@ wasm-pack build \
   --features wasm
 ```
 
+### 3.3 Dependency choices (buy vs. build)
+
+The graph/contraction layer needs three primitives. The decisions below
+are **locked for v1** with explicit flip conditions for Phase 6 — add a
+dependency only when the flip condition is met, not speculatively.
+
+| Need | v1 (Phases 3–5) | Phase 6 |
+|---|---|---|
+| Union-find (grouping) | Hand-rolled (~30 lines, path compression + union-by-rank) in `crates/zxw/src/contraction.rs`. Vertex ids are `0..n` already. | Optionally swap to `petgraph::unionfind::UnionFind` if `petgraph` is adopted for rewrites (see below). |
+| Graph data structure + traversal | **None.** `GraphSlice { nodes, edges }` (§4.0) is the only representation. The contraction loop walks `edges` in input order once — not a traversal, not a query. | **`petgraph`** when ZXW rewrites land (§7). Rewrites are local graph transformations; `petgraph::stable_graph::StableGraph` + `algo::connected_components` model them cleanly. Do not adopt earlier — a second parallel graph representation adds a conversion step with no payoff for v1's single edge-walk. |
+| Tensor contraction | `ndarray::ArrayD<Complex<f64>>` + a hand-written `contract(a, b, (i, j))` (~20 lines, a tensored dot over two axes). | `ndarray` stays. Contraction *ordering* swaps to **`cotengrust`** (the Rust backend of `cotengra`) when the naïve sequential loop becomes a measured bottleneck. |
+
+**Flip conditions (re-evaluate at Phase 6 kickoff):**
+
+- **Adopt `petgraph` when** the first ZXW rewrite rule (spider fusion,
+  identity removal, π-commutation, bialgebra, Hopf, Euler) is being
+  implemented. Re-implementing local graph rewrites over a plain
+  `Vec<Node>/Vec<Edge>` is the pain point that justifies the dep.
+- **Adopt `cotengrust` when** a real user graph exceeds the naïve
+  contraction's complexity ceiling (§5.2: ~12 open legs / ~30 total
+  legs). Add it behind a new `compute_tensor_optimized` entry point so
+  the naïve path stays as a correctness oracle.
+- **Do NOT adopt** a standalone union-find crate (`union-find-rs`,
+  `disjoint-sets`) — `petgraph::unionfind` covers it if `petgraph`
+  lands, and the hand-rolled version is trivial otherwise.
+
+**Crates surveyed (for reference):**
+- [`petgraph`](https://crates.io/crates/petgraph) — graph data
+  structures + algorithms. Watch [issue #551](https://github.com/petgraph/petgraph/issues/551)
+  (potential `petgraph-algorithms` sub-crate split) before pinning.
+- [`cotengrust`](https://github.com/jcmgray/cotengrust) — contraction
+  ordering primitives, Rust backend for `cotengra`.
+- [`omeco`](https://docs.rs/omeco) — alternative contraction-order
+  optimizer; smaller, less battle-tested than `cotengrust`.
+- `petgraph::unionfind::UnionFind` — built into petgraph, no extra dep.
+
+Before pinning any version at Phase 6, verify current maintenance
+status (latest release date, download counts) on crates.io — the
+landscape shifts.
+
 ---
 
 ## 4. Phase 3 — Rust phase parser + Tensor model + per-vertex builders
@@ -452,6 +492,11 @@ For each edge `(u, v)` in input order:
    vertex, replacing it with the contracted version in a small union-find
    of "groups" so multi-edges chain cleanly).
 4. After all edges, walk the remaining groups to compute the output tensor.
+
+> **Union-find source.** The grouping union-find is hand-rolled in v1
+> (~30 lines, path compression + union-by-rank) — see §3.3 for the
+> buy-vs-build rationale and the Phase 6 flip condition to
+> `petgraph::unionfind`. Do not reach for a standalone union-find crate.
 
 **Leg bookkeeping — the invariant that makes this correct.** Each vertex
 `v` starts with `arity(v) = degree(v)` free legs indexed `0..arity(v)`.
@@ -1056,14 +1101,22 @@ supports it:
   bialgebra, Hopf, Euler expansion. Each is a graph rewrite (small,
   local) that reduces the diagram without changing its semantics.
   Implemented as pure functions over `GraphSlice` that return a new
-  `GraphSlice`.
+  `GraphSlice`. **This is the trigger to adopt `petgraph`** (§3.3 flip
+  condition): model the working graph as a
+  `petgraph::stable_graph::StableGraph<VertexData, ()>` and implement
+  each rewrite rule as a subgraph-match → replace operation.
 - **Multi-phase boxes** — extend `label` (or add a `params` field, or
   accept multiple labels on a single vertex) so a `zbox`/`xbox` can carry
   `2^arity` independent phases.
 - **Contraction order** — replace the naive sequential loop with a
-  cost-model + tree search (a la `opt_einsum` / `cotengra`). For now,
-  expose the contraction as a separate function so this swap is
-  mechanical.
+  cost-model + tree search via [`cotengrust`](https://github.com/jcmgray/cotengrust)
+  (the Rust backend of `cotengra`, the de-facto Python contraction-order
+  optimizer in quantum computing). **Adopt when** a real user graph
+  exceeds the naïve complexity ceiling (§5.2: ~12 open legs / ~30 total
+  legs) — see §3.3 flip condition. Expose it as a separate
+  `compute_tensor_optimized` entry point so the naïve path stays as a
+  correctness oracle in tests. Alternative: [`omeco`](https://docs.rs/omeco)
+  (smaller, less battle-tested).
 - **Exact arithmetic** — switch from `Complex<f64>` to a symbolic phase
   representation (e.g. multiples of π stored as `Rational × π`) plus a
   small evaluator. Helps when you want to *prove* two diagrams are equal.
@@ -1091,7 +1144,7 @@ doesn't change.
 | `doc/readme.md` | Note compute capability and `pnpm build:wasm` step. |
 | `pnpm-workspace.yaml` | No change — pnpm workspace is JS-only; Rust workspace is separate. |
 | `crates/zxw/src/*.rs` headers | Every source-file header comment cites `doc/plans/zxw-compute-backend.md` (the old path). Bulk-replace with `doc/plans.md` as part of the Phase 3 task #0 `lib.rs` reconciliation. |
-| `crates/zxw/Cargo.toml` | Add `console_error_panic_hook` under the `wasm` feature (§6.1). |
+| `crates/zxw/Cargo.toml` | Add `console_error_panic_hook` under the `wasm` feature (§6.1). **No graph/contraction crate in v1** — see §3.3. `petgraph` and `cotengrust` are Phase 6 additions, gated on their flip conditions. |
 
 ---
 
