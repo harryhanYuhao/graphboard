@@ -144,20 +144,15 @@ export function parsePhase(input: string): PhaseResult;
 
 ---
 
-## 3. Phase 2 — Cargo workspace + `zxw` crate + WASM build (Scaffold landed; **build currently broken at HEAD**)
+## 3. Phase 2 — Cargo workspace + `zxw` crate + WASM build (Scaffold landed)
 
-> ⚠️ **Build status at HEAD.** `crates/zxw/src/lib.rs` declares
-> `pub mod spiders;` and `pub mod boxes;`, but **neither file exists** —
-> the "rust refactor" commit (`d1ccda9`) left the declarations dangling.
-> `cargo check` fails with `error[E0583]: file not found for module`
-> for both. The `ping()` pipeline itself is sound (it builds from the
-> pre-refactor state preserved in `public/wasm/zxw/`), but the crate
-> is **not reproducible from current source**.
->
-> **The first task of Phase 3 is to reconcile `lib.rs` to the
-> single-`nodes.rs` layout** described in §3.1 below: delete the
-> `pub mod spiders;` and `pub mod boxes;` lines. Until that lands,
-> no Phase 3 work can even compile.
+> ✅ **Build status: clean at HEAD.** Earlier this plan flagged a
+> broken build from dangling `pub mod spiders;`/`pub mod boxes;`
+> declarations in `lib.rs`; that has been resolved. The crate now
+> follows the single-`nodes.rs` layout described in §3.1 and
+> `cargo test` runs end-to-end. Phase 3 has landed the parser,
+> `GraphSlice` serde model, tensor type, and per-vertex builders
+> (§4.0–§4.4); Phase 4 (contraction) is next.
 
 ### 3.1 Workspace layout
 

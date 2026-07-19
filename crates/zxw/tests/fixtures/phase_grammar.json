@@ -1,0 +1,64 @@
+{
+  "_comment": "Shared phase-parser fixture. Loaded by both crates/zxw/tests/phase_grammar.rs (Rust port) and src/lib/phase/parser.test.ts (JS original) so the two parsers stay in lock-step — add a case here and both sides pick it up. `fragment` (when present) is matched case-insensitively as a substring of the error message; absent fragment means 'just assert that parsing fails'. `valuePi: true` means 'value equals π' (avoids hard-coding the literal everywhere). Cases are grouped by `group` for the JS describe() blocks.",
+  "cases": [
+    { "group": "empty / whitespace", "name": "empty string is phase 0", "input": "", "ok": true, "value": 0 },
+    { "group": "empty / whitespace", "name": "whitespace-only is phase 0", "input": "   ", "ok": true, "value": 0 },
+    { "group": "empty / whitespace", "name": "only delimiters ($   $) is phase 0", "input": "$   $", "ok": true, "value": 0 },
+    { "group": "empty / whitespace", "name": "only delimiters ($$\\n$$) is phase 0", "input": "$$\n$$", "ok": true, "value": 0 },
+
+    { "group": "numbers", "name": "integer", "input": "0", "ok": true, "value": 0 },
+    { "group": "numbers", "name": "positive integer", "input": "3", "ok": true, "value": 3 },
+    { "group": "numbers", "name": "negative integer", "input": "-7", "ok": true, "value": -7 },
+    { "group": "numbers", "name": "decimal", "input": "0.5", "ok": true, "value": 0.5 },
+    { "group": "numbers", "name": "negative decimal", "input": "-2.25", "ok": true, "value": -2.25 },
+    { "group": "numbers", "name": "integer followed by .", "input": "3.", "ok": true, "value": 3 },
+
+    { "group": "π variants", "name": "LaTeX \\pi", "input": "\\pi", "ok": true, "valuePi": true },
+    { "group": "π variants", "name": "Unicode π", "input": "π", "ok": true, "valuePi": true },
+    { "group": "π variants", "name": "ASCII pi", "input": "pi", "ok": true, "valuePi": true },
+    { "group": "π variants", "name": "ASCII PI", "input": "PI", "ok": true, "valuePi": true },
+    { "group": "π variants", "name": "π with whitespace", "input": "  π  ", "ok": true, "valuePi": true },
+
+    { "group": "arithmetic", "name": "addition", "input": "1 + 2", "ok": true, "value": 3 },
+    { "group": "arithmetic", "name": "subtraction", "input": "5 - 8", "ok": true, "value": -3 },
+    { "group": "arithmetic", "name": "multiplication", "input": "3 * 4", "ok": true, "value": 12 },
+    { "group": "arithmetic", "name": "division", "input": "10 / 4", "ok": true, "value": 2.5 },
+    { "group": "arithmetic", "name": "precedence: multiplication over addition", "input": "1 + 2 * 3", "ok": true, "value": 7 },
+    { "group": "arithmetic", "name": "left-to-right for same-precedence", "input": "10 - 3 - 2", "ok": true, "value": 5 },
+    { "group": "arithmetic", "name": "parentheses override precedence", "input": "(1 + 2) * 3", "ok": true, "value": 9 },
+    { "group": "arithmetic", "name": "nested parentheses", "input": "((1 + 2) * (3 + 4))", "ok": true, "value": 21 },
+    { "group": "arithmetic", "name": "unary minus", "input": "-3", "ok": true, "value": -3 },
+    { "group": "arithmetic", "name": "unary minus inside expression", "input": "5 + -3", "ok": true, "value": 2 },
+    { "group": "arithmetic", "name": "unary plus", "input": "+5", "ok": true, "value": 5 },
+    { "group": "arithmetic", "name": "double operator: 1 + + 2 is valid via unary +", "input": "1 + + 2", "ok": true, "value": 3 },
+    { "group": "arithmetic", "name": "division by zero produces Infinity, surfaced as error", "input": "1 / 0", "ok": false, "fragment": "not finite" },
+
+    { "group": "π in expressions", "name": "π/2", "input": "\\pi/2", "ok": true, "valuePiMul": 0.5 },
+    { "group": "π in expressions", "name": "π/4 in unicode form", "input": "π / 4", "ok": true, "valuePiMul": 0.25 },
+    { "group": "π in expressions", "name": "2π", "input": "2 * \\pi", "ok": true, "valuePiMul": 2 },
+    { "group": "π in expressions", "name": "pi/3", "input": "pi/3", "ok": true, "valuePiMul": 0.3333333333333333 },
+    { "group": "π in expressions", "name": "π + 1", "input": "\\pi + 1", "ok": true, "value": 4.141592653589793 },
+    { "group": "π in expressions", "name": "1 - π", "input": "1 - \\pi", "ok": true, "value": -2.141592653589793 },
+    { "group": "π in expressions", "name": "(π+π)/4 = π/2", "input": "(\\pi + \\pi)/4", "ok": true, "valuePiMul": 0.5 },
+
+    { "group": "math delimiter stripping", "name": "inline $...$", "input": "$\\pi/4$", "ok": true, "valuePiMul": 0.25 },
+    { "group": "math delimiter stripping", "name": "display $$...$$", "input": "$$\\pi/4$$", "ok": true, "valuePiMul": 0.25 },
+    { "group": "math delimiter stripping", "name": "inline with whitespace around the body", "input": "$  \\pi/4  $", "ok": true, "valuePiMul": 0.25 },
+    { "group": "math delimiter stripping", "name": "plain text without delimiters", "input": "\\pi/4", "ok": true, "valuePiMul": 0.25 },
+
+    { "group": "unicode operator synonyms", "name": "unicode minus", "input": "5 − 3", "ok": true, "value": 2 },
+    { "group": "unicode operator synonyms", "name": "unicode multiplication ×", "input": "2 × 3", "ok": true, "value": 6 },
+    { "group": "unicode operator synonyms", "name": "unicode division ÷", "input": "6 ÷ 4", "ok": true, "value": 1.5 },
+
+    { "group": "errors", "name": "trailing junk surfaces the full identifier, not just one char", "input": "1 + 2 hello", "ok": false, "fragment": "hello" },
+    { "group": "errors", "name": "missing right paren", "input": "(1 + 2", "ok": false, "fragment": ")" },
+    { "group": "errors", "name": "unknown variable (single word)", "input": "alpha", "ok": false, "fragment": "alpha" },
+    { "group": "errors", "name": "unknown LaTeX variable", "input": "\\alpha + \\pi/4", "ok": false, "fragment": "alpha" },
+    { "group": "errors", "name": "lone backslash", "input": "1 \\ 2", "ok": false },
+    { "group": "errors", "name": "non-numeric single char", "input": "1 # 2", "ok": false, "fragment": "#" },
+    { "group": "errors", "name": "only an operator", "input": "+", "ok": false },
+    { "group": "errors", "name": "empty parens", "input": "()", "ok": false },
+
+    { "group": "pi2 is not the variable pi", "name": "pi2 is unknown", "input": "pi2", "ok": false, "fragment": "pi2" }
+  ]
+}

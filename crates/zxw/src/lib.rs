@@ -3,11 +3,11 @@
 // ZXW compute layer — ZXW calculus tensor evaluation, ported from the
 // JS frontend to Rust and exposed to the browser via WASM.
 //
-// Phase 2 ships an empty crate + a `ping()` wasm entry point. The
-// module map below is the eventual shape; per-module bodies land in
-// Phase 3 (parser + tensor model + per-vertex builders), Phase 4
-// (contraction algorithm), Phase 5 (full WASM bindings + frontend
-// wrapper).
+// Phase 3 (this revision) lands: the `GraphSlice` serde model (`graph`),
+// the phase parser (`phase` + `PhaseError`), the tensor type (`tensor`),
+// and the eight per-vertex builders (`nodes`). Phase 4 will add the
+// contraction algorithm (`contraction`) + `ComputeError`/`GraphError`;
+// Phase 5 adds the full WASM bindings.
 //
 // See `doc/plans.md` for the full plan.
 
@@ -21,3 +21,9 @@ pub mod tensor;
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
+// Convenience re-exports so external callers (tests, the future wasm
+// wrapper, downstream rlib users) don't have to spell the full path.
+pub use error::PhaseError;
+pub use graph::{GraphEdgeRecord, GraphNodeRecord, GraphSlice, VertexData, VertexType};
+pub use nodes::{and_gate, empty, h_box, w_node, x_box, x_spider, z_box, z_spider};
+pub use phase::parse_phase;
