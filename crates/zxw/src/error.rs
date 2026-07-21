@@ -1,9 +1,10 @@
 // crates/zxw/src/error.rs
 //
-// Error types for the compute layer. Phase 3 ships `PhaseError` (the
-// phase-parser error surface). Phase 4 adds `GraphError` and
-// `ComputeError` for malformed-input / contraction failures; those live
-// here too once they're needed.
+// Error types for the compute layer. `PhaseError` covers the phase
+// parser (Phase 3); `ComputeError` covers the top-level contraction
+// entry point (Phase 4). Per plan §5.5, phase-parse failures inside
+// `compute_tensor` are NOT `ComputeError`s — they're caught per-spider
+// and downgraded to warnings on the `TensorResult`.
 //
 // `PhaseError` messages are crafted to *contain* the same fragments the
 // JS parser tests assert on (the Rust port + the JS original load the
@@ -11,6 +12,7 @@
 // cases match `error.toLowerCase().includes(fragment)`). Keep the wording
 // in sync with `src/lib/phase/parser.ts` when editing.
 
+use crate::graph::VertexType;
 use thiserror::Error;
 
 /// Errors raised by `parse_phase`. Mirrors the JS `ParseError` surface
@@ -45,3 +47,49 @@ pub enum PhaseError {
     #[error("Phase is not finite ({0})")]
     NonFinite(f64),
 }
+
+/// Errors raised by `compute_tensor`. These are *structural* problems
+/// the contraction layer can't recover from — a malformed graph, an
+/// arity mismatch, a boundary wired up wrong. Per-spider phase-parse
+/// failures are NOT here; those are downgraded to warnings on the
+/// `TensorResult` (plan §5.5).
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum ComputeError {
+    /// An edge referenced a vertex id that doesn't appear in `nodes`.
+    /// This is a corrupt-graph error — the frontend shouldn't emit such
+    /// a payload, but the compute layer still has to defend against it.
+    #[error("vertex '{vertex_id}' not found (referenced by edge '{edge_id}')")]
+    VertexNotFound {
+        vertex_id: String,
+        edge_id: String,
+    },
+
+    /// An H-box has degree ≠ 2. The H-box builder is fixed-arity 2 per
+    /// plan §4.3 (for larger circuits the user chains H-boxes), so any
+    /// other degree is a wiring error.
+    #[error("H-box vertex '{vertex_id}' must have arity 2, got {arity}")]
+    HBoxArity { vertex_id: String, arity: usize },
+
+    /// A boundary vertex (`input` / `output`) has degree > 1. Boundaries
+    /// declare exactly one open leg of the result; they can be degree 0
+    /// (a dangling open leg) or degree 1 (the normal case), but can't
+    /// fan out. Plan §5.6.
+    #[error(
+        "boundary vertex '{vertex_id}' has degree {degree}; boundaries must have degree 0 or 1"
+    )]
+    BoundaryDegreeViolation { vertex_id: String, degree: usize },
+
+    /// A vertex has more edges than it has tensor legs. Arity = degree
+    /// for all builders (they take `arity: usize`), so this only fires
+    /// for multi-edges that exceed the vertex's free-leg count. Plan §5.6.
+    #[error(
+        "vertex '{vertex_id}' of type {vertex_type:?} has degree {degree} but only {max} legs available"
+    )]
+    DegreeOverflow {
+        vertex_id: String,
+        vertex_type: VertexType,
+        degree: usize,
+        max: usize,
+    },
+}
+

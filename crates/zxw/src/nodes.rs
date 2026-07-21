@@ -24,6 +24,7 @@
 // `Tensor::apply_2x2_to_axis`. This is the standard "basis change =
 // one 2×2 matrix per leg" rule for rank-n tensors.
 
+use crate::graph::VertexType;
 use crate::tensor::{Cplx, Tensor};
 use std::f64::consts::FRAC_1_SQRT_2; // 1/√2
 
@@ -51,9 +52,9 @@ pub fn z_spider(arity: usize, phase: f64) -> Tensor {
 
     // For each multi-index, the value is 1 if all bits 0, e^{iφ} if all
     // bits 1, else 0. Arity 0 (scalar) → the single entry is the sum of
-    // both → 1 + e^{iφ};
+    // both → 1 + e^{iφ}. (Scalar shape is `[]`, indexed by `&[]`.)
     if arity == 0 {
-        *t.get_mut(&[0]) = value_one + phase_factor;
+        *t.get_mut(&[]) = value_one + phase_factor;
     } else {
         *t.get_mut(&bits_to_index(0, arity)) = value_one;
         *t.get_mut(&bits_to_index(total - 1, arity)) = phase_factor;
@@ -153,6 +154,39 @@ pub fn empty() -> Tensor {
     Tensor::scalar(Cplx::new(1.0, 0.0))
 }
 
+/// Dispatch a `VertexType` to its builder, returning the initial tensor
+/// for a vertex of that type at the given `arity` (degree) and `phase`.
+/// Returns `None` for boundary types (`Input` / `Output`) — boundaries
+/// have no tensor; the contraction layer treats them as tagged open
+/// legs of the result instead (plan §4.3, §5.1).
+///
+/// `phase` is only read for spider/box types (`z`, `x`, `zbox`, `xbox`);
+/// for `w`, `h`, `and`, `empty` it's ignored. H-box ignores `arity` too
+/// (fixed at 2); the caller validates that the degree is 2 separately
+/// and surfaces `ComputeError::HBoxArity` if not.
+///
+/// The builders themselves do no validation — this dispatcher only
+/// routes, so all arity / degree checks belong to the caller
+/// (`compute_tensor`).
+pub fn build_vertex_tensor(
+    vertex_type: VertexType,
+    arity: usize,
+    phase: f64,
+) -> Option<Tensor> {
+    use VertexType::*;
+    match vertex_type {
+        Z => Some(z_spider(arity, phase)),
+        X => Some(x_spider(arity, phase)),
+        Zbox => Some(z_box(arity, phase)),
+        Xbox => Some(x_box(arity, phase)),
+        W => Some(w_node(arity)),
+        H => Some(h_box()),
+        And => Some(and_gate(arity)),
+        Empty => Some(empty()),
+        Input | Output => None,
+    }
+}
+
 // ---- internals --------------------------------------------------------------
 
 /// Shared core of `z_box`/`x_box` before the X basis change: a rank-n
@@ -211,6 +245,44 @@ mod tests {
     fn print_all_tensors() {
         println!("z spider: {}", z_spider(2, PI));
         println!("x spider: {}", x_spider(2, PI));
+    }
+
+    #[test]
+    fn build_vertex_tensor_dispatches_every_type() {
+        // Every generator variant produces a tensor; boundaries return
+        // None. The exact shapes are covered by each builder's own test
+        // — here we only pin the dispatch table, so a future variant
+        // added to `VertexType` without a match arm fails this test
+        // loudly (Rust's exhaustiveness check would also catch it, but
+        // the named test makes the contract readable).
+        use crate::graph::VertexType::*;
+        let cases: [(VertexType, Option<usize>); 10] = [
+            (Z, Some(2)),      // arity-2 z_spider → shape (2,2)
+            (X, Some(2)),
+            (Zbox, Some(2)),
+            (Xbox, Some(2)),
+            (W, Some(2)),
+            (H, Some(2)),      // h_box always shape (2,2) regardless of arity
+            (And, Some(2)),
+            (Empty, Some(0)),  // scalar → rank 0
+            (Input, None),     // boundary, no tensor
+            (Output, None),
+        ];
+        for (vt, expected_rank) in cases {
+            let built = build_vertex_tensor(vt, 2, std::f64::consts::PI);
+            match (built, expected_rank) {
+                (Some(t), Some(r)) => {
+                    assert_eq!(
+                        t.rank(), r,
+                        "rank mismatch for variant {vt:?}"
+                    );
+                }
+                (None, None) => { /* boundary as expected */ }
+                (got, want) => panic!(
+                    "dispatch for {vt:?}: got rank {got:?}, expected rank {want:?}"
+                ),
+            }
+        }
     }
 
     #[test]

@@ -559,8 +559,9 @@ struct Group {
 4. Remove both entries from `free_axes`; concatenate the remainder
    (`gu`'s, then `gv`'s — order matters for §5.4's output ordering).
 5. If `gu ≠ gv`, union the groups; the surviving group owns the new
-   tensor and merged `free_axes`. If `gu == gv` (self-loop case), see
-   §5.6 — it's a *trace*, a different code path.
+   tensor and merged `free_axes`. If `gu == gv` (self-loop case — i.e.
+   an edge from a vertex to itself), §5.6 calls `Tensor::trace` on two
+   of the source group's free legs (no group merge).
 
 "Any free axis works" is true **only** for symmetric tensors; the
 `(vertex_id, leg_index)` map is what generalizes correctness to H-boxes,
@@ -742,12 +743,14 @@ non-trivial graph shapes:
   can blow up the output shape exponentially; flag this as a Phase 6
   optimization target (likely: return per-component results instead,
   which changes the `TensorResult` shape and the worker protocol).
-- **Self-loops (edge from `v` to `v`).** **Reject in v1** with
-  `ComputeError::SelfLoopUnsupported { vertex_id }`. A self-loop is a
-  *trace* over two legs of the *same* tensor — a distinct code path
-  from inter-vertex contraction (sum over the diagonal, no group
-  merge). Punting keeps §5.1 single-purpose; trace support is a Phase 6
-  item.
+- **Self-loops (edge from `v` to `v`).** **Supported in v1** via
+  `Tensor::trace(axis_a, axis_b)` — a self-loop is a trace over two
+  legs of the same tensor (sum over the diagonal, no group merge).
+  The edge-walk picks two free legs of the source vertex's group and
+  calls `trace`; both legs are removed from `free_axes`. (The earlier
+  plan revision rejected self-loops with `SelfLoopUnsupported`; that
+  was superseded when `Tensor::trace` landed — the user confirmed the
+  trace-based policy at Phase 4 kickoff.)
 - **Multi-edges (≥2 edges between the same pair `(u, v)`).**
   **Supported for free** — each edge is a separate contraction that
   consumes one remaining leg from each side. Two edges between `u` and
@@ -775,9 +778,10 @@ non-trivial graph shapes:
     boundary can't fan out — it labels exactly one basis index of the
     result, not several.
 
-Add `SelfLoopUnsupported`, `DegreeOverflow`, `ArityUnsupported`, and
-`BoundaryDegreeViolation` variants to `ComputeError` (see
-`crates/zxw/src/error.rs`).
+Add `DegreeOverflow`, `HBoxArity`, `BoundaryDegreeViolation`, and
+`VertexNotFound` variants to `ComputeError` (see
+`crates/zxw/src/error.rs`). `SelfLoopUnsupported` is **not** present —
+self-loops are supported via `Tensor::trace` per the bullet above.
 
 ---
 
@@ -1304,9 +1308,8 @@ Acceptance is gated on each phase passing the next rung:
 >   tensor treats all legs of W and AND as equivalent (standard ZXW
 >   convention). Locked in §4.3 + the conventions block.
 > - **Graph-document validity** → locked v1 policy in §5.6:
->   disconnected components outer-producted; self-loops rejected with
->   `ComputeError::SelfLoopUnsupported`; multi-edges supported; empty
->   graph → scalar 1.
+>   disconnected components outer-producted; self-loops supported via
+>   `Tensor::trace`; multi-edges supported; empty graph → scalar 1.
 > - **zbox/xbox v1 semantics** → **two-corner box.** Only
 >   `T[0,…,0]=1` and `T[1,…,1]=phase` (the **raw phase value**, not
 >   `e^{iφ}`) are non-zero; every off-corner entry is 0. This is the

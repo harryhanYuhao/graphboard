@@ -204,6 +204,68 @@ impl Tensor {
         Tensor { data: out_arr }
     }
 
+    /// Outer product: `out[i..., j...] = self[i...] * other[j...]`. The
+    /// result shape is `self.shape() ++ other.shape()` — no axes are
+    /// contracted. Consumes both inputs.
+    ///
+    /// Used by the contraction layer to combine disconnected components
+    /// (plan §5.6) into one result tensor. Mathematically the identity
+    /// element is the scalar `1` (a rank-0 tensor), so reducing an empty
+    /// list of components returns `Tensor::scalar(1)`.
+    pub fn outer_product(self, other: Self) -> Tensor {
+        let a = self.data;
+        let b = other.data;
+        let a_shape: Vec<usize> = a.shape().to_vec();
+        let b_shape: Vec<usize> = b.shape().to_vec();
+
+        // ndarray doesn't have a direct outer-product op, but the result
+        // is just every entry of `a` times every entry of `b`. The
+        // simplest correct impl: flatten both, allocate the concatenated
+        // flat buffer, fill entry-by-entry, then reshape back. Output
+        // sizes in v1 are tiny (small graphs, few open legs), so O(M·N)
+        // is fine.
+        let a_total: usize = a_shape.iter().product::<usize>();
+        let b_total: usize = b_shape.iter().product::<usize>();
+        let a_flat = a
+            .to_shape((a_total,))
+            .expect("outer_product: flatten a")
+            .to_owned();
+        let b_flat = b
+            .to_shape((b_total,))
+            .expect("outer_product: flatten b")
+            .to_owned();
+
+        let mut out_flat =
+            ndarray::Array1::from_elem(a_total * b_total, Cplx::new(0.0, 0.0));
+        for i in 0..a_total {
+            for j in 0..b_total {
+                out_flat[i * b_total + j] = a_flat[i] * b_flat[j];
+            }
+        }
+
+        let mut out_shape: Vec<usize> = a_shape;
+        out_shape.extend_from_slice(&b_shape);
+        let out_arr = out_flat
+            .into_shape(IxDyn(&out_shape))
+            .expect("outer_product: reshape back");
+        Tensor { data: out_arr }
+    }
+
+    /// Permute the axes of `self` by `perm`. `perm[k]` is the old axis
+    /// that becomes axis `k` in the result. Thin named wrapper around
+    /// ndarray's `permuted_axes` so callers in `contraction.rs` don't
+    /// pull ndarray into scope directly.
+    ///
+    /// Used by the contraction layer for the §5.4 final partition: the
+    /// inputs→outputs→neutral axis reorder is a permutation applied
+    /// after the edge-walk finishes.
+    pub fn permuted_axes(self, perm: &[usize]) -> Tensor {
+        // ndarray's `permuted_axes` takes a slice of axis indices; we
+        // adapt our `&[usize]` to the `IxDyn`-shaped argument it wants.
+        let perm_dyn = IxDyn(perm);
+        Tensor { data: self.data.permuted_axes(perm_dyn) }
+    }
+
     /// Apply a 2×2 matrix `m` to one axis of `self`, in place along that
     /// axis. Used by the per-vertex builders to derive X-basis tensors
     /// (X spider = H applied to each leg of the Z spider) and to conjugate
@@ -275,6 +337,63 @@ mod tests {
 
     fn c(re: f64, im: f64) -> Cplx {
         Cplx::new(re, im)
+    }
+
+    #[test]
+    fn outer_product_shape_is_concatenation() {
+        // (2,3) ⊗ (4,) → (2,3,4). Confirms the shape contract before
+        // checking values.
+        let a = Tensor::from_array(
+            ndarray::ArrayD::from_elem(IxDyn(&[2, 3]), Cplx::new(1.0, 0.0)),
+        );
+        let b = Tensor::from_array(
+            ndarray::ArrayD::from_elem(IxDyn(&[4]), Cplx::new(2.0, 0.0)),
+        );
+        let r = a.outer_product(b);
+        assert_eq!(r.shape(), &[2, 3, 4]);
+    }
+
+    #[test]
+    fn outer_product_entries_are_pairwise_products() {
+        // (2,) ⊗ (2,) with distinguishable values. out[i, j] = a[i] * b[j].
+        let a = Tensor::from_array(
+            ndarray::arr1(&[c(1.0, 0.0), c(2.0, 0.0)]).into_dyn(),
+        );
+        let b = Tensor::from_array(
+            ndarray::arr1(&[c(3.0, 0.0), c(4.0, 0.0)]).into_dyn(),
+        );
+        let r = a.outer_product(b);
+        assert_eq!(r.shape(), &[2, 2]);
+        assert_eq!(r.get(&[0, 0]), c(3.0, 0.0)); // 1·3
+        assert_eq!(r.get(&[0, 1]), c(4.0, 0.0)); // 1·4
+        assert_eq!(r.get(&[1, 0]), c(6.0, 0.0)); // 2·3
+        assert_eq!(r.get(&[1, 1]), c(8.0, 0.0)); // 2·4
+    }
+
+    #[test]
+    fn outer_product_scalar_identity() {
+        // A scalar (rank-0) outer-product anything = the other operand
+        // scaled by the scalar. This is the identity the empty-graph
+        // reduction relies on (no components → scalar 1 → multiply by 1).
+        let scalar_one = Tensor::scalar(c(1.0, 0.0));
+        let v = Tensor::from_array(ndarray::arr1(&[c(5.0, 0.0), c(7.0, 0.0)]).into_dyn());
+        let r = scalar_one.outer_product(v);
+        assert_eq!(r.shape(), &[2]);
+        assert_eq!(r.get(&[0]), c(5.0, 0.0));
+        assert_eq!(r.get(&[1]), c(7.0, 0.0));
+    }
+
+    #[test]
+    fn permuted_axes_swaps_two_axes_of_a_rank_2_tensor() {
+        // Transpose: perm [1, 0] on [[1,2],[3,4]] → [[1,3],[2,4]].
+        let t = Tensor::from_array(
+            ndarray::arr2(&[[c(1., 0.), c(2., 0.)], [c(3., 0.), c(4., 0.)]]).into_dyn(),
+        );
+        let r = t.permuted_axes(&[1, 0]);
+        assert_eq!(r.get(&[0, 0]), c(1., 0.));
+        assert_eq!(r.get(&[0, 1]), c(3., 0.));
+        assert_eq!(r.get(&[1, 0]), c(2., 0.));
+        assert_eq!(r.get(&[1, 1]), c(4., 0.));
     }
 
     #[test]
