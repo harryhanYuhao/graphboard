@@ -12,8 +12,12 @@
 - The frontend today stores a ZXW graph in two slices: `graph` (nodes + edges,
   the compute contract) and `view` (positions, future visual fields). See
   `AGENTS.md` §"Document shape (v1)".
-- Vertex types live in `src/lib/graph/vertex-types.ts`. Today there are **eight**
-  selectable types — `z`, `empty`, `x`, `w`, `h`, `zbox`, `xbox`, `and`
+- Vertex types live in `src/lib/graph/vertex-types.ts`. Today there are **ten**
+  selectable types — `z`, `empty`, `x`, `w`, `h`, `zbox`, `xbox`, `and`,
+  `input`, `output`. The last two are **boundary markers**, not ZXW
+  generators: an `input` declares one open leg flowing *into* the graph,
+  an `output` declares one open leg flowing *out*. They are not tensors
+  themselves; see §4.3 and §5.1 for how the contraction treats them.
 - Vertex data is `{ label: string, vertexType: VertexType }`. 
  `label` *is* the phase for spider types
   (`z`, `x`, `zbox`, `xbox`); for other vertex types it's free-form text.
@@ -37,10 +41,11 @@ the toolbar to drive it and a result panel to display shape + values.
 
 ### Conventions introduced in this plan (lock these in)
 
-| Vertex type | `label` semantics |
-|---|---|
-| `z`, `x`, `zbox`, `xbox` | Phase expression, optionally LaTeX. Empty = phase 0. |
-| `empty`, `w`, `h`, `and` | Free-form text. Not parsed for compute. |
+| Vertex type | `label` semantics | Tensor? |
+|---|---|---|
+| `z`, `x`, `zbox`, `xbox` | Phase expression, optionally LaTeX. Empty = phase 0. | Yes — builder per §4.3. |
+| `empty`, `w`, `h`, `and` | Free-form text. Not parsed for compute. | Yes — builder per §4.3. |
+| `input`, `output` | Free-form text (decoration). Not parsed. | **No** — boundary marker; declares one open leg of the result (see §4.3, §5.1). |
 
 **LaTeX detection rule** (UI): if the label contains `$…$` or `$$…$$`,
 render with KaTeX; otherwise plain text.
@@ -291,6 +296,7 @@ pub struct VertexData {
 #[serde(rename_all = "lowercase")]
 pub enum VertexType {
     Z, Empty, X, W, H, Zbox, Xbox, And,
+    Input, Output,  // boundary markers — not tensors (see §4.3, §5.1)
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -421,12 +427,18 @@ uniform contraction semantics.
   the normalized physics W-state is a Phase 6 concern.) Directionality
   is a renderer concern only; all legs are equivalent for the tensor.
 - **AND-gate:** unnormalized indicator — the all-1s index → 1, else 0.
-- **zbox / xbox (v1):** **single-phase diagonal.**
-  `z_box(arity, phase)` → diagonal tensor with `e^{i·phase}` at the
-  all-1s index and `1` at every other index. `x_box` is the
-  H-conjugated form. Multi-phase (2^arity independent phases) is
-  deferred to Phase 6; the label carries one expression today, so one
-  phase it is.
+- **zbox / xbox (v1):** **two-corner box.** `z_box(arity, phase)`
+  → rank-`arity` tensor with non-zero entries **only** at the two
+  opposite corners: `T[0,…,0] = 1` and `T[1,…,1] = phase` — the **raw
+  phase value**, **not** `e^{i·phase}`. This is the particularity of
+  the box vs the spider: the spider's all-1s entry is `e^{iφ}` (a phase
+  factor on the unit circle); the box's is just `φ` (the value itself).
+  Every off-corner entry is `0`. So `z_box(2, 0) = |0⟩⟨0|` (a rank-1
+  projector, **not** the identity — contrast with the spider where
+  phase 0 lands on the copy/identity). `x_box` is the H-conjugated
+  form (Hadamard applied per leg). Multi-phase boxes (one phase per
+  diagonal corner, 2^arity independent values) are Phase 6; the label
+  carries one expression today, so one corner value it is.
 - **empty:** scalar `1` (0 legs).
 
 | Builder | Tensor shape | Non-zero entries |
@@ -435,7 +447,7 @@ uniform contraction semantics.
 | `x_spider(arity, phase)` | `(2,)*arity` | Same as Z but in X basis (H⊗…⊗H applied to Z spider). |
 | `w_node(arity)` | `(2,)*arity` | Any `i` with exactly one bit set → 1; else 0. (Unnormalized; directional in the renderer only.) |
 | `h_box()` | `(2, 2)` | `1/√2 · [[1,1],[1,-1]]`. Fixed arity 2; for larger circuits the user chains H-boxes. |
-| `z_box(arity, phase: f64)` | `(2,)*arity` | Diagonal: all-1s index → `e^{i·phase}`, all others → 1. |
+| `z_box(arity, phase: f64)` | `(2,)*arity` | Two-corner: `T[0,…,0]=1`, `T[1,…,1]=phase` (raw value, **not** `e^{i·phase}`), every other entry 0. |
 | `x_box(arity, phase: f64)` | `(2,)*arity` | Same but X basis (H⊗…⊗H applied to z_box). |
 | `empty()` | `[]` (scalar) | 1. Constant. |
 | `and_gate(arity)` | `(2,)*arity` | All-1s index → 1, else 0. |
@@ -452,12 +464,39 @@ uniform contraction semantics.
   treat all legs as equivalent (W with k legs is the k-leg W state; AND
   with k legs is the k-input AND). This is the standard convention and
   matches what ZXW libraries do.
-- **Box parameters (v1 = single phase, multi-phase = Phase 6).** The
+- **Box parameters (v1 = single phase value, multi-phase = Phase 6).** The
   label-as-phase convention carries exactly one expression; in v1
-  `z_box` / `x_box` take a single `phase: f64` and apply it to the
-  all-1s diagonal entry (see the Conventions block above). 2^arity
-  independent phases require a richer `label` encoding and are deferred
-  to Phase 6.
+  `z_box` / `x_box` take a single `phase: f64` and place it **as the
+  raw value** at the all-1s corner entry (`T[1,…,1] = phase`, not
+  `e^{i·phase}` — see the Conventions block above). The opposite corner
+  `T[0,…,0]` is `1`; every other entry is `0`. 2^arity independent
+  corner values require a richer `label` encoding and are deferred to
+  Phase 6.
+
+**Boundary markers — `input` / `output` are NOT tensors.** They do not
+appear in the builder table above and have no `Tensor`-returning
+constructor. Instead, each boundary node declares **one open leg of the
+resulting tensor** (dimension 2). Semantics:
+
+- An `input` is a *source*: its leg flows into the network (one output
+  wire from the boundary into its neighbour). In bra/ket terms, it
+  labels an input basis index (row of the resulting matrix).
+- An `output` is a *target*: its leg flows out of the network. It labels
+  an output basis index (column of the resulting matrix).
+- A graph with `n` input nodes and `m` output nodes contracts to a
+  rank-(n+m) tensor that the UI displays as a **2^n × 2^m matrix**
+  (rows = inputs flattened, cols = outputs flattened — see §5.4).
+- A graph with no boundary nodes contracts to a **scalar** (a 1×1
+  constant).
+- Degree policy (§5.6): a boundary node may have degree 0 (an open leg
+  of value 1, i.e. a dangling no-op wire) or degree 1 (the normal case).
+  Degree > 1 is a hard error.
+
+Because boundaries have no tensor, the contraction (§5.1) treats them
+specially: a boundary vertex contributes a length-2 identity leg that
+is *tagged* as an input or output axis and survives to the final result,
+rather than being absorbed into an intermediate group tensor. See §5.1
+for the leg-tracking detail.
 
 ### 4.4 Tests for Phase 3
 
@@ -526,6 +565,30 @@ struct Group {
 "Any free axis works" is true **only** for symmetric tensors; the
 `(vertex_id, leg_index)` map is what generalizes correctness to H-boxes,
 directional nodes, and anything non-symmetric Phase 6 adds.
+
+**Boundary legs (`input` / `output` nodes).** A boundary vertex has **no
+tensor** — it declares an open leg of the result, not a generator to
+contract. The contraction handles it as follows:
+
+- When building initial groups, skip boundary vertices: they get no
+  `Group` with a tensor. Instead, record each boundary as a *tagged open
+  leg* `(vertex_id, role)` where `role ∈ {Input, Output}`.
+- When an edge connects a boundary `b` to a tensor-vertex `v` (the
+  normal case — degree 1), the boundary's leg is the one on `v`'s side.
+  Contract `v`'s group tensor with a length-2 identity `Tensor::zeros`
+  ... no — simpler: just **leave `v`'s leg free** and tag it with the
+  boundary's role. The leg becomes one of the result's axes; no
+  multiplication happens at the boundary.
+- Degree 0 boundary (no edge): the leg is still a valid result axis of
+  value `[1, 0]` — a dangling input/output basis state. Contributes an
+  axis to the result without touching any group.
+- Degree > 1 boundary: reject (§5.6).
+
+Concretely, this means `free_axes` entries can be tagged as
+`(vertex_id, leg_index, Boundary(Input | Output | None))`. At the end,
+the result tensor's axes are partitioned: input-tagged axes first, then
+output-tagged axes, then any remaining non-boundary free legs (per
+§5.4's ordering rule).
 
 **Worked example — Z–H–Z chain (3 vertices, 2 edges).**
 
@@ -596,14 +659,29 @@ Default: **dense JSON**, shape + flat array of `{re, im}` pairs:
 Sparse output (Phase 6+ if needed) — only non-zero entries + their
 indices. Skipped for v1 because the typical output arity is small.
 
-**Open-leg output axis ordering (locked).** Output axes are ordered by
-**first appearance of the owning vertex in input `graph.nodes` order,
-then by leg index within that vertex**. This falls out of the §5.1
-`free_axes` walk if, when the surviving group is materialized at the end,
-you stable-sort its `free_axes` by `(node_order_index(vertex_id),
-leg_index)`. Stable across runs; required so the UI's dense table and the
-§5.3 cross-tests are reproducible. Do not leave axis order up to
+**Open-leg output axis ordering (locked).** Result tensor axes are
+ordered by a **role partition**, then by node order within each role:
+
+1. **Input axes first** — one axis per `input` boundary node, in
+   `graph.nodes` order.
+2. **Output axes next** — one axis per `output` boundary node, in
+   `graph.nodes` order.
+3. **Remaining free legs last** — any non-boundary open legs (e.g. a Z
+   spider left with an unconnected leg), in `graph.nodes` order then by
+   leg index within the vertex. Rare in well-formed graphs but possible.
+
+This falls out of the §5.1 `free_axes` walk if each entry carries its
+boundary role tag. Stable across runs; required so the UI's dense table
+and the §5.3 cross-tests are reproducible. Do not leave axis order up to
 `HashMap` iteration.
+
+**Matrix interpretation.** With `n` inputs and `m` outputs the result is
+a rank-(n+m) tensor; the UI flattens it into a **2^n × 2^m matrix**
+(rows = inputs flattened in big-endian bit order, cols = outputs
+flattened likewise). This is the standard bra/ket convention: inputs
+are the "in" basis (rows, ⟨x|), outputs are the "out" basis (cols,
+|y⟩), and the matrix entry `(i, j)` is the amplitude ⟨input_i |
+network | output_j⟩. No boundary nodes → scalar (1×1).
 
 ### 5.5 Label parse fallback (D2)
 
@@ -624,6 +702,13 @@ pub struct TensorResult {
     pub shape: Vec<usize>,
     pub data: Vec<(f64, f64)>,          // (re, im) pairs
     pub warnings: Vec<String>,          // per-spider parse fallbacks go here
+    // Boundary counts — drive the UI's matrix interpretation. With
+    // `input_count = n` and `output_count = m`, the result is a
+    // rank-(n+m) tensor (shape length = n + m + any non-boundary free
+    // legs) that the UI displays as a 2^n × 2^m matrix. Zero boundaries
+    // → scalar. See §5.4 for axis ordering.
+    pub input_count: usize,
+    pub output_count: usize,
 }
 ```
 
@@ -676,9 +761,23 @@ non-trivial graph shapes:
   free legs; builders take `arity: usize` so this is self-consistent.
   But if a *non-symmetric* node (e.g. a future arity-2-only H-box) is
   asked for arity ≠ 2, return `ComputeError::ArityUnsupported`.
+- **Boundary node degree (`input` / `output`).** A boundary declares
+  exactly one open leg of the result, so:
+  - **Degree 0** (no edge attached): **allowed.** The boundary
+    contributes an open axis of value `[1, 0]` — a dangling basis
+    state. Useful while a graph is being built; the result still has
+    the right rank.
+  - **Degree 1** (the normal case): the boundary's leg is the one on
+    its neighbour; the neighbour's free leg becomes a tagged result
+    axis (§5.1 boundary-legs block).
+  - **Degree > 1**: **reject** with
+    `ComputeError::BoundaryDegreeViolation { vertex_id, degree }`. A
+    boundary can't fan out — it labels exactly one basis index of the
+    result, not several.
 
-Add a `SelfLoopUnsupported`, `DegreeOverflow`, and `ArityUnsupported`
-variant to `ComputeError` (see `crates/zxw/src/error.rs`).
+Add `SelfLoopUnsupported`, `DegreeOverflow`, `ArityUnsupported`, and
+`BoundaryDegreeViolation` variants to `ComputeError` (see
+`crates/zxw/src/error.rs`).
 
 ---
 
@@ -1070,9 +1169,14 @@ export async function computeTensor(
   progress bar (`contracted / total` edges) fed by `onProgress`. A
   **Cancel** button next to it calls `abortController.abort()`.
 - **Result panel.** Opens as a side sheet or modal on success. Contents:
-  - Shape summary (e.g. `2 × 2 × 2`).
+  - Shape summary using the boundary counts from `TensorResult`:
+    - Scalar (no boundaries): "constant — value `v`".
+    - With `n` inputs + `m` outputs: "`2^n × 2^m` matrix" (e.g. "4 × 2
+      matrix" for 2 inputs, 1 output), plus the raw rank if non-boundary
+      free legs exist ("+ k dangling legs").
   - Dense value table for ≤ 64 entries. Larger outputs: first 32 entries +
-    "… and N more".
+    "… and N more". When boundaries are present, render as an actual
+    matrix grid (rows = inputs, cols = outputs) rather than a flat list.
   - Per-vertex parse warnings rendered as a collapsible **"Warnings (N)"**
     section (see §5.5 fallback rules).
 - **Error display.** Worker-failed-to-load, version mismatch, and compute
@@ -1203,7 +1307,16 @@ Acceptance is gated on each phase passing the next rung:
 >   disconnected components outer-producted; self-loops rejected with
 >   `ComputeError::SelfLoopUnsupported`; multi-edges supported; empty
 >   graph → scalar 1.
-> - **zbox/xbox v1 semantics** → **single-phase diagonal** (all-1s
->   index → `e^{iφ}`, else 1). Multi-phase deferred to Phase 6. §4.3.
+> - **zbox/xbox v1 semantics** → **two-corner box.** Only
+>   `T[0,…,0]=1` and `T[1,…,1]=phase` (the **raw phase value**, not
+>   `e^{iφ}`) are non-zero; every off-corner entry is 0. This is the
+>   box's particularity vs the spider (whose all-1s entry is `e^{iφ}`).
+>   Note `z_box(2, 0)` is therefore `|0⟩⟨0|`, **not** the identity.
+>   Multi-phase (one value per corner) deferred to Phase 6. §4.3.
+> - **`input`/`output` boundary semantics** → they are **not tensors**;
+>   each declares one open leg of the result (dimension 2). n inputs +
+>   m outputs → 2^n × 2^m matrix; no boundaries → scalar. Result axes
+>   ordered inputs-then-outputs (§5.4). Degree 0 ok, degree > 1 rejected
+>   with `ComputeError::BoundaryDegreeViolation` (§5.6).
 
 ---

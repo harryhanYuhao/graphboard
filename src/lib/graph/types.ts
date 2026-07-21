@@ -2,8 +2,22 @@
 
 import type { Edge, Node } from "@xyflow/react";
 
-// ZXW generators. Each type renders with a distinct shape and color.
-export type VertexType = "z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and";
+// ZXW generators plus the two boundary types. Each type renders with a
+// distinct shape and color. `input` / `output` are not tensors — they
+// declare open legs of the resulting tensor (each leg dimension 2), so
+// n inputs + m outputs → 2^m × 2^n matrix after contraction; no
+// boundaries → scalar. See `isBoundaryVertex` in vertex-types.ts.
+export type VertexType =
+  | "z"
+  | "empty"
+  | "x"
+  | "w"
+  | "h"
+  | "zbox"
+  | "xbox"
+  | "and"
+  | "input"
+  | "output";
 
 // ---- React Flow handle & edge identifiers ---------------------------------
 //

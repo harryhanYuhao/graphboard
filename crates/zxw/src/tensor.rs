@@ -27,6 +27,7 @@
 
 use ndarray::{ArrayD, IxDyn};
 use num_complex::Complex;
+use std::fmt;
 
 pub type Cplx = Complex<f64>;
 
@@ -143,6 +144,65 @@ impl Tensor {
         Tensor { data: out_arr }
     }
 
+    /// Contract `self` (axis `axis_a`) with `other` (axis `axis_b`),
+    /// returning a new tensor whose axes are `[self's other axes...,
+    /// other's other axes...]`. Consumes both inputs.
+    ///
+    /// Mathematically: `result[i..., j...] = Σ_k self[i..., k] * other[j..., k]`
+    /// (after moving `axis_a`/`axis_b` to the last position of each).
+    ///
+    /// Panics on mismatched contracted-axis lengths — that's a programmer
+    /// bug in the builder / contraction code, not a runtime input error.
+    pub fn trace(self, axis_a: usize, axis_b: usize) -> Tensor {
+        let a = self.data;
+
+        let contracted_len = a.shape()[axis_a];
+        assert_eq!(
+            contracted_len,
+            a.shape()[axis_b],
+            "contract: axis lengths differ ({axis_a} of self is {}, {axis_b} of other is {})",
+            contracted_len,
+            a.shape()[axis_b]
+        );
+
+        // Move the contracted axis to the *last* position of each tensor
+        // so the data lays out as [free axes...,
+        // axix_a, axix_b].
+        // This is for GEMM-shaped triple loop.
+        let mut a_perm: Vec<usize> = (0..a.ndim())
+            .filter(|&i| i != axis_a || i != axis_b)
+            .collect();
+        a_perm.push(axis_a);
+        a_perm.push(axis_b);
+        let a = a.permuted_axes(a_perm);
+
+        let a_shape = a.shape();
+        let m: usize = a_shape[..a_shape.len() - 2].iter().product();
+        let k = contracted_len;
+
+        // Flatten to 2D for the matmul. `to_shape` is a reshaping view
+        // that reuses the same buffer; we clone into owned at the end.
+        let a_mat = a
+            .to_shape((m, k, k))
+            .expect("contract: reshape a to (M,K,K)")
+            .to_owned();
+
+        let mut out: ndarray::Array1<Cplx> = ndarray::Array1::from_elem(m, Cplx::new(0.0, 0.0));
+        for i in 0..m {
+            let mut acc = Cplx::new(0.0, 0.0);
+            for t in 0..k {
+                acc += a_mat[(i, t, t)];
+                out[i] = acc;
+            }
+        }
+
+        // Reshape back to the concatenated free-shape.
+        let out_shape: Vec<usize> = a_shape[..a_shape.len() - 2].to_vec();
+        let out_arr = out
+            .into_shape(IxDyn(&out_shape))
+            .expect("contract: reshape (M,N) back to free axes");
+        Tensor { data: out_arr }
+    }
     /// Apply a 2×2 matrix `m` to one axis of `self`, in place along that
     /// axis. Used by the per-vertex builders to derive X-basis tensors
     /// (X spider = H applied to each leg of the Z spider) and to conjugate
@@ -260,8 +320,9 @@ mod tests {
         // should have its two entries swapped — axis 0 is the row axis.
         // Regression guard: an earlier impl missed (prefix, suffix)
         // pairs and only rewrote the first suffix position.
-        let mut t =
-            Tensor::from_array(ndarray::arr2(&[[c(1., 0.), c(2., 0.)], [c(3., 0.), c(4., 0.)]]).into_dyn());
+        let mut t = Tensor::from_array(
+            ndarray::arr2(&[[c(1., 0.), c(2., 0.)], [c(3., 0.), c(4., 0.)]]).into_dyn(),
+        );
         let swap = [[c(0., 0.), c(1., 0.)], [c(1., 0.), c(0., 0.)]];
         t.apply_2x2_to_axis(0, swap);
         assert_eq!(t.get(&[0, 0]), c(3., 0.), "row 0 col 0 swapped");
@@ -400,3 +461,8 @@ mod tests {
     }
 }
 
+impl fmt::Display for Tensor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", format!("{}", self.data))
+    }
+}

@@ -132,76 +132,91 @@ fn and_gate_3_is_one_only_at_all_ones() {
 }
 
 #[test]
-fn z_box_zero_phase_is_identity_diagonal() {
-    // z_box(arity, 0): every entry is 1 (since e^{i·0} = 1 lands on the
-    // all-ones slot too). So the 2-arity box is the rank-2 identity
-    // tensor.
+fn z_box_zero_phase_is_projector_onto_zero() {
+    // z_box(2, 0): T[0,0]=1, T[1,1]=0 (the raw phase VALUE, not
+    // e^{i0}=1). So the matrix form is [[1,0],[0,0]] — the rank-1
+    // projector onto |0⟩⟨0|, NOT the identity. This is the box
+    // particularity: phase 0 ≠ identity (contrast with the spider,
+    // where phase 0 IS the copy/identity). Pinning it explicitly
+    // because the intuition from spiders is misleading here.
     let z = z_box(2, 0.0);
     assert_eq!(z.get(&[0, 0]), c(1.0, 0.0));
-    assert_eq!(z.get(&[0, 1]), c(1.0, 0.0));
-    assert_eq!(z.get(&[1, 0]), c(1.0, 0.0));
-    assert_eq!(z.get(&[1, 1]), c(1.0, 0.0));
+    assert_eq!(z.get(&[0, 1]), c(0.0, 0.0));
+    assert_eq!(z.get(&[1, 0]), c(0.0, 0.0));
+    assert_eq!(z.get(&[1, 1]), c(0.0, 0.0));
 }
 
 #[test]
-fn z_box_phase_lands_only_on_all_ones_index() {
-    // Single-phase diagonal (v1 convention, locked §4.3): the all-1
-    // index gets e^{iφ}, every other index gets 1. For arity 3 that
-    // means 7 entries of 1 and one entry of e^{iφ} at (1,1,1).
+fn z_box_phase_lands_only_on_all_ones_corner() {
+    // Locked v1 Z-box convention (plan §4.3): only the two opposite
+    // corners are non-zero. `T[0,…,0] = 1`, `T[1,…,1] = phase` (the
+    // raw phase value, NOT e^{i·phase}). For arity 3 that means exactly
+    // 2 non-zero entries out of 8: 1 at (0,0,0) and φ at (1,1,1).
     let phi = std::f64::consts::FRAC_PI_3;
     let z = z_box(3, phi);
     assert_eq!(z.shape(), &[2, 2, 2]);
+    let mut non_zero = 0;
     for i in 0..2 {
         for j in 0..2 {
             for k in 0..2 {
                 let v = z.get(&[i, j, k]);
-                if (i, j, k) == (1, 1, 1) {
-                    let expected = c(0.0, phi).exp(); // e^{iφ}
-                    assert_relative_eq!(v.re, expected.re, epsilon = 1e-12);
-                    assert_relative_eq!(v.im, expected.im, epsilon = 1e-12);
-                } else {
+                if (i, j, k) == (0, 0, 0) {
+                    non_zero += 1;
                     assert_relative_eq!(v.re, 1.0, epsilon = 1e-12);
+                    assert_relative_eq!(v.im, 0.0, epsilon = 1e-12);
+                } else if (i, j, k) == (1, 1, 1) {
+                    non_zero += 1;
+                    // Raw phase value φ, not e^{iφ}.
+                    assert_relative_eq!(v.re, phi, epsilon = 1e-12);
+                    assert_relative_eq!(v.im, 0.0, epsilon = 1e-12);
+                } else {
+                    assert_relative_eq!(v.re, 0.0, epsilon = 1e-12);
                     assert_relative_eq!(v.im, 0.0, epsilon = 1e-12);
                 }
             }
         }
     }
+    assert_eq!(non_zero, 2, "Z-box should have exactly 2 non-zero corners");
 }
 
 #[test]
-fn z_box_chained_with_h_yields_hadamarded_phase_on_each_axis() {
-    // Sanity that the contract primitive + z_box + h_box compose into
-    // the right shape: z_box(2, 0) is all-ones, and contracting it
-    // between two H-boxes along both legs gives H ⊗ H applied to the
-    // all-ones matrix. The result is the 2×2 matrix of all (1/2), since
-    // H·(all-ones)·H = (1/2)·all-ones. This is a strong contract check
-    // because it exercises two separate axis contractions in sequence.
-    let z = z_box(2, 0.0); // all-ones, shape (2,2)
-    let h_left = h_box(); // (2,2)
-    let h_right = h_box(); // (2,2)
+fn z_box_chained_with_h_yields_plus_state_projector() {
+    // Sanity that contract + z_box + h_box compose into the right
+    // shape with the correct (corner-only) Z-box semantics.
+    //
+    // z_box(2, 0) = |0⟩⟨0| = [[1,0],[0,0]] (a projector, not identity).
+    // H · |0⟩⟨0| · H = |+⟩⟨+| where |+⟩ = (|0⟩+|1⟩)/√2.
+    // |+⟩⟨+| as a matrix is (1/2)·all-ones = [[0.5,0.5],[0.5,0.5]].
+    //
+    // This is a strong contract check — it exercises two axis
+    // contractions and validates that the Z-box's corner-only structure
+    // flows through `contract` correctly.
+    let z = z_box(2, 0.0); // |0⟩⟨0|, shape (2,2)
+    let h_left = h_box();
+    let h_right = h_box();
 
-    // Step 1: contract h_left's axis 1 with z's axis 0.
-    // result1[a, b] = Σ_k h_left[a, k] · z[k, b] = Σ_k h[a,k] · 1 = sum of row a of h.
-    // Since z is all-ones, result1 = h · (all-ones) which is each row of h
-    // summed across columns → result1[i, j] = Σ_k h[i, k] = [√2, 0] per row.
+    // Step 1: r1[a,b] = Σ_k h_left[a,k] · z[k,b].
+    // z[k,b] is non-zero only at (0,0)=1, so r1[a,b] = h_left[a,0] if b==0 else 0.
+    // h_left[a,0] = 1/√2 for both rows (column 0 of H is all 1/√2).
     let r1 = h_left.contract(z, 1, 0);
     assert_eq!(r1.shape(), &[2, 2]);
-    // Row 0 of H is [1/√2, 1/√2], sum = √2. Row 1 is [1/√2, -1/√2], sum = 0.
-    assert_relative_eq!(r1.get(&[0, 0]).re, std::f64::consts::SQRT_2, epsilon = 1e-12);
-    assert_relative_eq!(r1.get(&[0, 1]).re, std::f64::consts::SQRT_2, epsilon = 1e-12);
-    assert_relative_eq!(r1.get(&[1, 0]).re, 0.0, epsilon = 1e-12);
+    let inv = std::f64::consts::FRAC_1_SQRT_2;
+    assert_relative_eq!(r1.get(&[0, 0]).re, inv, epsilon = 1e-12);
+    assert_relative_eq!(r1.get(&[0, 1]).re, 0.0, epsilon = 1e-12);
+    assert_relative_eq!(r1.get(&[1, 0]).re, inv, epsilon = 1e-12);
     assert_relative_eq!(r1.get(&[1, 1]).re, 0.0, epsilon = 1e-12);
 
-    // Step 2: contract r1's axis 1 with h_right's axis 0.
-    // r2[a, b] = Σ_k r1[a, k] · h_right[k, b].
-    // Row 0 of r1 is [√2, √2]. h_right column 0 is [1/√2, 1/√2]^T → √2·(1/√2)+√2·(1/√2) = 2.
-    // h_right column 1 is [1/√2, -1/√2]^T → √2·(1/√2)+√2·(-1/√2) = 0.
+    // Step 2: r2[a,b] = Σ_k r1[a,k] · h_right[k,b].
+    // r1[a,1] = 0, so r2[a,b] = r1[a,0] · h_right[0,b] = inv · inv = 0.5
+    // (h_right[0,*] = [inv, inv]).
     let r2 = r1.contract(h_right, 1, 0);
     assert_eq!(r2.shape(), &[2, 2]);
-    assert_relative_eq!(r2.get(&[0, 0]).re, 2.0, epsilon = 1e-12);
-    assert_relative_eq!(r2.get(&[0, 1]).re, 0.0, epsilon = 1e-12);
-    assert_relative_eq!(r2.get(&[1, 0]).re, 0.0, epsilon = 1e-12);
-    assert_relative_eq!(r2.get(&[1, 1]).re, 0.0, epsilon = 1e-12);
+    for i in 0..2 {
+        for j in 0..2 {
+            assert_relative_eq!(r2.get(&[i, j]).re, 0.5, epsilon = 1e-12);
+            assert_relative_eq!(r2.get(&[i, j]).im, 0.0, epsilon = 1e-12);
+        }
+    }
 }
 
 #[test]

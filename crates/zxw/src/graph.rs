@@ -1,7 +1,7 @@
 // crates/zxw/src/graph.rs
 //
 // `GraphSlice` data model — the contract between the frontend (TS) and
-// the Rust compute layer (serde JSON / serde_wasm_bindgen). The compute
+// the Rust compute layer. The compute
 // layer consumes `doc.graph` straight off the WASM boundary, so this is
 // the *only* shape that crosses it. Source of truth for the TS side:
 // `src/lib/graph/types.ts`.
@@ -47,9 +47,12 @@ pub struct VertexData {
     pub vertex_type: VertexType,
 }
 
-/// The eight ZXW generators. Serialized lowercase to match the TS
-/// `VertexType` string union (`"z" | "empty" | …`). `Copy` so dispatch
-/// on the type is cheap and borrow-free.
+/// The ten vertex types: eight ZXW generators plus two boundary markers
+/// (`Input`, `Output`). Boundary types are NOT tensors — they declare
+/// open legs of the resulting tensor (each leg dimension 2), so n inputs
+/// + m outputs → 2^m × 2^n matrix after contraction; no boundaries →
+/// scalar. Serialized lowercase to match the TS `VertexType` string
+/// union. `Copy` so dispatch on the type is cheap and borrow-free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VertexType {
@@ -61,6 +64,8 @@ pub enum VertexType {
     Zbox,
     Xbox,
     And,
+    Input,
+    Output,
 }
 
 /// A persisted edge: endpoints plus the optional numeric connection

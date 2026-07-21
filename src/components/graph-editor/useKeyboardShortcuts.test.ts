@@ -314,8 +314,9 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
     renderHook(() => useKeyboardShortcuts());
 
     pressOnBody({ key: "4" });
-    // VERTEX_TYPES[3] is "x".
-    expect(useGraphStore.getState().selectedVertexType).toBe("x");
+    // VERTEX_TYPES[3] is "input" per vertex-types.ts (order: zbox, z,
+    // empty, input, output, x, …).
+    expect(useGraphStore.getState().selectedVertexType).toBe("input");
   });
 
   it("press 0 is a no-op (index 0 not accepted)", () => {
@@ -326,12 +327,13 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
     expect(useGraphStore.getState().selectedVertexType).toBe("z");
   });
 
-  it("press 9 is a no-op (out of range)", () => {
+  it("press 9 selects the 9th vertex type (h)", () => {
+    // 10 types today → digits 1–9 are all valid; 9 maps to index 8 = "h".
     useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
     renderHook(() => useKeyboardShortcuts());
 
     pressOnBody({ key: "9" });
-    expect(useGraphStore.getState().selectedVertexType).toBe("z");
+    expect(useGraphStore.getState().selectedVertexType).toBe("h");
   });
 
   it("number keys are ignored outside add-vertex mode", () => {

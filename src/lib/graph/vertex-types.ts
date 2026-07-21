@@ -38,6 +38,19 @@ export function isSpiderType(vertexType: VertexType): boolean {
   );
 }
 
+// Boundary vertex types — `input` and `output`. These are NOT tensors:
+// they declare open legs of the resulting tensor (each leg dimension 2),
+// so n inputs + m outputs → 2^m × 2^n matrix after contraction; no
+// boundaries → scalar. They render as labeled circles (like `empty`)
+// with symmetric handles, and must have degree ≤ 1 (enforced at compute
+// time, not at edge-creation time — matches plan §5.6).
+//
+// Single source of truth for "is this a boundary marker?", paralleling
+// `isSpiderType` and `isDirectionalVertex`.
+export function isBoundaryVertex(vertexType: VertexType): boolean {
+  return vertexType === "input" || vertexType === "output";
+}
+
 // Tailwind class for the corner radius matching each shape. The
 // "empty" string for triangles is intentional — triangles are
 // clipped to their silhouette, so a CSS border-radius on the box
@@ -132,6 +145,29 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "circle",
     size: 4.5,
     className: "border-2 border-dotted text-xs border-black/50",
+    defaultText: ""
+  },
+  {
+    // Boundary marker: declares one open INPUT leg of the resulting
+    // tensor. Not a tensor itself — see `isBoundaryVertex`. Rendered
+    // as a labeled blue-dotted circle so it reads as "wire entering
+    // the circuit" at a glance.
+    type: "input",
+    label: "input",
+    shape: "circle",
+    size: 4.5,
+    className: "border-2 border-dotted text-xs border-blue-500 text-blue-700",
+    defaultText: ""
+  },
+  {
+    // Boundary marker: declares one open OUTPUT leg. Same shape as
+    // input; green border distinguishes it. Both must have degree ≤ 1
+    // (validated at compute time).
+    type: "output",
+    label: "output",
+    shape: "circle",
+    size: 4.5,
+    className: "border-2 border-dotted text-xs border-green-500 text-green-700",
     defaultText: ""
   },
   {

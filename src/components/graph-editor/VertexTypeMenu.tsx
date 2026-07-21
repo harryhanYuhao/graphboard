@@ -23,8 +23,9 @@ export function VertexTypeMenu() {
       {VERTEX_TYPES.map((meta, index) => {
         const active = meta.type === selectedVertexType;
         // 1-based shortcut key for this entry, but only show single-digit
-        // numbers (1–9). With 8 types we never overflow today; if we ever
-        // do, hide the badge rather than invent a multi-key binding.
+        // numbers (1–9). With 10 types today the 10th gets no badge; if
+        // we add more, hide the badge rather than invent a multi-key
+        // binding.
         const shortcutKey = index < 9 ? String(index + 1) : null;
 
         return (

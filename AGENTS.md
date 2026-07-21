@@ -118,14 +118,16 @@ Typecheck runs through `next build` and the VS Code TS SDK
 - Styling is **Tailwind CSS v4** (config-less, via `@tailwindcss/postcss`);
   write utility classes inline. Icons from `lucide-react`.
 - IDs via `nanoid`.
-- **Vertex types** are the ZXW generators (`"z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and"`),
+- **Vertex types** are the ZXW generators plus two boundary markers:
+  `"z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and" | "input" | "output"`,
   see `src/lib/graph/vertex-types.ts`. `VERTEX_TYPES` is the single source
   of truth for shape/color/size (and optional `glyph`) consumed by
   `VertexNode`, `VertexSwatch`, `VertexTypeMenu`, and `VertexPropertyPanel`
   — keep them in sync when adding/changing a type. The predicates
-  `isSpiderType(type)` (label is a phase) and `isDirectionalVertex(type)`
-  (W / And gate handle layout) are the single sources of truth for those
-  two behaviors.
+  `isSpiderType(type)` (label is a phase), `isDirectionalVertex(type)`
+  (W / And gate handle layout), and `isBoundaryVertex(type)`
+  (`input` / `output` — not tensors, declare open legs of the result) are
+  the single sources of truth for those three behaviors.
 
 ### Rust compute layer (Phase 2+)
 

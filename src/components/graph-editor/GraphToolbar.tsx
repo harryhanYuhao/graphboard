@@ -16,10 +16,13 @@ import {
   Undo2,
   FolderInput,
   FolderOutput,
-  CircleQuestionMark
+  CircleQuestionMark,
+  Calculator,
 } from "lucide-react";
+import { useState } from "react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
+import { ComputeResultDialog } from "./ComputeResultDialog";
 
 function ToolbarButton(props: {
   active?: boolean;
@@ -69,8 +72,22 @@ export function GraphToolbar() {
   const canUndo = useStore(useGraphStore.temporal, (state) => state.pastStates.length > 0);
   const canRedo = useStore(useGraphStore.temporal, (state) => state.futureStates.length > 0);
 
+  // Compute dialog state lives here (mirrors how RESET owns its confirm
+  // dialog inline). The button flips `computeOpen`; a `key` derived from
+  // an open-counter forces the dialog to remount on each open, which
+  // resets its internal `status`/`result`/`error` state cleanly without
+  // the child having to call setState synchronously in an effect.
+  const [computeOpen, setComputeOpen] = useState(false);
+  const [computeSeq, setComputeSeq] = useState(0);
+
 
   return (
+    <>
+    <ComputeResultDialog
+      key={`compute-${computeSeq}`}
+      isOpen={computeOpen}
+      onClose={() => setComputeOpen(false)}
+    />
     <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
       <ToolbarButton
         title="Undo (Ctrl+Z)"
@@ -167,6 +184,16 @@ export function GraphToolbar() {
       </ToolbarButton>
 
       <ToolbarButton
+        title="Compute tensor (WASM smoke test)"
+        onClick={() => {
+          setComputeSeq((n) => n + 1);
+          setComputeOpen(true);
+        }}
+      >
+        <Calculator size={18} />
+      </ToolbarButton>
+
+      <ToolbarButton
         title="RESET (Can NOT be undo)"
         onClick={() => {
           openResetConfirm({
@@ -184,5 +211,6 @@ export function GraphToolbar() {
         <OctagonX size={18} color="#f00707" />
       </ToolbarButton>
     </div>
+    </>
   );
 }

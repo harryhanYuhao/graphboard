@@ -223,10 +223,11 @@ fn empty_graph_slice_round_trips() {
 }
 
 #[test]
-fn all_eight_vertex_types_round_trip() {
-    // One payload exercising every `VertexType` variant — the full
-    // locked set from §4.3. A regression in any one variant's rename
-    // surfaces here with a clear name.
+fn all_ten_vertex_types_round_trip() {
+    // One payload exercising every `VertexType` variant — the eight ZXW
+    // generators plus the two boundary markers (input/output). A
+    // regression in any one variant's rename surfaces here with a clear
+    // name.
     let json = r#"{
       "nodes": [
         { "id": "n1", "data": { "label": "", "vertexType": "z" } },
@@ -236,12 +237,14 @@ fn all_eight_vertex_types_round_trip() {
         { "id": "n5", "data": { "label": "", "vertexType": "h" } },
         { "id": "n6", "data": { "label": "", "vertexType": "zbox" } },
         { "id": "n7", "data": { "label": "", "vertexType": "xbox" } },
-        { "id": "n8", "data": { "label": "", "vertexType": "and" } }
+        { "id": "n8", "data": { "label": "", "vertexType": "and" } },
+        { "id": "n9", "data": { "label": "", "vertexType": "input" } },
+        { "id": "n10", "data": { "label": "", "vertexType": "output" } }
       ],
       "edges": []
     }"#;
     let slice: GraphSlice = serde_json::from_str(json).unwrap();
-    assert_eq!(slice.nodes.len(), 8);
+    assert_eq!(slice.nodes.len(), 10);
     let got: Vec<VertexType> = slice.nodes.iter().map(|n| n.data.vertex_type).collect();
     assert_eq!(
         got,
@@ -254,6 +257,8 @@ fn all_eight_vertex_types_round_trip() {
             VertexType::Zbox,
             VertexType::Xbox,
             VertexType::And,
+            VertexType::Input,
+            VertexType::Output,
         ]
     );
 }

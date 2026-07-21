@@ -73,7 +73,7 @@ export function getShortcutGroups(): ShortcutGroup[] {
         { description: "Save", keys: [mod, "S"] },
         {
           description: "Pick a vertex type by index (add-vertex mode only)",
-          keys: ["1", "—", "8"],
+          keys: ["1", "—", "9"],
         },
       ],
     },
