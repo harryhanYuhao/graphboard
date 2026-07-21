@@ -170,7 +170,7 @@ impl Tensor {
         // axix_a, axix_b].
         // This is for GEMM-shaped triple loop.
         let mut a_perm: Vec<usize> = (0..a.ndim())
-            .filter(|&i| i != axis_a || i != axis_b)
+            .filter(|&i| i != axis_a && i != axis_b)
             .collect();
         a_perm.push(axis_a);
         a_perm.push(axis_b);
@@ -203,6 +203,7 @@ impl Tensor {
             .expect("contract: reshape (M,N) back to free axes");
         Tensor { data: out_arr }
     }
+
     /// Apply a 2×2 matrix `m` to one axis of `self`, in place along that
     /// axis. Used by the per-vertex builders to derive X-basis tensors
     /// (X spider = H applied to each leg of the Z spider) and to conjugate
@@ -269,9 +270,31 @@ fn move_axis_to_last(ndim: usize, axis: usize) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assert_eq_cplx;
+    use std::f64::consts::{FRAC_PI_2, PI};
 
     fn c(re: f64, im: f64) -> Cplx {
         Cplx::new(re, im)
+    }
+
+    #[test]
+    fn trace_simple_matrices() {
+        use crate::nodes::{x_spider, z_spider};
+
+        let z_2 = z_spider(2, 0.0);
+        assert_eq_cplx!(c(2.0, 0.0), z_2.trace(0, 1).get(&[]));
+
+        let z_2 = z_spider(2, PI);
+        assert_eq_cplx!(c(0.0, 0.0), z_2.trace(0, 1).get(&[]));
+
+        let z_2 = z_spider(2, FRAC_PI_2);
+        assert_eq_cplx!(c(1.0, 1.0), z_2.trace(0, 1).get(&[]));
+
+        let x_2 = x_spider(2, 0.0);
+        assert_eq_cplx!(c(2.0, 0.0), x_2.trace(0, 1).get(&[]));
+
+        let x_2 = x_spider(2, PI);
+        assert_eq_cplx!(c(0.0, 0.0), x_2.trace(0, 1).get(&[]));
     }
 
     #[test]

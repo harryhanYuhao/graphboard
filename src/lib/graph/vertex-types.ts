@@ -1,8 +1,10 @@
 // src/lib/graph/vertex-types.ts
 //
-// Single source of truth for the selectable vertex types (ZXW generators) and
-// how each one is drawn. Consumed by the vertex renderer (VertexNode) and the
-// add-vertex side menu (VertexTypeMenu) so shapes/colors stay in sync.
+// All visual information on vertex types, which corresponds to
+// different tensors nodes
+// It is consumed by the vertex renderer (VertexNode),
+// add-vertex side menu (VertexTypeMenu), and vertex property panel 
+// (VertexPropertyPanel)
 
 import { createElement, type ReactNode } from "react";
 import type { VertexType } from "./types";
@@ -10,12 +12,8 @@ import { AndGateGlyph } from "@/components/graph-editor/VertexGlyphs";
 
 type VertexShape = "circle" | "square" | "triangle";
 
-// `true` for vertex types that are asymmetric — one input at the
-// top, many outputs at the bottom. The renderer (VertexNode) and
-// the edge component (StraightCenterEdge) both key off this flag;
-// symmetric types behave as before (edges meet at the body center).
-// Centralised here so the loose `meta.directional === true` checks
-// in those two files become a single named function call.
+// `true` for vertex types that are asymmetric, false for symmetric
+// ATM there are only two assymmetric tensor, W and AND
 export function isDirectionalVertex(vertexType: VertexType): boolean {
   return VERTEX_TYPE_MAP[vertexType]?.directional === true;
 }
@@ -236,6 +234,8 @@ function enrich(base: VertexTypeMetaBase): VertexTypeMeta {
 
 export const VERTEX_TYPES: VertexTypeMeta[] = RAW_VERTEX_TYPES.map(enrich);
 
+// Maps from type to typemeta (which is type info).
+// TOUSE:
 export const VERTEX_TYPE_MAP: Record<VertexType, VertexTypeMeta> =
   Object.fromEntries(VERTEX_TYPES.map((meta) => [meta.type, meta])) as Record<
     VertexType,

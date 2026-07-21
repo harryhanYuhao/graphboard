@@ -22,14 +22,11 @@ export type EndpointInput = {
 };
 
 // Compute where an edge endpoint should sit on a node.
-//
-//   - Directional (W / And gate) *target* endpoints anchor on the
-//     node's top edge; the visible input dot orbits the node center
-//     as `rotation` changes, so the endpoint follows.
-//   - Everything else (source endpoints, non-directional endpoints)
-//     meets the node center. The center has a zero local offset, so
-//     rotation is a no-op there — preserving the prior symmetric
-//     behavior.
+//   - for Directional (W / And gate, where input and output are different)
+//     *target* anchor on the top edge, *source* anchor one-third of the
+//     way down the body (a visual offset so the fan-out of outgoing
+//     edges doesn't pile on top of incoming edges at the center).
+//   - Everything else (symmetric vertices, both roles) anchors to center.
 export function getEdgeEndpoint(
   node: EndpointInput,
   role: "source" | "target",
@@ -44,21 +41,21 @@ export function getEdgeEndpoint(
   const cy = positionAbsolute.y + height / 2;
 
   // Local offset of the un-rotated endpoint from the node center.
-  //   - directional target → top-center, offset (0, -height/2)
-  //   - everything else    → center,       offset (0, 0)
+  //   - directional target → top edge,      offset (0, -height/2)
+  //   - directional source → 1/3 down body, offset (0, +height/3)
+  //   - everything else    → center,        offset (0, 0)
   const localX = 0;
 
   let localY = 0;
   if (isDirectional) {
-    localY = role === "target" ? -height / 2 : height / 2;
+    localY = role === "target" ? -height / 2 : height / 3;
   }
 
   if (rotation === 0) {
     return { x: cx + localX, y: cy + localY };
   }
 
-  // Rotate the local offset by `rotation` degrees around the center.
-  // The standard 2D rotation matrix is clockwise in screen coords
+  // Rotate by `rotation` degrees around the center clockwise
   // (y-down), matching CSS `rotate(positive)`.
   const theta = (rotation * Math.PI) / 180;
   const cos = Math.cos(theta);

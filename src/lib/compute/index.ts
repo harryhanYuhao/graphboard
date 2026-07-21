@@ -58,5 +58,6 @@ export async function pingWasm(): Promise<string> {
       "may be stale — rebuild with `pnpm build:wasm`.",
     );
   }
+
   return wasm.ping();
 }

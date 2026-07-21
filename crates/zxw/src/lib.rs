@@ -18,11 +18,13 @@ pub mod nodes;
 pub mod phase;
 pub mod tensor;
 
-#[cfg(feature = "wasm")]
-pub mod wasm;
+mod utils;
 
 // Convenience re-exports
 pub use error::PhaseError;
 pub use graph::{GraphEdgeRecord, GraphNodeRecord, GraphSlice, VertexData, VertexType};
 pub use nodes::{and_gate, empty, h_box, w_node, x_box, x_spider, z_box, z_spider};
 pub use phase::parse_phase;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;

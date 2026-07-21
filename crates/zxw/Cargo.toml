@@ -29,8 +29,3 @@ serde-wasm-bindgen = { version = "0.6", optional = true }
 [dev-dependencies]
 approx = "0.5"          # float-approx for tensor equality in tests
 
-[profile.release]
-lto = true
-opt-level = "z"
-codegen-units = 1
-panic = "abort"     # smaller WASM

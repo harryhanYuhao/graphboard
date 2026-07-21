@@ -492,22 +492,21 @@ export const useGraphStore = create<GraphStore>()(
         });
       },
 
-      // Open a JSON file from disk and replace the current editor state
-      // with its contents.
-      // Importing is destructive when the canvas already has content, so
-      // we route through the confirmation dialog. 
+      // Load JSON as graph and replace the current editor state
+      // with its contents. Importing is destructive
+      // ask if user would like to delte the current graph
       importJson: async () => {
         const contents = await openTextFileWithPicker({});
         if (contents === null) return;
 
-        // Validate the file up front so we never open a confirm dialog for
-        // a document we're going to reject anyway.
+        // Validate the file
         const result = importGraphJson(contents);
         if (!result.ok) {
           window.alert(`Failed to import: ${result.error}`);
           return;
         }
 
+        // Helper function
         const applyImport = () => {
           const hydrated = hydrateDocument(result.document);
 
@@ -522,12 +521,8 @@ export const useGraphStore = create<GraphStore>()(
             isHelpOpen: false,
           });
 
-          // Persist immediately so the imported state survives a refresh
-          // even if the user closes the tab before the autosave timer fires.
-          // The local document always keeps its own id, regardless of
-          // the id the imported file carried (e.g. an exported doc has
-          // id "exported-document"; importing it must not re-stamp the
-          // local document with that foreign id).
+          // Save immediatiately
+          // The local document always keeps its own id
           saveGraphDocument({
             id: PERSISTED_IDS.localDocument,
             title: hydrated.title,

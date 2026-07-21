@@ -32,24 +32,30 @@ function expectPoint(
   expect(actual.y).toBeCloseTo(expected.y, 10);
 }
 
-describe("getEdgeEndpoint — source side (always center)", () => {
+describe("getEdgeEndpoint — source side", () => {
   it("anchors at the node center for a symmetric vertex", () => {
-    expect(getEdgeEndpoint(node(), "source")).toEqual({ x: 20, y: 20 });
+    expectPoint(getEdgeEndpoint(node(), "source"), { x: 20, y: 20 });
   });
 
-  it("anchors at the node center even for a directional vertex (source ≠ top)", () => {
-    // Source endpoints are always the centered bottom slot, so a W
-    // node's source is still its body center.
-    expect(getEdgeEndpoint(node({ vertexType: "w" }), "source")).toEqual({
+  it("anchors a directional source one-third down the body (W / And)", () => {
+    // Directional source endpoints sit at +height/3 below center — a
+    // visual offset so the fan-out of outgoing edges doesn't pile on
+    // top of incoming edges at the center. With height 40, that's
+    // 20 + 40/3 ≈ 33.333.
+    expectPoint(getEdgeEndpoint(node({ vertexType: "w" }), "source"), {
       x: 20,
-      y: 20,
+      y: 20 + 40 / 3,
+    });
+    expectPoint(getEdgeEndpoint(node({ vertexType: "and" }), "source"), {
+      x: 20,
+      y: 20 + 40 / 3,
     });
   });
 
-  it("is rotation-invariant (zero local offset)", () => {
-    // The source endpoint never moves with rotation — it's pinned to
-    // the body center, which is the rotation pivot.
-    expect(getEdgeEndpoint(node({ rotation: 137 }), "source")).toEqual({
+  it("is rotation-invariant for symmetric vertices (zero local offset)", () => {
+    // A symmetric source has zero local offset, so it stays at the
+    // rotation pivot (the center) for any angle.
+    expectPoint(getEdgeEndpoint(node({ rotation: 137 }), "source"), {
       x: 20,
       y: 20,
     });

@@ -1,17 +1,18 @@
 // src/lib/graph/serialization.ts
 //
-// Persistence boundary. The persisted `GraphDocument` is the v1 shape
-// `{ graph, view }` (see `./types.ts`); runtime React Flow objects never
-// touch disk. This module owns:
+// Persistence boundary. The persisted `GraphDocument` is split into two
+// parallel slices (see `./types.ts`):
 //
+//   - `graph` — graph-theoretic data only (nodes, edges, labels, types).
+//     This is the contract the computational backend consumes; nothing
+//     visual lives here.
+//   - `view` — visual data only (positions, rotation). The backend never
+//     sees this slice.
+//
+// The two entry points below convert across that boundary:
 //   - `projectDocument` — runtime `VertexNode[]` / `GraphEdge[]` → v1 doc.
 //   - `hydrateDocument` — v1 doc → runtime objects the store / React Flow
 //     can consume directly.
-//
-// Anything above this boundary should not need to know about React Flow's
-// runtime fields; anything below it doesn't need to know about the
-// graph/view split.
-
 import {
   CURRENT_SCHEMA_VERSION,
   EDGE_TYPES,
@@ -37,8 +38,9 @@ const LOCAL_STORAGE_KEY = "graph-board-document";
 //
 // The result is rounded to 6 decimal places: `%` float math can leave
 // drift like 270.00000000006 or 89.99999999999, which would otherwise
-// accumulate across save/load cycles and make equality checks
-// (e.g. the property panel's `rotation !== 0` reset check) flaky.
+// accumulate across save/load cycles and make equality checks (e.g. the
+// property panel's `rotation !== 0` reset check) flaky. Don't drop the
+// rounding as "cosmetic" — it prevents a real flakiness bug.
 export function normalizeRotation(rotation: number): number {
   if (!Number.isFinite(rotation)) return 0;
   const wrapped = ((rotation % 360) + 360) % 360;

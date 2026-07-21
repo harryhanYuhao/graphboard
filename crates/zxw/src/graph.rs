@@ -1,16 +1,15 @@
 // crates/zxw/src/graph.rs
 //
 // `GraphSlice` data model — the contract between the frontend (TS) and
-// the Rust compute layer. The compute
-// layer consumes `doc.graph` straight off the WASM boundary, so this is
-// the *only* shape that crosses it. Source of truth for the TS side:
-// `src/lib/graph/types.ts`.
+// the Rust compute layer. The compute layer consumes `doc.graph` straight
+// off the WASM boundary, so this is the *only* shape that crosses it.
+// Source of truth for the TS side: `src/lib/graph/types.ts`.
 //
-// The persisted form is nested and camelCase (e.g. `vertexType`, not
-// `vertex_type`), mirroring the TS `GraphNodeRecord { id, data: { label,
-// vertexType } }`. The `#[serde(rename_all = "camelCase")]` attributes
-// below are load-bearing — without them the wasm boundary fails to
-// deserialize. See `doc/plans.md` §4.0 and `tests/graph_serde.rs`.
+// The persisted field names are camelCase, matching the TS
+// `GraphNodeRecord { id, data: { label, vertexType } }`. The
+// `#[serde(rename_all = "camelCase")]` attributes below are load-bearing
+// — without them the wasm boundary fails to deserialize. See
+// `doc/plans.md` §4.0 and `tests/graph_serde.rs`.
 //
 // Handle indices on edges are `Option<u32>`: absent in JSON means "use
 // the role default" (see `src/lib/graph/serialization.ts`), and the

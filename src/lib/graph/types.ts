@@ -2,10 +2,9 @@
 
 import type { Edge, Node } from "@xyflow/react";
 
-// ZXW generators plus the two boundary types. Each type renders with a
-// distinct shape and color. `input` / `output` are not tensors — they
-// declare open legs of the resulting tensor (each leg dimension 2), so
-// n inputs + m outputs → 2^m × 2^n matrix after contraction; no
+// Vertex type. `input` / `output` are boundary markers (not tensors):
+// they declare open legs of the resulting tensor (each leg dimension 2),
+// so n inputs + m outputs → 2^m × 2^n matrix after contraction; no
 // boundaries → scalar. See `isBoundaryVertex` in vertex-types.ts.
 export type VertexType =
   | "z"
@@ -22,14 +21,12 @@ export type VertexType =
 // ---- React Flow handle & edge identifiers ---------------------------------
 //
 // These string constants are the contract between the runtime edge layer
-// (`createGraphEdge` in operations.ts), the serializer (handle-id ↔ index
-// translation in serialization.ts), and the renderer (`VertexNode` and
-// `StraightCenterEdge`). Centralizing them here ensures a typo at one site
-// can't silently break edge routing at another.
+// (`createGraphEdge` in operations.ts), the serializer (handle-id ↔
+// index translation in serialization.ts), and the renderer (`VertexNode`
+// and `StraightCenterEdge`). Centralizing them here ensures a typo at
+// one site can't silently break edge routing at another — don't sprinkle
+// the literals elsewhere.
 //
-// Numeric handle indices on the persisted side are documented in
-// `serialization.ts` (`handleIdToIndex` / `indexToHandleId`).
-
 // React Flow handle ids used on VertexNode. `center-source` /
 // `center-target` are the full-size transparent overlays at the body
 // center; `top` is the small visible dot that anchors the directional
