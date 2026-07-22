@@ -63,6 +63,10 @@ type GraphStore = {
   edges: GraphEdge[];
   mode: EditorMode;
   hasHydrated: boolean;
+  // Monotonic counter bumped whenever an import finishes. Purely a
+  // signal for the view layer to call `reactFlow.fitView()` after a
+  // fresh graph lands — the store itself never touches React Flow.
+  fitViewNonce: number;
   // Vertex IDs staged as edge sources while in add-edge mode. Empty outside
   // of add-edge mode. Edges are fanned out from every ID in this list to the
   // next clicked target.
@@ -238,6 +242,9 @@ export const useGraphStore = create<GraphStore>()(
       edges: [],
       mode: "select",
       hasHydrated: false,
+
+      // When is is not 0, an useEffect in grapheditor fits the view
+      fitViewNonce: 0,
 
       pendingEdgeSources: [],
       selectedVertexType: DEFAULT_VERTEX_TYPE,
@@ -519,6 +526,8 @@ export const useGraphStore = create<GraphStore>()(
             pendingEdgeSources: [],
             clipboard: null,
             isHelpOpen: false,
+            // Nudge the view layer to refit now that the graph replaced.
+            fitViewNonce: get().fitViewNonce + 1,
           });
 
           // Save immediatiately
@@ -530,7 +539,6 @@ export const useGraphStore = create<GraphStore>()(
             edges: hydrated.edges,
             createdAt: hydrated.createdAt,
           });
-
         };
 
         if (!get().isStateEmpty()) {

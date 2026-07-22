@@ -65,6 +65,11 @@ function GraphEditorInner() {
   const handleVertexClick = useGraphStore((state) => state.handleVertexClick);
   const closeConfirm = useGraphStore((state) => state.closeConfirmDialogue);
   const closeHelp = useGraphStore((state) => state.closeHelp);
+  // Bumps whenever the store replaces the graph (import today, possibly
+  // hydrate/load later). We watch it so the view layer can refit the
+  // viewport — the store can't call `fitView()` itself because React
+  // Flow hooks only work inside a React component under the provider.
+  const fitViewNonce = useGraphStore((state) => state.fitViewNonce);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
@@ -107,6 +112,15 @@ function GraphEditorInner() {
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // Refit the viewport after a graph is imported. The store bumps
+  // `fitViewNonce` from inside `importJson`; the view layer reacts here.
+  // Skip the initial 0 so we don't double-fit on first mount (the
+  // `<ReactFlow fitView>` prop already handles that).
+  useEffect(() => {
+    if (fitViewNonce === 0) return;
+    reactFlow.fitView({ duration: 400 });
+  }, [fitViewNonce, reactFlow]);
 
   useKeyboardShortcuts();
 
