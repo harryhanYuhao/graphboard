@@ -19,10 +19,14 @@ import {
   CircleQuestionMark,
   Calculator,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
 import { ComputeResultDialog } from "./ComputeResultDialog";
+import { computeTensor, type ComputeCallbacks } from "@/lib/compute";
+import type { TensorResult } from "@/lib/compute/result-types";
+import { projectDocument } from "@/lib/graph/serialization";
+import { PERSISTED_IDS } from "@/lib/graph/types";
 
 function ToolbarButton(props: {
   active?: boolean;
@@ -73,12 +77,62 @@ export function GraphToolbar() {
   const canRedo = useStore(useGraphStore.temporal, (state) => state.futureStates.length > 0);
 
   // Compute dialog state lives here (mirrors how RESET owns its confirm
-  // dialog inline). The button flips `computeOpen`; a `key` derived from
-  // an open-counter forces the dialog to remount on each open, which
-  // resets its internal `status`/`result`/`error` state cleanly without
-  // the child having to call setState synchronously in an effect.
+  // dialog inline). The button kicks off the contraction; the resulting
+  // promise + progress state feeds the dialog as controlled props.
   const [computeOpen, setComputeOpen] = useState(false);
+  const [computePromise, setComputePromise] = useState<
+    Promise<TensorResult> | null
+  >(null);
+  const [computeProgress, setComputeProgress] = useState<{
+    contracted: number;
+    total: number;
+  } | null>(null);
+  // `key` derived from an open-counter forces the dialog to remount on
+  // each Compute click, resetting its internal ok/error state cleanly.
   const [computeSeq, setComputeSeq] = useState(0);
+  // Keep the AbortController in a ref so the dialog can cancel via a
+  // callback that closes over the *current* controller, not a stale
+  // state capture.
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleCompute = () => {
+    // Read snapshot of the current graph from the store and project to
+    // the persisted `GraphSlice` shape the compute layer expects. We
+    // use `useGraphStore.getState()` rather than reactive reads
+    // because we want the state *at click time*, not on every change.
+    const state = useGraphStore.getState();
+    const doc = projectDocument({
+      id: PERSISTED_IDS.localDocument,
+      title: state.title,
+      nodes: state.nodes,
+      edges: state.edges,
+      createdAt: state.createdAt,
+      updatedAt: new Date().toISOString(),
+    });
+    const graph = doc.graph;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const callbacks: ComputeCallbacks = {
+      signal: controller.signal,
+      onProgress: (contracted, total) =>
+        setComputeProgress({ contracted, total }),
+    };
+
+    setComputeProgress({ contracted: 0, total: 0 });
+    setComputePromise(computeTensor(graph, callbacks));
+    setComputeSeq((n) => n + 1);
+    setComputeOpen(true);
+  };
+
+  const handleComputeClose = () => {
+    // Soft-cancel any in-flight computation when the dialog closes.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setComputeOpen(false);
+    setComputePromise(null);
+    setComputeProgress(null);
+  };
 
 
   return (
@@ -86,7 +140,9 @@ export function GraphToolbar() {
     <ComputeResultDialog
       key={`compute-${computeSeq}`}
       isOpen={computeOpen}
-      onClose={() => setComputeOpen(false)}
+      onClose={handleComputeClose}
+      computePromise={computePromise}
+      progress={computeProgress}
     />
     <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
       <ToolbarButton
@@ -184,11 +240,8 @@ export function GraphToolbar() {
       </ToolbarButton>
 
       <ToolbarButton
-        title="Compute tensor (WASM smoke test)"
-        onClick={() => {
-          setComputeSeq((n) => n + 1);
-          setComputeOpen(true);
-        }}
+        title="Compute tensor"
+        onClick={handleCompute}
       >
         <Calculator size={18} />
       </ToolbarButton>

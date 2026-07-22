@@ -393,4 +393,85 @@ mod tests {
         assert_eq!(e.rank(), 0);
         assert_eq!(e.get(&[]), c(1.0, 0.0));
     }
+
+    // ---- arity edge cases ----------------------------------------------------
+
+    #[test]
+    fn w_node_arity_1_is_a_qubit() {
+        // Arity-1 W: exactly one bit set → 1. With arity 1, the only
+        // such index is [1]. So w_node(1) = [0, 1] — a |1⟩ state.
+        let w = w_node(1);
+        assert_eq!(w.shape(), &[2]);
+        assert_eq!(w.get(&[0]), c(0.0, 0.0));
+        assert_eq!(w.get(&[1]), c(1.0, 0.0));
+    }
+
+    #[test]
+    fn and_gate_arity_1_is_a_qubit_one() {
+        // Arity-1 AND: all-1s index → 1, else 0. With arity 1 the
+        // all-1s index is [1], so and_gate(1) = [0, 1]. (AND with a
+        // single input is just identity — vacuously true.)
+        let a = and_gate(1);
+        assert_eq!(a.shape(), &[2]);
+        assert_eq!(a.get(&[0]), c(0.0, 0.0));
+        assert_eq!(a.get(&[1]), c(1.0, 0.0));
+    }
+
+    #[test]
+    fn z_box_arity_1_two_corners() {
+        // Arity-1 z_box: only [0] and [1] are corners (they coincide
+        // with the all-0 / all-1 patterns at arity 1). T[0]=1, T[1]=φ.
+        let phi = 0.7;
+        let z = z_box(1, phi);
+        assert_eq!(z.shape(), &[2]);
+        assert_eq!(z.get(&[0]), c(1.0, 0.0));
+        assert_eq!(z.get(&[1]), c(phi, 0.0));
+    }
+
+    #[test]
+    fn x_box_round_trips_through_z_basis_via_hadamard() {
+        // x_box is *defined* as z_box with H applied to each leg.
+        // Applying H again per leg must recover z_box. (Same logic as
+        // x_spider_round_trips in tests/tensor_correctness.rs.)
+        let phi = std::f64::consts::FRAC_PI_3;
+        let mut x = x_box(2, phi);
+        let h: [[Cplx; 2]; 2] = [
+            [c(std::f64::consts::FRAC_1_SQRT_2, 0.0), c(std::f64::consts::FRAC_1_SQRT_2, 0.0)],
+            [c(std::f64::consts::FRAC_1_SQRT_2, 0.0), c(-std::f64::consts::FRAC_1_SQRT_2, 0.0)],
+        ];
+        x.apply_2x2_to_axis(0, h);
+        x.apply_2x2_to_axis(1, h);
+        let z = z_box(2, phi);
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!(
+                    (x.get(&[i, j]) - z.get(&[i, j])).norm() < 1e-10,
+                    "x_box round-trip mismatch at [{i},{j}]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn z_spider_arity_3_has_two_nonzero_entries() {
+        // Direct check of z_spider at arity 3: only (0,0,0) and
+        // (1,1,1) are non-zero. (Same shape as the plan's §5.3 test
+        // intent — included here because the bare-aridity path through
+        // compute_tensor always reduces to scalar in v1.)
+        let phi = std::f64::consts::PI;
+        let z = z_spider(3, phi);
+        assert_eq!(z.shape(), &[2, 2, 2]);
+        let mut non_zero = 0;
+        for bits in 0..8 {
+            let idx: Vec<usize> = (0..3).map(|i| (bits >> i) & 1).collect();
+            let v = z.get(&idx);
+            if v.norm() > 0.5 {
+                non_zero += 1;
+            }
+        }
+        assert_eq!(non_zero, 2, "z_spider(3) should have exactly 2 non-zero entries");
+        // (0,0,0) = 1, (1,1,1) = e^{iπ} = -1.
+        assert_eq!(z.get(&[0, 0, 0]), c(1.0, 0.0));
+        assert!((z.get(&[1, 1, 1]).re - (-1.0)).abs() < 1e-10);
+    }
 }

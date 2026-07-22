@@ -322,3 +322,106 @@ fn dangling_boundary_contributes_identity_axis() {
     assert_eq!(r.output_count, 0);
     assert_data(&r.data, &[(1.0, 0.0), (0.0, 0.0)]);
 }
+
+// ---- Parity / additional coverage -----------------------------------------
+
+#[test]
+fn z_h_z_chain_with_zero_phase_is_identity() {
+    // output → z1(φ=0) → h → z2(φ=0) → output. With φ=0 both Zs are
+    // identity, so the chain is H·I·I = H. The result should be the
+    // 2×2 Hadamard matrix: (1/√2)·[[1, 1], [1, -1]].
+    let json = r#"{
+        "nodes": [
+            {"id":"o1","data":{"label":"","vertexType":"output"}},
+            {"id":"z1","data":{"label":"","vertexType":"z"}},
+            {"id":"h","data":{"label":"","vertexType":"h"}},
+            {"id":"z2","data":{"label":"","vertexType":"z"}},
+            {"id":"o2","data":{"label":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"o1","target":"z1"},
+            {"id":"e2","source":"z1","target":"h"},
+            {"id":"e3","source":"h","target":"z2"},
+            {"id":"e4","source":"z2","target":"o2"}
+        ]
+    }"#;
+    let r = compute(json);
+    assert_eq!(r.shape, vec![2, 2]);
+    assert_eq!(r.input_count, 0);
+    assert_eq!(r.output_count, 2);
+    let inv = std::f64::consts::FRAC_1_SQRT_2;
+    assert_data(&r.data, &[(inv, 0.0), (inv, 0.0), (inv, 0.0), (-inv, 0.0)]);
+}
+
+#[test]
+fn bell_state_preparation_yields_phi_plus() {
+    // Bell-state prep: |Φ+⟩ = (|00⟩ + |11⟩)/√2.
+    //
+    // Canonical ZXW recipe (3-vertex graph, no inputs, 2 outputs):
+    //   z1(2, 0) ── h ── output₁
+    //        ╲
+    //         output₂
+    //
+    // i.e. z1 has degree 2: one leg to h, one directly to output₂.
+    // h has degree 2: one leg to z1, one to output₁. No input
+    // boundaries → result is rank-2 (two output legs only).
+    //
+    // Hand derivation: z1 = z_spider(2, 0) = |00⟩⟨00| + |11⟩⟨11|.
+    // After contracting one leg with H and leaving the other as o2,
+    // and H's other leg as o1, the result tensor is
+    //   result[o1, o2] = Σ_k z1[k, o2] · h[k, o1]
+    //                  = z1[0, o2]·h[0, o1] + z1[1, o2]·h[1, o1]
+    //                  = 1·h[0, o1] + 1·h[1, o2]... (z1[0,o2]=1 iff o2=0,
+    //                                                  z1[1,o2]=1 iff o2=1)
+    //   result[0, 0] = h[0, 0] = 1/√2
+    //   result[1, 0] = h[1, 0] = 1/√2
+    //   result[0, 1] = h[0, 1] = 1/√2
+    //   result[1, 1] = h[1, 1] = -1/√2
+    //
+    // So the (o1, o2) matrix is (1/√2)·[[1, 1], [1, -1]] = H itself.
+    // This is the maximally-entangled 2-qubit state in the X basis
+    // (a "Bell state" up to basis choice). Pinning it explicitly.
+    let json = r#"{
+        "nodes": [
+            {"id":"z1","data":{"label":"","vertexType":"z"}},
+            {"id":"h","data":{"label":"","vertexType":"h"}},
+            {"id":"o1","data":{"label":"","vertexType":"output"}},
+            {"id":"o2","data":{"label":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"z1","target":"h"},
+            {"id":"e2","source":"h","target":"o1"},
+            {"id":"e3","source":"z1","target":"o2"}
+        ]
+    }"#;
+    let r = compute(json);
+    assert_eq!(r.shape, vec![2, 2]);
+    assert_eq!(r.input_count, 0);
+    assert_eq!(r.output_count, 2);
+    let inv = std::f64::consts::FRAC_1_SQRT_2;
+    // (o1 axis first, then o2 axis — both Output, ordered by node order:
+    // o1 is node index 2, o2 is node index 3, so o1 < o2 → o1 first.)
+    // Result = H matrix = (1/√2)·[[1, 1], [1, -1]] in row-major order.
+    assert_data(&r.data, &[(inv, 0.0), (inv, 0.0), (inv, 0.0), (-inv, 0.0)]);
+}
+
+#[test]
+fn fully_contracted_has_zero_boundaries() {
+    // A fully-contracted graph (no inputs, no outputs) → scalar.
+    // input_count = 0, output_count = 0. Sanity check that the counts
+    // are correctly zero when no boundaries are present.
+    let json = r#"{
+        "nodes": [
+            {"id":"z1","data":{"label":"","vertexType":"z"}},
+            {"id":"z2","data":{"label":"","vertexType":"z"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"z1","target":"z2"},
+            {"id":"e2","source":"z1","target":"z2"}
+        ]
+    }"#;
+    let r = compute(json);
+    assert_eq!(r.shape, Vec::<usize>::new());
+    assert_eq!(r.input_count, 0);
+    assert_eq!(r.output_count, 0);
+}

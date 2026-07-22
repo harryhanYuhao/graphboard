@@ -258,6 +258,22 @@ pub fn compute_tensor(
 
     let total_edges = graph.edges.len();
     for (edge_i, edge) in graph.edges.iter().enumerate() {
+        // Validate edge endpoints exist before doing anything else — a
+        // corrupt payload (an edge referencing a vertex not in `nodes`)
+        // must surface as VertexNotFound, not a HashMap panic.
+        if !node_index.contains_key(&edge.source) {
+            return Err(ComputeError::VertexNotFound {
+                vertex_id: edge.source.clone(),
+                edge_id: edge.id.clone(),
+            });
+        }
+        if !node_index.contains_key(&edge.target) {
+            return Err(ComputeError::VertexNotFound {
+                vertex_id: edge.target.clone(),
+                edge_id: edge.id.clone(),
+            });
+        }
+
         let src_is_boundary = matches!(
             node_index.get(&edge.source).map(|(_, t, _)| *t),
             Some(VertexType::Input) | Some(VertexType::Output)
@@ -637,5 +653,156 @@ impl UnionFind {
         if self.rank[ra] == self.rank[rb] {
             self.rank[ra] += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::{GraphEdgeRecord, GraphNodeRecord, VertexData};
+
+    /// Build a `GraphSlice` quickly from `(id, type, label)` tuples +
+    /// `(id, src, tgt)` edge tuples. Keeps test bodies focused on the
+    /// behavior under test, not the wire format.
+    fn graph(
+        nodes: &[(&str, VertexType, &str)],
+        edges: &[(&str, &str, &str)],
+    ) -> GraphSlice {
+        GraphSlice {
+            nodes: nodes
+                .iter()
+                .map(|(id, vt, label)| GraphNodeRecord {
+                    id: (*id).into(),
+                    data: VertexData {
+                        label: (*label).into(),
+                        vertex_type: *vt,
+                    },
+                })
+                .collect(),
+            edges: edges
+                .iter()
+                .map(|(id, src, tgt)| GraphEdgeRecord {
+                    id: (*id).into(),
+                    source: (*src).into(),
+                    target: (*tgt).into(),
+                    source_handle: None,
+                    target_handle: None,
+                })
+                .collect(),
+        }
+    }
+
+    // ---- §5.5 label-parse fallback -----------------------------------------
+
+    #[test]
+    fn unparseable_spider_label_yields_warning_and_phase_zero() {
+        // A spider label that fails to parse should NOT fail the
+        // computation — it's downgraded to a warning + phase 0
+        // substitution (plan §5.5). With phase 0 on an isolated
+        // z spider (arity 0), the scalar value is 1 + e^{i·0} = 2.
+        let g = graph(
+            &[("z", VertexType::Z, "totally not a phase")],
+            &[],
+        );
+        let result = compute_tensor(&g, None).expect("parse failure must not fail compute");
+        assert_eq!(result.data.len(), 1);
+        assert!((result.data[0].0 - 2.0).abs() < 1e-10, "phase 0 → 1+1 = 2");
+        assert_eq!(
+            result.warnings.len(),
+            1,
+            "exactly one warning for the one bad label"
+        );
+        let w = &result.warnings[0].to_lowercase();
+        assert!(w.contains("parse"), "warning should mention parse: {w}");
+        assert!(w.contains('z'), "warning should name the vertex: {w}");
+    }
+
+    #[test]
+    fn multiple_bad_labels_each_get_their_own_warning() {
+        // Two spiders, both with unparseable labels → two warnings.
+        let g = graph(
+            &[("a", VertexType::Z, "foo"), ("b", VertexType::X, "bar")],
+            &[],
+        );
+        let result = compute_tensor(&g, None).expect("compute should succeed");
+        assert_eq!(result.warnings.len(), 2);
+    }
+
+    #[test]
+    fn non_spider_bad_label_is_silently_ignored() {
+        // H / W / AND / empty labels are decoration only — a bad label
+        // on them produces NO warning (plan §5.5). Use `empty` (no
+        // arity constraint, degree 0 is fine) so we don't trip the
+        // H-box arity-2 check.
+        let g = graph(
+            &[("e", VertexType::Empty, "this is not parsed")],
+            &[],
+        );
+        let result = compute_tensor(&g, None).expect("compute should succeed");
+        assert!(
+            result.warnings.is_empty(),
+            "non-spider labels must not warn: {:?}",
+            result.warnings
+        );
+    }
+
+    // ---- ComputeError paths ------------------------------------------------
+
+    #[test]
+    fn edge_to_unknown_vertex_returns_vertex_not_found() {
+        // Edge references id "ghost" that's not in `nodes`. Must
+        // surface as VertexNotFound, not a panic.
+        let g = graph(&[("a", VertexType::Z, "")], &[("e", "a", "ghost")]);
+        let err = compute_tensor(&g, None).expect_err("unknown vertex must error");
+        match err {
+            ComputeError::VertexNotFound { vertex_id, edge_id } => {
+                assert_eq!(vertex_id, "ghost");
+                assert_eq!(edge_id, "e");
+            }
+            other => panic!("expected VertexNotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn progress_callback_fires_per_edge() {
+        // Two edges → callback fires twice with (1, 2) and (2, 2).
+        let g = graph(
+            &[
+                ("z1", VertexType::Z, ""),
+                ("z2", VertexType::Z, ""),
+                ("z3", VertexType::Z, ""),
+            ],
+            &[("e1", "z1", "z2"), ("e2", "z2", "z3")],
+        );
+        let calls = std::cell::RefCell::new(Vec::<(usize, usize)>::new());
+        let cb = |done: usize, total: usize| {
+            calls.borrow_mut().push((done, total));
+        };
+        let _ = compute_tensor(&g, Some(&cb)).unwrap();
+        let calls = calls.into_inner();
+        assert_eq!(calls, vec![(1, 2), (2, 2)]);
+    }
+
+    // ---- UnionFind behavior (defensive) ------------------------------------
+
+    #[test]
+    fn union_find_union_then_find_reports_same_root() {
+        let mut uf = UnionFind::new(5);
+        uf.union(0, 1);
+        uf.union(2, 3);
+        uf.union(1, 3); // connects {0,1} with {2,3}
+        assert_eq!(uf.find(0), uf.find(1));
+        assert_eq!(uf.find(0), uf.find(2));
+        assert_eq!(uf.find(0), uf.find(3));
+        assert_ne!(uf.find(0), uf.find(4), "vertex 4 stays separate");
+    }
+
+    #[test]
+    fn union_find_idempotent_union() {
+        let mut uf = UnionFind::new(3);
+        uf.union(0, 1);
+        let root_after_first = uf.find(0);
+        uf.union(0, 1); // duplicate
+        assert_eq!(uf.find(0), root_after_first);
     }
 }

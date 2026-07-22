@@ -601,6 +601,106 @@ mod tests {
         // Rank-1 edge case: the only axis is already last.
         assert_eq!(move_axis_to_last(1, 0), vec![0]);
     }
+
+    // ---- trace: additional coverage ----------------------------------------
+
+    #[test]
+    fn trace_reduces_rank_by_two() {
+        // trace of a rank-3 tensor over axes 0 and 2 → rank-1 result.
+        // The contracted axes are "non-adjacent" so this exercises the
+        // `move the two axes to the end` permutation beyond the trivial
+        // adjacent case covered by `trace_simple_matrices`.
+        //
+        // Build a (2, 3, 2) tensor with distinguishable values:
+        //   T[i, j, k] = (i + 1) * 100 + (j + 1) * 10 + (k + 1)
+        // Trace over axes 0 and 2 (both length 2): result[j] = T[0,j,0] + T[1,j,1].
+        //   result[0] = 111 + 212 = 323    (100+10+1) + (200+10+2)
+        //   result[1] = 121 + 222 = 343    (100+20+1) + (200+20+2)
+        //   result[2] = 131 + 232 = 363    (100+30+1) + (200+30+2)
+        let mut values = vec![c(0., 0.); 12];
+        for i in 0..2 {
+            for j in 0..3 {
+                for k in 0..2 {
+                    let v = ((i + 1) * 100 + (j + 1) * 10 + (k + 1)) as f64;
+                    values[i * 6 + j * 2 + k] = c(v, 0.);
+                }
+            }
+        }
+        let t = Tensor::from_array(
+            ndarray::ArrayD::from_shape_vec(IxDyn(&[2, 3, 2]), values).unwrap(),
+        );
+        let r = t.trace(0, 2);
+        assert_eq!(r.shape(), &[3], "rank-3 trace over two axes → rank-1");
+        assert_eq!(r.get(&[0]), c(323., 0.));
+        assert_eq!(r.get(&[1]), c(343., 0.));
+        assert_eq!(r.get(&[2]), c(363., 0.));
+    }
+
+    #[test]
+    #[should_panic(expected = "axis lengths differ")]
+    fn trace_mismatched_axis_lengths_panics() {
+        // Can't trace a (2, 3) tensor over axes 0 and 1 — lengths differ.
+        let t = Tensor::zeros(&[2, 3]);
+        let _ = t.trace(0, 1);
+    }
+
+    // ---- outer_product: rank ≥ 2 -------------------------------------------
+
+    #[test]
+    fn outer_product_rank_2_times_rank_2_yields_rank_4() {
+        // (2,2) ⊗ (2,2) → (2,2,2,2). Check a few entries by hand.
+        // a = [[1, 2], [3, 4]], b = [[10, 20], [30, 40]] (all real).
+        // out[i, j, k, l] = a[i, j] * b[k, l].
+        let a = Tensor::from_array(
+            ndarray::arr2(&[[c(1., 0.), c(2., 0.)], [c(3., 0.), c(4., 0.)]]).into_dyn(),
+        );
+        let b = Tensor::from_array(
+            ndarray::arr2(&[[c(10., 0.), c(20., 0.)], [c(30., 0.), c(40., 0.)]]).into_dyn(),
+        );
+        let r = a.outer_product(b);
+        assert_eq!(r.shape(), &[2, 2, 2, 2]);
+        // Spot-check: out[1, 0, 0, 1] = a[1,0] * b[0,1] = 3 * 20 = 60.
+        assert_eq!(r.get(&[1, 0, 0, 1]), c(60., 0.));
+        // out[0, 1, 1, 1] = a[0,1] * b[1,1] = 2 * 40 = 80.
+        assert_eq!(r.get(&[0, 1, 1, 1]), c(80., 0.));
+    }
+
+    // ---- permuted_axes: rank-3 ---------------------------------------------
+
+    #[test]
+    fn permuted_axes_on_rank_3_cycles_axes() {
+        // (2, 3, 4) with perm [2, 0, 1] → shape (4, 2, 3). Entry at
+        // original [i, j, k] moves to new [k, i, j]. We can't easily
+        // distinguish values without setting them, so this test just
+        // confirms the shape contract — values are covered by the
+        // contraction loop's end-to-end tests where permuted_axes is
+        // actually used for the §5.4 partition.
+        let t = Tensor::from_array(
+            ndarray::ArrayD::from_elem(IxDyn(&[2, 3, 4]), c(0., 0.)),
+        );
+        let r = t.permuted_axes(&[2, 0, 1]);
+        assert_eq!(r.shape(), &[4, 2, 3]);
+    }
+
+    // ---- contract: commutativity under axis relabeling ---------------------
+
+    #[test]
+    fn contract_is_anticommutative_in_axis_order_for_vectors() {
+        // For two rank-1 vectors, contracting axis 0 of a with axis 0 of
+        // b is just the dot product: a·b == b·a. Confirms the contract
+        // primitive is symmetric for rank-1 inputs (a property the
+        // contraction loop's `free_axes` bookkeeping implicitly relies
+        // on when edges arrive in arbitrary source/target order).
+        let a = Tensor::from_array(ndarray::arr1(&[c(1., 0.), c(2., 0.), c(3., 0.)]).into_dyn());
+        let b = Tensor::from_array(ndarray::arr1(&[c(4., 0.), c(5., 0.), c(6., 0.)]).into_dyn());
+        let ab = a.clone().contract(b.clone(), 0, 0);
+        let ba = b.contract(a, 0, 0);
+        // Both should be scalars = 1·4 + 2·5 + 3·6 = 32.
+        assert_eq!(ab.shape(), &[] as &[usize]);
+        assert_eq!(ba.shape(), &[] as &[usize]);
+        assert_eq!(ab.get(&[]), c(32., 0.));
+        assert_eq!(ba.get(&[]), c(32., 0.));
+    }
 }
 
 impl fmt::Display for Tensor {

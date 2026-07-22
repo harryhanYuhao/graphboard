@@ -785,7 +785,16 @@ self-loops are supported via `Tensor::trace` per the bullet above.
 
 ---
 
-## 6. Phase 5 — WASM bindings + Web Worker + frontend
+## 6. Phase 5 — WASM bindings + Web Worker + frontend (Landed)
+
+> ✅ **Phase 5 is implemented.** The Rust `#[wasm_bindgen]` wrapper
+> (`compute_tensor`, `compute_api_version`, `init_panic_hook`) ships in
+> `crates/zxw/src/wasm.rs`; the worker + protocol + frontend wrapper
+> live in `src/lib/compute/` (`worker.ts`, `types.ts`, `index.ts`,
+> `result-types.ts`); the result panel is in
+> `src/components/graph-editor/ComputeResultDialog.tsx`; the toolbar
+> wires it all together. Tests: 88 Rust + 313 JS. The spec below is
+> the design that was followed.
 
 > **Design decision.** The v1 plan called for a direct lazy-import → call
 > pattern. That blocks the main thread during contraction and provides no
