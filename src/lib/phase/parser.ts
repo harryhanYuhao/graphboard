@@ -80,7 +80,7 @@ function trailingJunkError(input: string, pos: number): ParseError {
     const m = input.slice(pos).match(/^[A-Za-z][A-Za-z0-9]*/);
     if (m) {
       return new ParseError(
-        `Unknown variable '${m[0]}' (only pi is supported in v1)`,
+        `Unknown variable '${m[0]}' (only \\pi is supported in v1)`,
       );
     }
   }

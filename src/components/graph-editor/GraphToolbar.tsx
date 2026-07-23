@@ -26,7 +26,7 @@ import { ComputeResultDialog } from "./ComputeResultDialog";
 import { computeTensor, type ComputeCallbacks } from "@/lib/compute";
 import type { TensorResult } from "@/lib/compute/result-types";
 import { projectDocument } from "@/lib/graph/serialization";
-import { PERSISTED_IDS } from "@/lib/graph/types";
+import { EDITOR_MODES, PERSISTED_IDS } from "@/lib/graph/types";
 
 function ToolbarButton(props: {
   active?: boolean;
@@ -165,24 +165,24 @@ export function GraphToolbar() {
 
       <ToolbarButton
         title="Select (S)"
-        active={mode === "select"}
-        onClick={() => setMode("select")}
+        active={mode === EDITOR_MODES.select}
+        onClick={() => setMode(EDITOR_MODES.select)}
       >
         <MousePointer2 size={18} />
       </ToolbarButton>
 
       <ToolbarButton
         title="Add vertex (V)"
-        active={mode === "add-vertex"}
-        onClick={() => setMode("add-vertex")}
+        active={mode === EDITOR_MODES.addVertex}
+        onClick={() => setMode(EDITOR_MODES.addVertex)}
       >
         <PlusCircle size={18} />
       </ToolbarButton>
 
       <ToolbarButton
         title="Add edge (E)"
-        active={mode === "add-edge"}
-        onClick={() => setMode("add-edge")}
+        active={mode === EDITOR_MODES.addEdge}
+        onClick={() => setMode(EDITOR_MODES.addEdge)}
       >
         <GitBranch size={18} />
       </ToolbarButton>

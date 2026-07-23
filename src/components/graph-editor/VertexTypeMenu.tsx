@@ -3,6 +3,7 @@
 "use client";
 
 import { useGraphStore } from "@/store/graph-store";
+import { EDITOR_MODES } from "@/lib/graph/types";
 import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
 import { VertexSwatch } from "./VertexSwatch";
 
@@ -12,7 +13,7 @@ export function VertexTypeMenu() {
   const setVertexType = useGraphStore((state) => state.setVertexType);
 
   // Only relevant while placing vertices.
-  if (mode !== "add-vertex") return null;
+  if (mode !== EDITOR_MODES.addVertex) return null;
 
   return (
     <div className="absolute left-4 top-20 z-10 flex w-44 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">

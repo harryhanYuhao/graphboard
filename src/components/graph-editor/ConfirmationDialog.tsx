@@ -33,7 +33,6 @@ export function ConfirmationDialog({
 }: ConfirmationDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
 
   // Focus management
   useEffect(() => {
@@ -63,7 +62,7 @@ export function ConfirmationDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 transition-opacity"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition-opacity"
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
@@ -78,7 +77,7 @@ export function ConfirmationDialog({
         {/* Close button */}
         <button
           onClick={onCancel}
-          className="absolute right-4 top-4 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+          className="absolute right-4 top-4 p-1 text-slate-400 hover:text-slate-600 transition-colors"
           aria-label="Close dialog"
         >
           <X size={20} />
@@ -88,14 +87,14 @@ export function ConfirmationDialog({
         <div className="space-y-4">
           <h2
             id="dialog-title"
-            className="text-xl font-semibold text-gray-900"
+            className="text-xl font-semibold text-slate-900"
           >
             {title}
           </h2>
 
           <p
             id="dialog-description"
-            className="text-gray-600"
+            className="text-slate-600"
           >
             {message}
           </p>
@@ -106,13 +105,12 @@ export function ConfirmationDialog({
           <button
             ref={cancelRef}
             onClick={onCancel}
-            className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors font-medium"
+            className="px-4 py-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors font-medium"
           >
             {cancelText}
           </button>
 
           <button
-            ref={confirmRef}
             onClick={onConfirm}
             className={`px-4 py-2 text-white rounded-md transition-colors font-medium ${confirmButtonClassName}`}
           >

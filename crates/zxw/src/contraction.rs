@@ -503,8 +503,6 @@ pub fn compute_tensor(
     // Add dangling boundaries (degree 0) as outer-producted length-2
     // identity tensors. Their axis gets the boundary's role and the
     // dangling value `[1, 0]` — a fixed basis state.
-    let mut dangling_input_count = 0usize;
-    let mut dangling_output_count = 0usize;
     for pb in &pending_boundaries {
         if pb.neighbour_id.is_some() {
             continue; // was attached during the edge walk
@@ -521,11 +519,6 @@ pub fn compute_tensor(
             leg_index: 0,
             role: pb.role,
         });
-        match pb.role {
-            LegRole::Input => dangling_input_count += 1,
-            LegRole::Output => dangling_output_count += 1,
-            LegRole::Neutral => {}
-        }
     }
 
     // Phase E — §5.4 final partition. Stable-sort by role (Input first,
@@ -599,9 +592,6 @@ pub fn compute_tensor(
             }
         }
     }
-
-    let _ = dangling_input_count; // already counted via final_axes
-    let _ = dangling_output_count;
 
     Ok(TensorResult {
         shape,

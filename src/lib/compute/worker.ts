@@ -12,6 +12,7 @@
 // only talks to the main thread via `postMessage` / `onmessage`.
 
 import type { WorkerRequest, WorkerResponse } from "./types";
+import { classifyComputeError } from "./errors";
 
 // `self` in a Web Worker is a `WorkerGlobalScope`, not `Window`. The
 // default DOM lib types `self` as `Window & typeof globalThis`, which
@@ -58,10 +59,12 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         // Load failure — surface as an error reply (the main thread
         // treats any non-version-ok response during the handshake as
         // a worker-init failure).
+        const error = err instanceof Error ? err.message : String(err);
         ctx.postMessage({
           type: "error",
           requestId: "version-check",
-          error: err instanceof Error ? err.message : String(err),
+          error,
+          errorKind: classifyComputeError(error),
         } satisfies WorkerResponse);
       }
       break;
@@ -98,10 +101,12 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           result: result as unknown as import("./result-types").TensorResult,
         } satisfies WorkerResponse);
       } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
         ctx.postMessage({
           type: "error",
           requestId,
-          error: err instanceof Error ? err.message : String(err),
+          error,
+          errorKind: classifyComputeError(error),
         } satisfies WorkerResponse);
       }
       break;

@@ -18,7 +18,7 @@ import { useEffect } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { useGraphStore } from "@/store/graph-store";
 import { hasSelection } from "@/store/selectors";
-import type { VertexType } from "@/lib/graph/types";
+import { EDITOR_MODES, type VertexType } from "@/lib/graph/types";
 import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -109,13 +109,13 @@ export function useKeyboardShortcuts(): void {
       // caps-lock `S` all reach the same mode switch.
       switch (event.key.toLowerCase()) {
         case "s":
-          setMode("select");
+          setMode(EDITOR_MODES.select);
           return;
         case "v":
-          setMode("add-vertex");
+          setMode(EDITOR_MODES.addVertex);
           return;
         case "e":
-          setMode("add-edge");
+          setMode(EDITOR_MODES.addEdge);
           return;
         case "f":
           // Fit view to all nodes/edges — handy for getting back to the
@@ -147,8 +147,8 @@ export function useKeyboardShortcuts(): void {
             clearSelection();
             return;
           }
-          if (state.mode !== "select") {
-            setMode("select");
+          if (state.mode !== EDITOR_MODES.select) {
+            setMode(EDITOR_MODES.select);
           }
           return;
         }
@@ -158,7 +158,7 @@ export function useKeyboardShortcuts(): void {
           // second, etc. No-op if the number is out of range — but we
           // also guard on `mode` so users can press e.g. `0` in other
           // modes without surprise.
-          if (mode !== "add-vertex") return;
+          if (mode !== EDITOR_MODES.addVertex) return;
 
           const index = Number.parseInt(event.key, 10);
           if (!Number.isFinite(index) || index < 1) return;

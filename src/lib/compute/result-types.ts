@@ -32,3 +32,27 @@ export type TensorResult = {
   inputCount: number;
   outputCount: number;
 };
+
+/**
+ * Discriminated kind for errors raised by the compute layer. Mirrors the
+ * Rust `ComputeError` enum (`crates/zxw/src/error.rs`) plus the
+ * non-Rust failure modes (version handshake, wasm load). See
+ * `src/lib/compute/errors.ts` for the classifier.
+ *
+ * - `"version-mismatch"` — the cached wasm's `compute_api_version` didn't
+ *   match the expected one (stale artifact).
+ * - `"load-failed"` — the wasm module failed to fetch / instantiate.
+ * - `"vertex-not-found"` — an edge referenced a missing vertex id.
+ * - `"h-box-arity"` — an H-box has degree ≠ 2.
+ * - `"boundary-degree"` — an input/output boundary has degree > 1.
+ * - `"degree-overflow"` — a vertex has more edges than tensor legs.
+ * - `"unknown"` — unrecognised message; rendered with the generic hint.
+ */
+export type ComputeErrorKind =
+  | "version-mismatch"
+  | "load-failed"
+  | "vertex-not-found"
+  | "h-box-arity"
+  | "boundary-degree"
+  | "degree-overflow"
+  | "unknown";

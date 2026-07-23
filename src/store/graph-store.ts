@@ -9,6 +9,7 @@ import {
 import { create } from "zustand";
 import { temporal } from "zundo";
 import {
+  EDITOR_MODES,
   PERSISTED_IDS,
   type EditorMode,
   type GraphEdge,
@@ -49,7 +50,7 @@ export type ConfirmDialogueState = {
   message: string;
   confirmText: string;
   cancelText: string;
-  buttonClassName: string;
+  confirmButtonClassName: string;
   onConfirm: () => void;
 };
 
@@ -231,6 +232,26 @@ function makeGestureController() {
 const dragGesture = makeGestureController();
 const vertexPropertyEditGesture = makeGestureController();
 
+// Save the current graph back to localStorage under the stable local-doc
+// id. The five-field object was previously inlined verbatim in `save`,
+// `importJson.applyImport`, and `reset`; keeping it here means the field
+// list can drift in exactly one place. Takes the subset of store/runtime
+// fields `saveGraphDocument` needs (no `id` — that's always the local doc).
+function persistLocal(doc: {
+  title: string;
+  nodes: VertexNode[];
+  edges: GraphEdge[];
+  createdAt: string;
+}): void {
+  saveGraphDocument({
+    id: PERSISTED_IDS.localDocument,
+    title: doc.title,
+    nodes: doc.nodes,
+    edges: doc.edges,
+    createdAt: doc.createdAt,
+  });
+}
+
 export const useGraphStore = create<GraphStore>()(
   temporal(
     (set, get) => ({
@@ -240,7 +261,7 @@ export const useGraphStore = create<GraphStore>()(
       createdAt: new Date().toISOString(),
       nodes: [],
       edges: [],
-      mode: "select",
+      mode: EDITOR_MODES.select,
       hasHydrated: false,
 
       // When is is not 0, an useEffect in grapheditor fits the view
@@ -281,7 +302,7 @@ export const useGraphStore = create<GraphStore>()(
         // Selection is intentionally preserved across mode switches so a
         // user can pre-select vertices in select mode and have them
         // auto-promote to pending edge sources when they switch to add-edge.
-        if (mode === "add-edge") {
+        if (mode === EDITOR_MODES.addEdge) {
           // Auto-promote currently-selected vertices into the pending source
           // list. Merge with anything already pending so toggling add-edge
           // off and back on preserves work-in-progress.
@@ -334,7 +355,7 @@ export const useGraphStore = create<GraphStore>()(
         // outside it the click belongs to React Flow's selection
         // machinery and the store stays out of the way.
         const state = get();
-        if (state.mode !== "add-edge") return;
+        if (state.mode !== EDITOR_MODES.addEdge) return;
 
         // The six-case dispatch lives in `computeVertexClick` (see
         // operations.ts). It returns a partial state patch or `null`
@@ -471,13 +492,7 @@ export const useGraphStore = create<GraphStore>()(
         // don't have to keep clocks in sync. `createdAt` is preserved
         // from the store so repeated saves don't overwrite the
         // document's original creation time.
-        saveGraphDocument({
-          id: PERSISTED_IDS.localDocument,
-          title: state.title,
-          nodes: state.nodes,
-          edges: state.edges,
-          createdAt: state.createdAt,
-        });
+        persistLocal(state);
       },
 
       exportJson: async () => {
@@ -522,7 +537,7 @@ export const useGraphStore = create<GraphStore>()(
             createdAt: hydrated.createdAt,
             nodes: hydrated.nodes,
             edges: hydrated.edges,
-            mode: "select",
+            mode: EDITOR_MODES.select,
             pendingEdgeSources: [],
             clipboard: null,
             isHelpOpen: false,
@@ -530,15 +545,7 @@ export const useGraphStore = create<GraphStore>()(
             fitViewNonce: get().fitViewNonce + 1,
           });
 
-          // Save immediatiately
-          // The local document always keeps its own id
-          saveGraphDocument({
-            id: PERSISTED_IDS.localDocument,
-            title: hydrated.title,
-            nodes: hydrated.nodes,
-            edges: hydrated.edges,
-            createdAt: hydrated.createdAt,
-          });
+          persistLocal(hydrated);
         };
 
         if (!get().isStateEmpty()) {
@@ -600,20 +607,14 @@ export const useGraphStore = create<GraphStore>()(
           createdAt: hydrated.createdAt,
           nodes: hydrated.nodes,
           edges: hydrated.edges,
-          mode: "select",
+          mode: EDITOR_MODES.select,
           confirmDialogue: null,
           isHelpOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
         });
 
-        saveGraphDocument({
-          id: PERSISTED_IDS.localDocument,
-          title: hydrated.title,
-          nodes: hydrated.nodes,
-          edges: hydrated.edges,
-          createdAt: hydrated.createdAt,
-        });
+        persistLocal(hydrated);
         useGraphStore.temporal.getState().clear();
       },
 
@@ -631,7 +632,7 @@ export const useGraphStore = create<GraphStore>()(
             message,
             confirmText,
             cancelText,
-            buttonClassName: confirmButtonClassName,
+            confirmButtonClassName,
             onConfirm,
           },
         });

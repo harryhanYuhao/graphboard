@@ -25,6 +25,7 @@ import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useGraphStore } from "@/store/graph-store";
 import {
   EDGE_TYPES,
+  EDITOR_MODES,
   type GraphEdge,
   type VertexNode as VertexNodeType,
 } from "@/lib/graph/types";
@@ -88,7 +89,7 @@ function GraphEditorInner() {
 
   const handleNodeClick = useCallback(
     (event: React.MouseEvent, node: VertexNodeType) => {
-      if (mode !== "add-edge") return;
+      if (mode !== EDITOR_MODES.addEdge) return;
 
       event.stopPropagation();
       handleVertexClick(node.id, {
@@ -138,7 +139,7 @@ function GraphEditorInner() {
 
   const handlePaneClick = useCallback(
     (event: React.MouseEvent) => {
-      if (mode === "add-vertex") {
+      if (mode === EDITOR_MODES.addVertex) {
         const position = reactFlow.screenToFlowPosition({
           x: event.clientX,
           y: event.clientY,
@@ -148,7 +149,7 @@ function GraphEditorInner() {
         return;
       }
 
-      if (mode === "add-edge") {
+      if (mode === EDITOR_MODES.addEdge) {
         // Clicking empty pane in add-edge mode cancels the pending source
         // list without creating any edges.
         clearPendingEdgeSources();
@@ -183,7 +184,7 @@ function GraphEditorInner() {
         // into the pending source list (handled in onSelectionEnd). The
         // default selectionKeyCode is already 'Shift', so we only need to
         // flip selectionOnDrag on for add-edge mode.
-        selectionOnDrag={mode === "add-edge"}
+        selectionOnDrag={mode === EDITOR_MODES.addEdge}
         onSelectionEnd={handleSelectionEnd}
         nodesConnectable={false}
         fitView
@@ -203,9 +204,7 @@ function GraphEditorInner() {
         message={confirmDialogue?.message ?? ""}
         confirmText={confirmDialogue?.confirmText ?? "Confirm"}
         cancelText={confirmDialogue?.cancelText ?? "Cancel"}
-        confirmButtonClassName={
-          confirmDialogue?.buttonClassName ?? "bg-red-600 hover:bg-red-700"
-        }
+        confirmButtonClassName={confirmDialogue?.confirmButtonClassName}
         onConfirm={() => {
           // Snapshot the action before closing 
           // closeConfirmDialogue nulls out the dialogue, 

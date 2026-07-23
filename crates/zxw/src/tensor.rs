@@ -144,12 +144,11 @@ impl Tensor {
         Tensor { data: out_arr }
     }
 
-    /// Contract `self` (axis `axis_a`) with `other` (axis `axis_b`),
-    /// returning a new tensor whose axes are `[self's other axes...,
-    /// other's other axes...]`. Consumes both inputs.
+    /// Trace over two axes of `self`: contract `axis_a` with `axis_b`,
+    /// returning a new tensor over the remaining axes. Consumes `self`.
     ///
-    /// Mathematically: `result[i..., j...] = Σ_k self[i..., k] * other[j..., k]`
-    /// (after moving `axis_a`/`axis_b` to the last position of each).
+    /// Mathematically: `result[i...] = Σ_k self[i..., k, k]`
+    /// (after moving `axis_a`/`axis_b` to the last two positions).
     ///
     /// Panics on mismatched contracted-axis lengths — that's a programmer
     /// bug in the builder / contraction code, not a runtime input error.
@@ -160,15 +159,13 @@ impl Tensor {
         assert_eq!(
             contracted_len,
             a.shape()[axis_b],
-            "contract: axis lengths differ ({axis_a} of self is {}, {axis_b} of other is {})",
+            "trace: contracted axis lengths differ ({axis_a} is {}, {axis_b} is {})",
             contracted_len,
             a.shape()[axis_b]
         );
 
-        // Move the contracted axis to the *last* position of each tensor
-        // so the data lays out as [free axes...,
-        // axix_a, axix_b].
-        // This is for GEMM-shaped triple loop.
+        // Move the contracted axes to the *last* two positions so the data
+        // lays out as [free axes..., axis_a, axis_b] for the diagonal sum.
         let mut a_perm: Vec<usize> = (0..a.ndim())
             .filter(|&i| i != axis_a && i != axis_b)
             .collect();
@@ -184,7 +181,7 @@ impl Tensor {
         // that reuses the same buffer; we clone into owned at the end.
         let a_mat = a
             .to_shape((m, k, k))
-            .expect("contract: reshape a to (M,K,K)")
+            .expect("trace: reshape a to (M,K,K)")
             .to_owned();
 
         let mut out: ndarray::Array1<Cplx> = ndarray::Array1::from_elem(m, Cplx::new(0.0, 0.0));
@@ -192,8 +189,8 @@ impl Tensor {
             let mut acc = Cplx::new(0.0, 0.0);
             for t in 0..k {
                 acc += a_mat[(i, t, t)];
-                out[i] = acc;
             }
+            out[i] = acc;
         }
 
         // Reshape back to the concatenated free-shape.

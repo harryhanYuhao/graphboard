@@ -235,16 +235,9 @@ fn bits_to_index(bits: usize, arity: usize) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f64::consts::PI;
 
     fn c(re: f64, im: f64) -> Cplx {
         Cplx::new(re, im)
-    }
-
-    #[test]
-    fn print_all_tensors() {
-        println!("z spider: {}", z_spider(2, PI));
-        println!("x spider: {}", x_spider(2, PI));
     }
 
     #[test]

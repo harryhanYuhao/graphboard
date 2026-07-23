@@ -392,7 +392,7 @@ describe("confirmDialogue open/close", () => {
       message: "This will remove the vertex.",
       confirmText: "Delete",
       cancelText: "Cancel",
-      buttonClassName: "bg-red-600",
+      confirmButtonClassName: "bg-red-600",
       onConfirm,
     });
   });
@@ -406,7 +406,7 @@ describe("confirmDialogue open/close", () => {
     const dialogue = useGraphStore.getState().confirmDialogue!;
     expect(dialogue.confirmText).toBe("Confirm");
     expect(dialogue.cancelText).toBe("Cancel");
-    expect(dialogue.buttonClassName).toBe("bg-red-600 hover:bg-red-700");
+    expect(dialogue.confirmButtonClassName).toBe("bg-red-600 hover:bg-red-700");
   });
 
   it("closeConfirmDialogue drops the entire dialogue in one go", () => {
@@ -515,7 +515,7 @@ describe("reset", () => {
       pendingEdgeSources: ["a"],
       clipboard: { nodes: [], edges: [], pasteCount: 0 },
       isHelpOpen: true,
-      confirmDialogue: { title: "x", message: "y", confirmText: "c", cancelText: "x", buttonClassName: "z", onConfirm: () => {} },
+      confirmDialogue: { title: "x", message: "y", confirmText: "c", cancelText: "x", confirmButtonClassName: "z", onConfirm: () => {} },
     });
 
     useGraphStore.getState().reset();

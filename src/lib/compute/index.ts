@@ -21,6 +21,7 @@ import { nanoid } from "nanoid";
 import type { GraphSlice } from "@/lib/graph/types";
 import type { WorkerRequest, WorkerResponse } from "./types";
 import type { TensorResult } from "./result-types";
+import { classifyComputeError, ComputeError } from "./errors";
 
 // Source of truth for the expected wasm version: the built wasm's
 // `package.json`. `wasm-pack` emits one at `public/wasm/zxw/package.json`
@@ -55,7 +56,12 @@ async function getWorker(): Promise<Worker> {
               resolve(m.version);
             } else if (m.type === "error" && m.requestId === "version-check") {
               worker.removeEventListener("message", onMsg);
-              reject(new Error(m.error));
+              reject(
+                new ComputeError(
+                  m.errorKind ?? classifyComputeError(m.error),
+                  m.error,
+                ),
+              );
             }
           };
           worker.addEventListener("message", onMsg);
@@ -63,7 +69,8 @@ async function getWorker(): Promise<Worker> {
         });
 
         if (version !== EXPECTED_WASM_VERSION) {
-          throw new Error(
+          throw new ComputeError(
+            "version-mismatch",
             `WASM version mismatch: expected ${EXPECTED_WASM_VERSION}, ` +
               `got ${version}. Rebuild with \`pnpm build:wasm\` and refresh.`,
           );
@@ -161,11 +168,12 @@ export async function computeTensor(
           break;
         case "error":
           cleanup();
-          reject(new Error(msg.error));
-          break;
-        case "version-ok":
-          // Shouldn't arrive here (handled by getWorker's handshake),
-          // but be defensive.
+          reject(
+            new ComputeError(
+              msg.errorKind ?? classifyComputeError(msg.error),
+              msg.error,
+            ),
+          );
           break;
       }
     };
@@ -185,37 +193,4 @@ export async function computeTensor(
     worker.addEventListener("message", onMessage);
     worker.postMessage({ type: "compute", requestId, graph } satisfies WorkerRequest);
   });
-}
-
-// ── Legacy smoke test (kept for backward compat) ───────────────────
-//
-// The Phase 2 `ping()` smoke test. No longer used by the UI (the
-// Compute button calls `computeTensor` now), but retained because
-// `scripts/ping-wasm.mts` exercises the same path Node-side and the
-// direct main-thread call is occasionally useful for debugging the
-// wasm load separately from the worker protocol.
-
-type WasmModule = typeof import("../../../public/wasm/zxw/zxw.js");
-let directWasmPromise: Promise<WasmModule> | null = null;
-
-async function loadWasmDirect(): Promise<WasmModule> {
-  if (!directWasmPromise) {
-    directWasmPromise = (async () => {
-      const mod = await import("../../../public/wasm/zxw/zxw.js");
-      await mod.default();
-      return mod;
-    })();
-  }
-  return directWasmPromise;
-}
-
-export async function pingWasm(): Promise<string> {
-  const wasm = await loadWasmDirect();
-  if (typeof wasm.ping !== "function") {
-    throw new Error(
-      "Loaded WASM module does not export `ping`. The deployed artifact " +
-        "may be stale — rebuild with `pnpm build:wasm`.",
-    );
-  }
-  return wasm.ping();
 }

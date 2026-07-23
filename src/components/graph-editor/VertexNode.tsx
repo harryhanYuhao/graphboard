@@ -2,7 +2,7 @@
 
 import { type NodeProps } from "@xyflow/react";
 import { useRef } from "react";
-import { type VertexNode as VertexNodeType } from "@/lib/graph/types";
+import { EDITOR_MODES, type VertexNode as VertexNodeType } from "@/lib/graph/types";
 import {
   DEFAULT_VERTEX_TYPE,
   TRIANGLE_CLIP_PATH,
@@ -120,7 +120,9 @@ export function VertexNode({
               ref={labelEditorRef}
               value={data.label}
               glyph={meta.glyph}
-              canStartEditing={mode === "select" || mode === "add-vertex"}
+              canStartEditing={
+                mode === EDITOR_MODES.select || mode === EDITOR_MODES.addVertex
+              }
               onCommit={(label) => updateVertexLabel(id, label)}
             />
           </div>

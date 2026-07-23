@@ -10,7 +10,7 @@
 // See `doc/plans.md` §6.2 for the full design rationale.
 
 import type { GraphSlice } from "@/lib/graph/types";
-import type { TensorResult } from "./result-types";
+import type { ComputeErrorKind, TensorResult } from "./result-types";
 
 // ── Main → Worker ──────────────────────────────────────────────────
 
@@ -29,5 +29,11 @@ export type WorkerResponse =
       total: number;
     }
   | { type: "result"; requestId: string; result: TensorResult }
-  | { type: "error"; requestId: string; error: string }
+  | {
+      type: "error";
+      requestId: string;
+      error: string;
+      /** Classified kind, so the UI doesn't substring-sniff `error`. */
+      errorKind?: ComputeErrorKind;
+    }
   | { type: "version-ok"; version: string };

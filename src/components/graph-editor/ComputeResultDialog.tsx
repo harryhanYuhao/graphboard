@@ -18,7 +18,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
-import type { TensorResult } from "@/lib/compute/result-types";
+import type {
+  ComputeErrorKind,
+  TensorResult,
+} from "@/lib/compute/result-types";
+import { bitsToLabel, formatComplex } from "@/lib/compute/matrix-format";
+import { classifyComputeError, ComputeError } from "@/lib/compute/errors";
 
 type Status = "loading" | "ok" | "error";
 
@@ -41,6 +46,7 @@ export function ComputeResultDialog({
   const [status, setStatus] = useState<Status>("loading");
   const [result, setResult] = useState<TensorResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<ComputeErrorKind>("unknown");
   const [warningsOpen, setWarningsOpen] = useState(false);
 
   // Await the parent-supplied promise. The state-reset that would
@@ -64,8 +70,14 @@ export function ComputeResultDialog({
         // DOMException from AbortSignal carries name "AbortError".
         if (e instanceof DOMException && e.name === "AbortError") {
           setError("Computation cancelled.");
+          setErrorKind("unknown");
+        } else if (e instanceof ComputeError) {
+          setError(e.message);
+          setErrorKind(e.kind);
         } else {
-          setError(e instanceof Error ? e.message : String(e));
+          const message = e instanceof Error ? e.message : String(e);
+          setError(message);
+          setErrorKind(classifyComputeError(message));
         }
         setStatus("error");
       });
@@ -131,7 +143,7 @@ export function ComputeResultDialog({
           )}
 
           {status === "error" && (
-            <ErrorView message={error ?? "Unknown error"} />
+            <ErrorView message={error ?? "Unknown error"} kind={errorKind} />
           )}
         </div>
       </div>
@@ -278,32 +290,8 @@ function ValueTable({
     return null;
   }
 
-  // Format one complex entry as a short string. Zeros render as "0"
-  // to keep the matrix scannable; imaginary parts use `±N i`.
-  const fmt = (v: [number, number]): string => {
-    const [re, im] = v;
-    const reStr = Math.abs(re) < 1e-10 ? "0" : re.toFixed(3);
-    const imStr =
-      Math.abs(im) < 1e-10
-        ? ""
-        : `${im >= 0 ? "+" : "−"}${Math.abs(im).toFixed(3)}i`;
-    return `${reStr}${imStr}`;
-  };
-
-  // Basis label for a multi-qubit index in big-endian bit order.
-  //   bitsToLabel(0, 1) → "|0⟩"
-  //   bitsToLabel(0, 2) → "|00⟩"
-  //   bitsToLabel(3, 2) → "|11⟩"   (3 = 0b11)
-  //   bitsToLabel(2, 2) → "|10⟩"   (2 = 0b10; high bit first)
-  // `nQubits` = number of edges whose bits make up this index.
-  const bitsToLabel = (index: number, nQubits: number): string => {
-    if (nQubits === 0) return "•"; // no boundary of this kind
-    const bits = Array.from({ length: nQubits }, (_, k) =>
-      // High-order bit first: shift down so k=0 is the leftmost qubit.
-      ((index >> (nQubits - 1 - k)) & 1) === 1 ? "1" : "0",
-    ).join("");
-    return `|${bits}⟩`;
-  };
+  // `fmt` / `bitsToLabel` live in `matrix-format.ts` (shared with tests).
+  const fmt = formatComplex;
 
   // The compute layer emits the result with shape
   //   [in_1, ..., in_n, out_1, ..., out_m]
@@ -424,12 +412,44 @@ function WarningsBlock({
   );
 }
 
-function ErrorView({ message }: { message: string }) {
-  // Recognise the structured ComputeError messages so we can give a
-  // better remediation hint than the generic "rebuild wasm".
-  const isStaleArtifact = message.toLowerCase().includes("version mismatch");
-  const isLoadFailure = message.toLowerCase().includes("failed to fetch")
-    || message.toLowerCase().includes("invalid graph input");
+function ErrorView({
+  message,
+  kind,
+}: {
+  message: string;
+  kind: ComputeErrorKind;
+}) {
+  // Remediation hint per error kind. `kind` comes from the structured
+  // `ComputeError` thrown by the compute wrapper (see
+  // `src/lib/compute/errors.ts`) — no more substring sniffing of the
+  // human-readable message.
+  const hint = (() => {
+    switch (kind) {
+      case "version-mismatch":
+        return (
+          <>
+            Rebuild with{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono">pnpm build:wasm</code>{" "}
+            and refresh the page.
+          </>
+        );
+      case "load-failed":
+        return (
+          <>
+            Check that{" "}
+            <code className="rounded bg-slate-100 px-1 font-mono">public/wasm/zxw/</code>{" "}
+            exists and is up to date.
+          </>
+        );
+      case "vertex-not-found":
+      case "h-box-arity":
+      case "boundary-degree":
+      case "degree-overflow":
+        return <>This is a graph-structure error — check the highlighted vertex or edge.</>;
+      default:
+        return null;
+    }
+  })();
 
   return (
     <div className="space-y-2">
@@ -437,20 +457,7 @@ function ErrorView({ message }: { message: string }) {
       <pre className="max-h-60 overflow-y-auto rounded-md border border-red-200 bg-red-50 p-3 font-mono text-xs text-red-900 whitespace-pre-wrap">
         {message}
       </pre>
-      {isStaleArtifact && (
-        <p className="text-xs text-slate-500">
-          Rebuild with{" "}
-          <code className="rounded bg-slate-100 px-1 font-mono">pnpm build:wasm</code>{" "}
-          and refresh the page.
-        </p>
-      )}
-      {isLoadFailure && (
-        <p className="text-xs text-slate-500">
-          Check that{" "}
-          <code className="rounded bg-slate-100 px-1 font-mono">public/wasm/zxw/</code>{" "}
-          exists and is up to date.
-        </p>
-      )}
+      {hint && <p className="text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }

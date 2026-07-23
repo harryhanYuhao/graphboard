@@ -169,4 +169,14 @@ export type GraphDocument = {
   updatedAt: string;
 };
 
-export type EditorMode = "select" | "add-vertex" | "add-edge";
+// Editor interaction modes. The constant object mirrors the HANDLE_IDS /
+// EDGE_TYPES pattern (string-literal source of truth) so mode comparisons
+// across components route through named members instead of raw string
+// literals — a typo like "add-egde" would otherwise compile silently.
+export const EDITOR_MODES = {
+  select: "select",
+  addVertex: "add-vertex",
+  addEdge: "add-edge",
+} as const satisfies Record<string, string>;
+
+export type EditorMode = (typeof EDITOR_MODES)[keyof typeof EDITOR_MODES];

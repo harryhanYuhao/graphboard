@@ -1,44 +1,14 @@
 // src/lib/compute/matrix.test.ts
 //
 // Pure-function tests for the matrix-presentation math used in
-// ComputeResultDialog.tsx. The compute layer returns data as a flat
-// array in row-major order over shape [in_1, ..., in_n, out_1, ..., out_m]
-// (all dims = 2). The frontend reshapes this into a matrix display
-// via two operations:
-//
-//   M(row, col) = data[col * (1 << outputCount) + row]
-//   row label = |big-endian output bits⟩
-//   col label = |big-endian input bits⟩
-//
-// These are pure functions with no React, Web Worker, or WASM deps —
-// just the math contract.
+// ComputeResultDialog.tsx. See `matrix-format.ts` for the axis-ordering
+// contract (data is row-major over [in_1, …, in_n, out_1, …, out_m],
+// all dims = 2; the frontend reshapes it via
+//   M(row, col) = data[col * (1 << outputCount) + row]).
 
 import { describe, expect, it } from "vitest";
 
-// ---- bitsToLabel -----------------------------------------------------------
-// (Copied from ComputeResultDialog.tsx — factored here for independent
-// testing; keep both copies in sync when changing the convention.)
-
-function bitsToLabel(index: number, nQubits: number): string {
-  if (nQubits === 0) return "•";
-  const bits = Array.from({ length: nQubits }, (_, k) =>
-    ((index >> (nQubits - 1 - k)) & 1) === 1 ? "1" : "0",
-  ).join("");
-  return `|${bits}⟩`;
-}
-
-// ---- matrixEntry -----------------------------------------------------------
-// Maps matrix-coordinates (row = output bits big-endian, col = input bits
-// big-endian) into the flat data array.
-
-function matrixEntry(
-  data: [number, number][],
-  row: number,
-  col: number,
-  outputCount: number,
-): [number, number] {
-  return data[col * (1 << outputCount) + row];
-}
+import { bitsToLabel, matrixEntry } from "./matrix-format";
 
 // ---- Tests -----------------------------------------------------------------
 
