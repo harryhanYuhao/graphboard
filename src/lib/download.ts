@@ -76,15 +76,27 @@ export async function openTextFileWithPicker(params: {
   const openFilePicker = window.showOpenFilePicker;
 
   if (typeof openFilePicker === "function") {
-    const [handle] = await openFilePicker.call(window, {
-      multiple: false,
-      types: [
-        {
-          description,
-          accept: { "application/json": [".json"] },
-        },
-      ],
-    });
+    let handle;
+    try {
+      [handle] = await openFilePicker.call(window, {
+        multiple: false,
+        types: [
+          {
+            description,
+            accept: { "application/json": [".json"] },
+          },
+        ],
+      });
+    } catch (err) {
+      // The File System Access API rejects with AbortError when the user
+      // cancels the picker. The fallback path resolves to null in that
+      // case — match it here so callers see a uniform string-or-null
+      // contract regardless of which API fired.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return null;
+      }
+      throw err;
+    }
     const file = await handle.getFile();
     return file.text();
   }

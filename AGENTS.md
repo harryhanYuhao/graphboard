@@ -8,8 +8,10 @@ behavior.
 
 Graph Board is an online graph editor for **ZXW calculus** (a quantum
 computing diagrammatic calculus). Client-side only Next.js app: users place
-vertices, connect them with edges, and export the graph as JSON. No backend —
-persistence is `localStorage` plus manual file export.
+  vertices, connect them with edges, compute the represented tensor via a
+  Rust/WASM compute layer, and export the graph as JSON. No server —
+  client-side only, with persistence in `localStorage` plus manual file
+  export.
 
 ## Commands
 
@@ -49,6 +51,12 @@ Typecheck runs through `next build` and the VS Code TS SDK
   `vertex-types.ts` (ZXW generator metadata).
 - `src/lib/hooks/` — small reusable React hooks (e.g. `useTrackedDraft`).
 - `src/lib/download.ts`, `src/lib/filename.ts` — JSON export helpers.
+- `src/lib/compute/` — browser-side wrapper around the Rust/WASM compute
+  layer. `index.ts` owns the Web Worker lifecycle and exposes
+  `computeTensor(graph, callbacks)` (the single entry point components
+  call); `worker.ts` is the worker that lazy-loads the wasm; `types.ts`
+  is the main↔worker message protocol; `result-types.ts` mirrors the
+  Rust `TensorResult`. See §"Rust compute layer" below before touching it.
 - `crates/zxw/` — Rust compute layer (ZXW calculus tensor evaluation).
   See `doc/plans.md` for the full plan; the
   short version is below.
@@ -129,7 +137,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
   (`input` / `output` — not tensors, declare open legs of the result) are
   the single sources of truth for those three behaviors.
 
-### Rust compute layer (Phase 2+)
+### Rust compute layer
 
 The Rust crate `crates/zxw/` is the compute boundary — it consumes the
 `graph` slice of a `GraphDocument` (see §"Document shape (v1)" below)
@@ -144,14 +152,36 @@ and returns a tensor result. Same crate, two build targets:
 When to rebuild the wasm: any time Rust source changes. The dev server
 itself doesn't watch the wasm, so refresh the browser after a rebuild.
 
-When the frontend (Phase 5) calls into the wasm, it goes through
-`src/lib/compute/index.ts` — a thin wrapper that lazy-imports
-`public/wasm/zxw/zxw.js` and hops the `GraphSlice` through
-`serde_wasm-bindgen`. The compute wrapper reads only `doc.graph`, never
-`doc.view`.
+The frontend calls into the wasm through `src/lib/compute/index.ts` →
+`computeTensor(graph, callbacks)`. That entry point spawns a Web Worker
+(`worker.ts`) that lazy-loads `public/wasm/zxw/zxw.js` and runs the
+contraction off the main thread. On first use a **version handshake**
+refuses to call a stale cached `.wasm`: the worker returns
+`compute_api_version()` and the wrapper compares it against the version
+imported from `public/wasm/zxw/package.json` (emitted by `wasm-pack` on
+every build). `onProgress` and an `AbortSignal` plumb through to the
+UI; v1 cancel is *soft* (main thread discards the result, the worker
+runs to completion — cooperative cancellation is a Phase 6 item). The
+compute wrapper reads only `doc.graph`, never `doc.view`.
 
-Public plan: `doc/plans.md`. Treat that doc as the
-contract — if you change the compute boundary, update the plan too.
+WASM exports (in `crates/zxw/src/wasm.rs`, feature-gated to `wasm`):
+
+- `ping()` — round-trip smoke test used by `scripts/ping-wasm.mts`.
+- `compute_api_version()` — crate version, for the handshake above.
+- `compute_tensor(input, on_progress?)` — real entry point. `input` is a
+  `GraphSlice` JS object (camelCase); returns a `TensorResult` JS object.
+  Structural errors throw a JS `Error`; per-spider phase-parse failures
+  are **not** errors — they surface on `result.warnings` (plan §5.5).
+- `init_panic_hook()` — `#[wasm_bindgen(start)]`, auto-runs on
+  instantiation so panics reach `console.error` instead of aborting
+  silently.
+
+`src/lib/compute/result-types.ts` mirrors the Rust `TensorResult`
+(`crates/zxw/src/contraction.rs`); keep the two in sync when adding
+fields. `index.test.ts` asserts the field names.
+
+Public plan: `doc/plans.md`. Treat that doc as the contract — if you
+change the compute boundary, update the plan too.
 
 ### Label as phase (spider / box types)
 
@@ -170,8 +200,9 @@ phase?".
   unary minus / plus. Free variables (`\alpha`, `\beta`, …) are
   errors in v1; Phase 6 introduces symbolic arithmetic.
 
-The Rust compute layer (Phase 3+) ports the same grammar so labels
-parse identically on both sides of the WASM boundary.
+The Rust compute layer ports the same grammar
+(`crates/zxw/src/phase.rs`) so labels parse identically on both sides
+of the WASM boundary; `crates/zxw/tests/phase_grammar.rs` pins it.
 
 ## Persistence & export gotchas
 

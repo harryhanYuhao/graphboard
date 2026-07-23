@@ -193,4 +193,43 @@ describe("computeTensor", () => {
     worker.dispatch({ type: "version-ok", version: "999.999.999" });
     await expect(promise).rejects.toThrow(/version mismatch/i);
   });
+
+  it("retries with a fresh worker after version mismatch (cached-rejection fix)", async () => {
+    // If the cached-rejection fix is working, a failed init (version
+    // mismatch on first call) resets the module-level `workerPromise`
+    // to null. The second call should spawn a *new* MockWorker, not
+    // immediately reject from the cached rejected promise. Without
+    // the fix, the second call would fail before even trying.
+    const computeTensor = await freshModule();
+
+    // First call: wrong version → rejection.
+    const promise1 = computeTensor(EMPTY_GRAPH);
+    await vi.waitFor(() => expect(MockWorker.lastInstance).not.toBeNull());
+    const worker1 = MockWorker.lastInstance!;
+    await waitForPosts(worker1, 1);
+    worker1.dispatch({ type: "version-ok", version: "999.999.999" });
+    await expect(promise1).rejects.toThrow(/version mismatch/i);
+
+    // Second call: must spawn a new worker (not reuse the rejected one).
+    const promise2 = computeTensor(EMPTY_GRAPH);
+    await vi.waitFor(() => {
+      expect(MockWorker.lastInstance).not.toBeNull();
+      expect(MockWorker.lastInstance).not.toBe(worker1);
+    });
+    const worker2 = MockWorker.lastInstance!;
+    await waitForPosts(worker2, 1);
+
+    // This time, reply with the correct version — the call should
+    // proceed to a compute request and then resolve.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const wasmPkg: { version: string } = require("../../../public/wasm/zxw/package.json");
+    worker2.dispatch({ type: "version-ok", version: wasmPkg.version });
+    await waitForPosts(worker2, 2);
+    expect(worker2.posted[1].type).toBe("compute");
+    if (worker2.posted[1].type !== "compute") throw new Error("unreachable");
+    const requestId = worker2.posted[1].requestId;
+
+    worker2.dispatch({ type: "result", requestId, result: SAMPLE_RESULT });
+    await expect(promise2).resolves.toEqual(SAMPLE_RESULT);
+  });
 });
