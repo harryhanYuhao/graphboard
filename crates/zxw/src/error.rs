@@ -23,6 +23,18 @@ pub enum PhaseError {
     /// isn't `\pi`. The whole token is reported, not just the leading
     /// letters — `pi2` surfaces as `"pi2"`, not `"pi"`, so the user can
     /// tell what they typed wrong.
+    ///
+    /// Known cosmetic divergence from the JS parser: JS uses TWO message
+    /// forms — a bare-word *factor* reports `(only pi is supported)`
+    /// (`parser.ts:232`) while a `\word` factor or any trailing-junk
+    /// identifier reports `(only \pi is supported)` (`parser.ts:75,83,220`).
+    /// Rust emits the `\pi` form uniformly. The shared fixture
+    /// (`tests/fixtures/phase_grammar.json`) only asserts on the token
+    /// fragment, not the parenthetical, so this doesn't break the
+    /// cross-test — but a full byte-for-byte match would require a
+    /// manual `Display` impl (thiserror's `#[error]` can't branch on the
+    /// field value). Deferred as low-priority; see the two ignored tests
+    /// in `tests/phase_edge_cases.rs`.
     #[error("Unknown variable '{0}' (only \\pi is supported in v1)")]
     UnknownVariable(String),
 
@@ -90,6 +102,36 @@ pub enum ComputeError {
         vertex_type: VertexType,
         degree: usize,
         max: usize,
+    },
+
+    /// Two nodes in `graph.nodes` share the same `id`. Node ids are the
+    /// graph's identity contract (the union-find, the `groups` map, and
+    /// the `node_index` lookup all key on `id`), so a duplicate silently
+    /// clobbers the earlier node and produces a wrong, smaller result.
+    /// The frontend generates ids via `nanoid` so this should never fire
+    /// on a real payload, but the compute layer still has to defend
+    /// against a corrupt one rather than return a misleading `Ok`.
+    #[error("duplicate node id '{vertex_id}'")]
+    DuplicateNodeId { vertex_id: String },
+
+    /// An edge connects two boundary vertices directly (e.g.
+    /// `input → output`) with no tensor vertex between them. Boundary
+    /// vertices declare open legs of the result; they have no tensor to
+    /// contract, so an edge between two of them has no well-defined
+    /// semantics. Rather than guess (identity wire? zero matrix?) we
+    /// surface it as a structural error.
+    ///
+    /// (The endpoints are `from`/`to` rather than `source`/`target`
+    /// because `source` is a reserved field name in `thiserror`'s
+    /// `#[error]` attribute — it maps to `std::error::Error::source`.)
+    #[error(
+        "edge '{edge_id}' connects two boundary vertices ('{from}' -> '{to}'); \
+         a boundary must connect to a tensor vertex"
+    )]
+    BoundaryToBoundaryEdge {
+        edge_id: String,
+        from: String,
+        to: String,
     },
 }
 

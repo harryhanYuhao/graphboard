@@ -36,6 +36,7 @@ import {
   saveGraphDocument,
   exportGraphJson,
   importGraphJson,
+  normalizeRotation,
 } from "@/lib/graph/serialization";
 
 import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
@@ -546,6 +547,12 @@ export const useGraphStore = create<GraphStore>()(
           });
 
           persistLocal(hydrated);
+
+          // A new document must not carry the old undo history — same
+          // contract as `hydrate` and `reset` (AGENTS.md §"Architecture
+          // rules"). Without this, undo immediately after import would
+          // rewind INTO the pre-import graph.
+          useGraphStore.temporal.getState().clear();
         };
 
         if (!get().isStateEmpty()) {
@@ -587,9 +594,16 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       updateVertexRotation: (nodeId, rotation) => {
+        // Normalize at the store boundary so every caller gets the
+        // canonical [0, 360) value — the property panel used to be the
+        // only path that normalized (VertexPropertyPanel.tsx:109), which
+        // left direct store callers (rotation gestures, programmatic
+        // edits) writing un-normalized values that diverged from disk
+        // until the next save/hydrate cycle.
+        const normalized = normalizeRotation(rotation);
         set({
           nodes: get().nodes.map((node) =>
-            node.id === nodeId ? { ...node, rotation } : node,
+            node.id === nodeId ? { ...node, rotation: normalized } : node,
           ),
         });
       },

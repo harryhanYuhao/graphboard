@@ -277,20 +277,31 @@ fn try_consume_word(chars: &[char], c: &mut Cursor, word: &str) -> bool {
 /// Read `[0-9]+ ( '.' [0-9]* )?` starting at `pos`. Returns the matched
 /// text (as a String, to dodge the `char` → f64 parse dance) and its
 /// length in chars.
+///
+/// Requires at least one leading digit — a bare `.5` (no integer part)
+/// is NOT in the v1 grammar and must fail to match so the caller reports
+/// the stray `.` as an `UnexpectedToken`, mirroring the JS parser's
+/// `/^\d+\.?\d*/` regex (`parser.ts:206`). The `end == start` guard
+/// therefore sits *before* the dot branch: without that ordering, the
+/// dot (and any trailing digits) would be consumed for input like `.5`
+/// and the function would wrongly return `Some(("​.5", 2))`, which Rust's
+/// std `f64` parser happily accepts as `0.5`.
 fn read_number(chars: &[char], pos: usize) -> Option<(String, usize)> {
     let start = pos;
     let mut end = pos;
     while end < chars.len() && chars[end].is_ascii_digit() {
         end += 1;
     }
+    // No leading digit → not a number. The caller surfaces the offending
+    // char (usually '.') as an UnexpectedToken.
+    if end == start {
+        return None;
+    }
     if end < chars.len() && chars[end] == '.' {
         end += 1;
         while end < chars.len() && chars[end].is_ascii_digit() {
             end += 1;
         }
-    }
-    if end == start {
-        return None;
     }
     let text: String = chars[start..end].iter().collect();
     Some((text, end - start))

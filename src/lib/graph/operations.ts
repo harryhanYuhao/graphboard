@@ -41,16 +41,18 @@ export function createGraphEdge(
   // centered target (HANDLE_IDS.centerTarget). The source handle is
   // always the bottom slot (HANDLE_IDS.centerSource) — the side edges
   // leave from. Passing `nodes` is optional so legacy callers (and
-  // tests) keep working; without it we fall back to the
-  // non-directional default.
-  let targetHandle: string | undefined;
-  if (nodes) {
-    const targetNode = nodes.find((n) => n.id === target);
-    const meta = targetNode
-      ? VERTEX_TYPE_MAP[targetNode.data.vertexType]
-      : undefined;
-    targetHandle = meta?.directional ? HANDLE_IDS.top : HANDLE_IDS.centerTarget;
-  }
+  // tests) keep working; without it we default to `centerTarget`
+  // (matching `sourceHandle`'s unconditional default) rather than
+  // leaving `targetHandle` undefined. The undefined footgun used to
+  // silently change a directional target's handle to `top` on
+  // save/load, because `indexToHandleId(undefined, directional,
+  // "target")` falls back to `HANDLE_IDS.top`.
+  const targetNode = nodes?.find((n) => n.id === target);
+  const meta = targetNode
+    ? VERTEX_TYPE_MAP[targetNode.data.vertexType]
+    : undefined;
+  const targetHandle =
+    meta?.directional ? HANDLE_IDS.top : HANDLE_IDS.centerTarget;
 
   return {
     id: nanoid(),
@@ -279,11 +281,17 @@ export function cloneSubgraphForClipboard(subgraph: {
   edges: GraphEdge[];
 } {
   return {
+    // Strip `selected` so the clipboard payload is selection-agnostic —
+    // a node copied while selected used to carry `selected: true` onto
+    // the clipboard, where it's stale state (paste re-selects the new
+    // nodes explicitly via `pasteSubgraph`). Keeping the clipboard
+    // clean avoids surprising any future caller that reads it.
     nodes: subgraph.nodes.map((node) => ({
       ...node,
       data: { ...node.data },
+      selected: false,
     })),
-    edges: subgraph.edges.map((edge) => ({ ...edge })),
+    edges: subgraph.edges.map((edge) => ({ ...edge, selected: false })),
   };
 }
 

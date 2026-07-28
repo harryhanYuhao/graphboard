@@ -136,8 +136,19 @@ pub fn compute_tensor(
     // Map vertex id → (node_order, vertex_type, label). Looked up by the
     // edge walk; built once up front so edges referencing unknown ids
     // surface as VertexNotFound before we touch any tensor.
+    //
+    // Duplicate ids are rejected here rather than letting the second node
+    // silently clobber the first in the HashMap (which would produce a
+    // wrong, smaller result — the union-find still tracks both by index,
+    // so the data structures go incoherent). Ids are the graph's identity
+    // contract; a duplicate is a corrupt graph.
     let mut node_index: HashMap<String, (usize, VertexType, String)> = HashMap::new();
     for (i, node) in graph.nodes.iter().enumerate() {
+        if node_index.contains_key(&node.id) {
+            return Err(ComputeError::DuplicateNodeId {
+                vertex_id: node.id.clone(),
+            });
+        }
         node_index.insert(
             node.id.clone(),
             (i, node.data.vertex_type, node.data.label.clone()),
@@ -221,6 +232,25 @@ pub fn compute_tensor(
             "non-boundary vertex type must build a tensor (build_vertex_tensor \
              only returns None for Input/Output, handled above)",
         );
+        // The contraction layer assumes each builder honors its arity
+        // contract: a vertex of degree `deg` produces a rank-`deg` tensor,
+        // so `free_axes` (one entry per leg) lines up with `tensor`'s axes.
+        // Most builders do, but a few ignore `arity` and return a fixed-rank
+        // tensor (`empty` → rank 0, `h_box` → rank 2). For `empty` in
+        // particular, a self-loop pushes degree to 2 while `empty()` still
+        // returns a rank-0 scalar — without this guard the later `trace`
+        // over two non-existent axes panics in `Tensor::trace`. Surface the
+        // mismatch as `DegreeOverflow` (semantically: "more edges than
+        // tensor legs") instead of panicking downstream.
+        let rank = tensor.rank();
+        if rank != deg {
+            return Err(ComputeError::DegreeOverflow {
+                vertex_id: id.clone(),
+                vertex_type: vt,
+                degree: deg,
+                max: rank,
+            });
+        }
         let free_axes: Vec<FreeAxis> = (0..deg)
             .map(|leg| FreeAxis {
                 node_order: i,
@@ -282,6 +312,21 @@ pub fn compute_tensor(
             node_index.get(&edge.target).map(|(_, t, _)| *t),
             Some(VertexType::Input) | Some(VertexType::Output)
         );
+
+        // An edge directly between two boundary vertices (e.g.
+        // `input → output` with no tensor between) has no well-defined
+        // semantics — boundary vertices declare open legs of the result,
+        // they have no tensor to contract. Without this check the branch
+        // below picks `tensor_id` = the other boundary and panics looking
+        // up a group that was never created (boundaries go into
+        // `pending_boundaries`, not `groups`).
+        if src_is_boundary && tgt_is_boundary {
+            return Err(ComputeError::BoundaryToBoundaryEdge {
+                edge_id: edge.id.clone(),
+                from: edge.source.clone(),
+                to: edge.target.clone(),
+            });
+        }
 
         if edge.source == edge.target {
             // Self-loop on a single vertex → trace two free legs of its

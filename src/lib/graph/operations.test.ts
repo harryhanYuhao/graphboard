@@ -50,9 +50,12 @@ describe("createGraphEdge", () => {
     // Source side is always the bottom slot (HANDLE_IDS.centerSource)
     // — the side edges leave from, regardless of vertex type.
     expect(edge.sourceHandle).toBe(HANDLE_IDS.centerSource);
-    // Without a node list we can't pick the right target handle, so
-    // it stays unset and the serializer falls back to the default.
-    expect(edge.targetHandle).toBeUndefined();
+    // Without a node list we can't tell if the target is directional, so
+    // we default to the non-directional target handle (centerTarget) —
+    // matching sourceHandle's unconditional default. (Previously this
+    // was `undefined`, which silently became HANDLE_IDS.top on save/load
+    // for a directional target via the serializer's fallback.)
+    expect(edge.targetHandle).toBe(HANDLE_IDS.centerTarget);
   });
 
   it("picks the directional 'top' handle for W / And gate targets", () => {

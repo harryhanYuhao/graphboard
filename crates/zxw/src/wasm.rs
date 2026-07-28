@@ -2,21 +2,10 @@
 //
 // WASM entry points. Feature-gated so the same crate builds for native
 // (`cargo test`) and for wasm-pack (`--features wasm`).
-//
-// Three exports beyond the Phase 2 `ping()` smoke test (plan §6.1):
-//   - `init_panic_hook` — installs `console_error_panic_hook` so a Rust
-//     panic surfaces as a JS `console.error` with a backtrace instead
-//     of silently abortting the worker. Auto-runs on module
-//     instantiation via `#[wasm_bindgen(start)]`.
-//   - `compute_api_version` — returns the crate version, so the
-//     frontend can refuse to call into a stale cached `.wasm`.
-//   - `compute_tensor` — the real entry point: hops `GraphSlice` in
-//     and `TensorResult` out through `serde_wasm_bindgen`, with an
-//     optional JS progress callback.
 
 use wasm_bindgen::prelude::*;
 
-/// Trivial round-trip smoke test.
+/// Trivial round-trip smoke test for frontend integration
 /// Used by `scripts/ping-wasm.mts` to confirm the wasm pipeline is
 /// healthy end-to-end.
 #[wasm_bindgen]

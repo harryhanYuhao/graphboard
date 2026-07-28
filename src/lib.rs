@@ -1,2 +1,1 @@
-// Dummy 
-// To make wasm-pack happy
+// Dummy file to make wasm-pack happy

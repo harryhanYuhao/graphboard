@@ -6,6 +6,7 @@
 // unit-testable without standing up React Flow internals.
 
 import { isDirectionalVertex } from "./vertex-types";
+import { normalizeRotation } from "./serialization";
 import type { VertexType } from "./types";
 
 // Inputs to a single edge endpoint. Mirrors the fields the React Flow
@@ -31,7 +32,13 @@ export function getEdgeEndpoint(
   node: EndpointInput,
   role: "source" | "target",
 ): { x: number; y: number } {
-  const { positionAbsolute, width, height, vertexType, rotation } = node;
+  const { positionAbsolute, width, height, vertexType } = node;
+  // Normalize at the boundary: a non-finite rotation (NaN, ±Infinity)
+  // would otherwise propagate through `Math.cos`/`Math.sin` and produce
+  // a `{x: NaN, y: NaN}` endpoint. `normalizeRotation` maps those to 0
+  // (and wraps any real value to [0, 360)), so the fast path below is
+  // also the recovery path for degenerate input.
+  const rotation = normalizeRotation(node.rotation);
   const isDirectional = vertexType
     ? isDirectionalVertex(vertexType)
     : false;

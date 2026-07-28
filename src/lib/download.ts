@@ -83,7 +83,14 @@ export async function openTextFileWithPicker(params: {
         types: [
           {
             description,
-            accept: { "application/json": [".json"] },
+            // The FSA API wants `Record<MIME, extension[]>`, but our
+            // `accept` param is the freeform comma-separated string the
+            // `<input accept>` fallback consumes (e.g.
+            // `"application/json,.json"` or `"text/csv"`). Parse it the
+            // same way for both paths so a caller passing a non-default
+            // accept doesn't get a hardcoded JSON picker on the native
+            // path and the right one on the fallback.
+            accept: parseAcceptForFsa(accept),
           },
         ],
       });
@@ -141,4 +148,58 @@ export async function openTextFileWithPicker(params: {
     input.click();
     document.body.removeChild(input);
   });
+}
+
+/**
+ * Parse the freeform `accept` string (the same format `<input accept>`
+ * takes — comma-separated MIME types and/or extensions, e.g.
+ * `"application/json,.json"` or `"text/csv"` or `".png,.jpg"`) into the
+ * `Record<MIME, extension[]>` shape the File System Access API wants.
+ *
+ * Heuristic: tokens starting with `.` are extensions; others are MIME
+ * types. Every extension is associated with every MIME present (so
+ * `"application/json,.json"` → `{ "application/json": [".json"] }` and
+ * `"text/csv,.json"` → `{ "text/csv": [".json"] }`). When no MIME is
+ * present (extension-only input like `".png,.jpg"`), extensions land
+ * under the catch-all `application/octet-stream` so the picker still
+ * filters on them — matching the permissive behavior of the `<input>`
+ * fallback, which treats extensions alone as valid. MIME types with no
+ * extension get a `[".*"]` wildcard so the picker accepts the type
+ * broadly.
+ *
+ * Used only by the native `showOpenFilePicker` path; the `<input>` fallback
+ * consumes the raw `accept` string directly. This isn't a perfect
+ * translation (the FSA API's model is MIME→extensions, the `<input>`
+ * model is an OR-list), but it preserves caller intent for the common
+ * cases and keeps the two paths from diverging on a hardcoded JSON.
+ */
+function parseAcceptForFsa(accept: string): Record<string, string[]> {
+  const tokens = accept
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+
+  const mimes: string[] = [];
+  const extensions: string[] = [];
+  for (const token of tokens) {
+    if (token.startsWith(".")) extensions.push(token);
+    else mimes.push(token);
+  }
+
+  // No MIME declared — group bare extensions under the catch-all.
+  if (mimes.length === 0) {
+    return extensions.length > 0
+      ? { "application/octet-stream": extensions }
+      : { "application/octet-stream": [".*"] };
+  }
+
+  // Associate every extension with every declared MIME (an over-approx,
+  // but the OR semantics of `<input accept>` don't map cleanly to FSA's
+  // MIME→extension model, and this keeps the common single-MIME case
+  // correct).
+  const result: Record<string, string[]> = {};
+  for (const mime of mimes) {
+    result[mime] = extensions.length > 0 ? [...extensions] : [".*"];
+  }
+  return result;
 }
