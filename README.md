@@ -25,16 +25,13 @@ Its detailed documentation can be found at
 * **Browser (Next.js client)**
   * **React UI components**
     * Interact bidirectionally with `graph-store.ts`
-    * Connect to the WASM layer through `public/wasm/zxw/zxw.js`
+    * Connect to the backend WASM layer through `public/wasm/zxw/zxw.js`
   * **State management** `graph-store.ts`
     * Zustand for statge management, and zundo for undo/redo
-    * Stage management is the core of 
+    * Stage management is the core of the frontend
   * **Graph logic** in `graph/operations.ts` `vertex-types.ts`
   * **Serialization** `graph/serialization.ts`
     * The view slice (for visual) and graph slice (for all graph theoretic properties) are serialized in two different objects
-    * Persists to: browser `localStorage`
-    * Saves to file.
-      * Uses the File System Access API
   * **Project document**
     * `projectDocument`
       * Contains the graph slice
@@ -42,15 +39,9 @@ Its detailed documentation can be found at
       * Represents the data consumed by the compute layer
   * **Compute handoff**
     * the graph slice is passed to rust crates at
-      * `src/lib/compute/`
-        * Loaded lazily
-        * Dynamically imports the WASM module
+      * `src/lib/compute/`, which is loaded lazily by the front-end
 * **Browser WASM sandbox**
-  * **Location**
-    * `public/wasm/zxw/`
-      * `zxw.js`
-      * `zxw_bg.wasm`
+  * The wasm codes produced by `wasm-pack` is placed in `public/wasm/zxw/`.
   * **WASM entry point**
     * `zxw::compute_tensor(graph_slice)`
-  * **Rust implementation**
-    * `crates/zxw/src/`
+  * **Rust implementation** is placed in `crates/zxw/src/`

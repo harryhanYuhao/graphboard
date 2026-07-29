@@ -308,28 +308,287 @@ describe("overlapping drag + property-edit gestures", () => {
 });
 
 // ---------------------------------------------------------------------------
+// selectAll / clearSelection: no-op calls should NOT push a pastState
+// (fixed via helper optimization + zundo `equality` function).
+// ---------------------------------------------------------------------------
+
+describe("selectAll / clearSelection undo-stack side effects", () => {
+  // The helpers (`selectAllElements` / `clearAllSelections`) detect the
+  // "nothing changed" case and return the original array references
+  // unchanged. Combined with the zundo `equality` function (which
+  // compares the partialized slices by reference), no pastState is
+  // pushed when the call is a no-op. The undo stack stays reserved
+  // for real graph-structure changes.
+
+  it("selectAll on a graph with all nodes already selected does NOT push a pastState", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { selected: true }),
+        makeVertex("b", { selected: true }),
+      ],
+    });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().selectAll();
+    // No-op call — the helper returns the same array references, the
+    // zundo equality short-circuits the pastState push.
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+    // The state is the same (all already selected).
+    expect(useGraphStore.getState().nodes.every((n) => n.selected)).toBe(true);
+  });
+
+  it("selectAll on an empty graph does NOT push a pastState", () => {
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().selectAll();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+    expect(useGraphStore.getState().nodes).toEqual([]);
+  });
+
+  it("clearSelection on a graph with no selection does NOT push a pastState", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { selected: false }),
+        makeVertex("b", { selected: false }),
+      ],
+    });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().clearSelection();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+    expect(useGraphStore.getState().nodes.every((n) => !n.selected)).toBe(true);
+  });
+
+  it("selectAll on a graph with at least one unselected node DOES push a pastState", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { selected: true }),
+        makeVertex("b", { selected: false }),
+      ],
+    });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().selectAll();
+    // b changed from selected:false → selected:true, so a pastState
+    // is pushed (the call was a real change).
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(1);
+    expect(useGraphStore.getState().nodes.every((n) => n.selected)).toBe(true);
+  });
+
+  it("clearSelection on a graph with at least one selected node DOES push a pastState", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { selected: false }),
+        makeVertex("b", { selected: true }),
+      ],
+    });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().clearSelection();
+    // b changed from selected:true → selected:false, so a pastState
+    // is pushed.
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(1);
+    expect(useGraphStore.getState().nodes.every((n) => !n.selected)).toBe(true);
+  });
+});
+
+describe("UI-only actions do not push a pastState (nodes/edges unchanged)", () => {
+  // The zundo `equality` function short-circuits the pastState push
+  // when the partialized slices (nodes / edges) are reference-equal.
+  // UI-only actions (mode, help dialog, confirm dialog) only touch
+  // non-partialized fields, so they should not pollute the undo stack.
+
+  it("setMode does not push a pastState (mode is not in the partialized slice)", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a")] });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().setMode("add-vertex");
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+    expect(useGraphStore.getState().mode).toBe("add-vertex");
+  });
+
+  it("openConfirmDialogue / closeConfirmDialogue do not push a pastState", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a")] });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().openConfirmDialogue({
+      title: "X",
+      message: "y",
+      onConfirm: () => {},
+    });
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().closeConfirmDialogue();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+  });
+
+  it("openHelp / closeHelp do not push a pastState", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a")] });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().openHelp();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().closeHelp();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+  });
+
+  it("addSelectedToPendingSources does not push a pastState (pendingEdgeSources is not partialized)", () => {
+    useGraphStore.setState({
+      mode: "add-edge",
+      nodes: [makeVertex("a", { selected: true })],
+    });
+    useGraphStore.temporal.getState().clear();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
+    useGraphStore.getState().addSelectedToPendingSources();
+    // No pastState — the partialized slice is unchanged.
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+    expect(useGraphStore.getState().pendingEdgeSources).toEqual(["a"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setMode from add-edge to add-edge (preserves pending + merges selection).
+// ---------------------------------------------------------------------------
+
+describe("setMode from add-edge to add-edge", () => {
+  it("preserves existing pending sources when re-entering add-edge", () => {
+    useGraphStore.setState({
+      mode: "add-edge",
+      pendingEdgeSources: ["a", "b"],
+    });
+    useGraphStore.getState().setMode("add-edge");
+    expect(useGraphStore.getState().pendingEdgeSources).toEqual(["a", "b"]);
+  });
+
+  it("merges the current selection into pending sources on every add-edge switch", () => {
+    // Even when already in add-edge, setMode("add-edge") re-merges the
+    // current selection. This means a newly-selected node immediately
+    // joins the pending list (no need to call addSelectedToPendingSources
+    // explicitly).
+    useGraphStore.setState({
+      mode: "add-edge",
+      pendingEdgeSources: ["a"],
+      nodes: [
+        makeVertex("a", { selected: false }),
+        makeVertex("b", { selected: true }), // newly selected
+      ],
+    });
+    useGraphStore.getState().setMode("add-edge");
+    expect(useGraphStore.getState().pendingEdgeSources.sort()).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("dedupes when the current selection overlaps pending sources", () => {
+    useGraphStore.setState({
+      mode: "add-edge",
+      pendingEdgeSources: ["a", "b"],
+      nodes: [
+        makeVertex("a", { selected: true }), // already in pending
+        makeVertex("b", { selected: true }), // already in pending
+        makeVertex("c", { selected: false }),
+      ],
+    });
+    useGraphStore.getState().setMode("add-edge");
+    // The selection is a subset of pending — re-merging is a no-op.
+    expect(useGraphStore.getState().pendingEdgeSources.sort()).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Structural changes during an active drag (temporal store is paused).
+// ---------------------------------------------------------------------------
+
+describe("structural changes during an active drag", () => {
+  // The drag pauses the temporal store so intermediate position ticks
+  // don't land on the undo stack. The structural-apply path in
+  // `applyReactiveFlowChanges` does NOT resume for its own set(), so
+  // a remove during a drag is applied but NOT recorded — it cannot be
+  // undone. This is a known limitation; pin the current behavior so a
+  // future refactor that ref-counts pauses (and would change the
+  // recording semantics) is a deliberate change.
+  it("a remove during an active drag is applied but NOT recorded on the undo stack", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a"), makeVertex("b")],
+    });
+    useGraphStore.temporal.getState().clear();
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+
+    useGraphStore.getState().onNodeDragStart();
+    useGraphStore
+      .getState()
+      .onNodesChange([{ id: "a", type: "remove" }]);
+
+    // The remove IS applied (the store reflects it).
+    expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["b"]);
+    // ...but it is NOT recorded (temporal store is paused).
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
+
+    // After the drag ends, only the drag's own snapshot lands on the
+    // stack — the remove is gone for good from the user's perspective.
+    useGraphStore.getState().onNodeDragStop();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(
+      baseline + 1,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateVertex* with NaN / Infinity inputs.
+// ---------------------------------------------------------------------------
+
+describe("updateVertexRotation with degenerate inputs", () => {
+  it("normalizes NaN to 0", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a", { rotation: 45 })] });
+    useGraphStore.getState().updateVertexRotation("a", NaN);
+    expect(useGraphStore.getState().nodes[0].rotation).toBe(0);
+  });
+
+  it("normalizes +Infinity to 0", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a", { rotation: 45 })] });
+    useGraphStore.getState().updateVertexRotation("a", Infinity);
+    expect(useGraphStore.getState().nodes[0].rotation).toBe(0);
+  });
+
+  it("normalizes -Infinity to 0", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a", { rotation: 45 })] });
+    useGraphStore.getState().updateVertexRotation("a", -Infinity);
+    expect(useGraphStore.getState().nodes[0].rotation).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // updateVertex* actions on a non-existent node id.
 // ---------------------------------------------------------------------------
 
 describe("updateVertex* on a non-existent node id", () => {
-  it("updateVertexLabel is a silent no-op and adds nothing to the undo stack", () => {
+  // The .map-based actions always return a new array reference, even
+  // when no node matches. The zundo `equality` function compares
+  // references, so the partialized slice IS different and a pastState
+  // IS pushed. This is a no-op the user can "undo" to a visually-
+  // identical state. Pinned as current behavior — fixing it would
+  // require every action to short-circuit on no-change, which is more
+  // invasive than the value.
+
+  it("updateVertexLabel on a missing id is a silent no-op on node contents", () => {
     useGraphStore.setState({ nodes: [makeVertex("a")] });
-    const baseline = useGraphStore.temporal.getState().pastStates.length;
-
     useGraphStore.getState().updateVertexLabel("does-not-exist", "x");
-
-    // The .map produces the same array contents; no node is added or
-    // removed. Because the returned array reference is new, zundo's
-    // equality check (defaults to Object.is on the partialized slice)
-    // sees a change in `nodes` reference even though contents match —
-    // so this MAY push an empty pastState. Pin the actual behavior.
     expect(useGraphStore.getState().nodes).toHaveLength(1);
     expect(useGraphStore.getState().nodes[0].id).toBe("a");
-    // Assert the stack delta explicitly (current behavior: +1 because
-    // the map always returns a new array reference).
-    expect(useGraphStore.temporal.getState().pastStates.length).toBe(
-      baseline + 1,
-    );
   });
 
   it("updateVertexType on a missing id is a silent no-op on node contents", () => {

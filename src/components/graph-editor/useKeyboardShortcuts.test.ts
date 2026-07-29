@@ -538,3 +538,120 @@ describe("vertex-type shortcut outside add-vertex mode does not match", () => {
     expect(useGraphStore.getState().selectedVertexType).toBe("z");
   });
 });
+
+describe("? key with the help dialog already open", () => {
+  // The `?` key is bound to `toggleHelp()`. When the help dialog is
+  // already open, pressing `?` again should close it (toggle semantics).
+  // The dialog auto-focuses its close button on open (see
+  // KeyboardShortcutsDialog), so the keydown event fires on the close
+  // button, bubbles up to the window, and the global handler runs.
+  it("pressing ? while the help dialog is open closes it", () => {
+    useGraphStore.setState({ isHelpOpen: true });
+    renderHook(() => useKeyboardShortcuts());
+
+    pressOnBody({ key: "?" });
+    expect(useGraphStore.getState().isHelpOpen).toBe(false);
+  });
+
+  it("pressing ? repeatedly toggles the help dialog open/closed", () => {
+    useGraphStore.setState({ isHelpOpen: false });
+    renderHook(() => useKeyboardShortcuts());
+
+    pressOnBody({ key: "?" });
+    expect(useGraphStore.getState().isHelpOpen).toBe(true);
+
+    pressOnBody({ key: "?" });
+    expect(useGraphStore.getState().isHelpOpen).toBe(false);
+
+    pressOnBody({ key: "?" });
+    expect(useGraphStore.getState().isHelpOpen).toBe(true);
+  });
+});
+
+describe("shift + letter keys", () => {
+  // Regression guard: the single-key switch used to compare the raw
+  // `event.key`, so Shift+S (uppercase) silently did nothing. The
+  // existing test "single-key shortcuts are case-insensitive" covers
+  // mode-switch letters. This block extends the coverage to the
+  // escape ladder and the help toggle with shift.
+  it("Shift+S also switches to select mode (uppercase S)", () => {
+    useGraphStore.setState({ mode: "add-vertex" });
+    renderHook(() => useKeyboardShortcuts());
+    pressOnBody({ key: "S", shiftKey: true });
+    expect(useGraphStore.getState().mode).toBe("select");
+  });
+
+  it("Shift+V also switches to add-vertex mode (uppercase V)", () => {
+    useGraphStore.setState({ mode: "select" });
+    renderHook(() => useKeyboardShortcuts());
+    pressOnBody({ key: "V", shiftKey: true });
+    expect(useGraphStore.getState().mode).toBe("add-vertex");
+  });
+
+  it("Shift+E also switches to add-edge mode (uppercase E)", () => {
+    renderHook(() => useKeyboardShortcuts());
+    pressOnBody({ key: "E", shiftKey: true });
+    expect(useGraphStore.getState().mode).toBe("add-edge");
+  });
+
+  it("Shift+? (uppercase) also toggles the help dialog", () => {
+    renderHook(() => useKeyboardShortcuts());
+    expect(useGraphStore.getState().isHelpOpen).toBe(false);
+
+    pressOnBody({ key: "?", shiftKey: true });
+    expect(useGraphStore.getState().isHelpOpen).toBe(true);
+  });
+});
+
+describe("event.preventDefault behavior", () => {
+  it("does not preventDefault on a non-handled key (letter 'a' without modifier)", () => {
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "a",
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    // 'a' without modifier is not bound — the global handler returns
+    // without calling preventDefault, so the browser can do its thing.
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("prevents default on Delete (so the browser's back-nav on some platforms doesn't fire)", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { x: 0, y: 0 }, true)],
+    });
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Delete",
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    // The Delete handler calls deleteSelected but does NOT
+    // preventDefault — browsers don't have a default action for
+    // Delete inside a regular page, so this is a no-op. Pin the
+    // current behavior so a future "preventDefault on Delete" is a
+    // deliberate change.
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("prevents default on 'f' (fit-view) so the browser's find-in-page isn't triggered", () => {
+    // The 'f' key (fit view) is handled but does NOT call
+    // preventDefault — without a Ctrl modifier, 'f' has no browser
+    // default in a regular page. Pin the current behavior.
+    renderHook(() => useKeyboardShortcuts());
+
+    const event = new KeyboardEvent("keydown", {
+      key: "f",
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});

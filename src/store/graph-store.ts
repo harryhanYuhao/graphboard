@@ -701,6 +701,21 @@ export const useGraphStore = create<GraphStore>()(
     }),
     {
       partialize,
+      // Compare the partialized slices field-by-field instead of
+      // relying on the default `Object.is` on the partialized object.
+      // zustand's `set` always produces a new state object, so the
+      // default Object.is is always false and a pastState is pushed
+      // for every `set` — even when the partialized slices (nodes /
+      // edges) didn't change. UI-only actions like `setMode`,
+      // `openConfirmDialogue`, and the helpers' no-op path
+      // (`selectAllElements` / `clearAllSelections` returning the
+      // original references when nothing changed) would otherwise
+      // pollute the undo stack with entries the user can "undo" to a
+      // visually-identical state. With this equality, the undo stack
+      // is reserved for real graph-structure changes. Visual changes
+      // (drag, select toggle) still bypass the stack via the
+      // pause/resume gesture controllers — see `applyReactiveFlowChanges`.
+      equality: (a, b) => a.nodes === b.nodes && a.edges === b.edges,
       limit: 50,
     },
   ),

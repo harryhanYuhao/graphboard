@@ -233,7 +233,12 @@ export function getSelectedSubgraph(params: {
 }
 
 // Mark every node and edge as selected. Returned arrays are new arrays so
-// the Zustand store picks up the change as a reference diff.
+// the Zustand store picks up the change as a reference diff — UNLESS
+// every element is already in the target state, in which case the
+// original arrays are returned (reference-equal). This is the hook the
+// zundo `equality` function (in graph-store.ts) keys off to skip the
+// pastState push for a no-op call. The no-op path is also where the
+// helper avoids a wasteful copy.
 export function selectAllElements(params: {
   nodes: VertexNode[];
   edges: GraphEdge[];
@@ -241,18 +246,32 @@ export function selectAllElements(params: {
   nodes: VertexNode[];
   edges: GraphEdge[];
 } {
-  return {
-    nodes: params.nodes.map((node) =>
-      node.selected ? node : { ...node, selected: true },
-    ),
-    edges: params.edges.map((edge) =>
-      edge.selected ? edge : { ...edge, selected: true },
-    ),
-  };
+  let changed = false;
+  const nodes = params.nodes.map((node) => {
+    if (node.selected) return node;
+    changed = true;
+    return { ...node, selected: true };
+  });
+  const edges = params.edges.map((edge) => {
+    if (edge.selected) return edge;
+    changed = true;
+    return { ...edge, selected: true };
+  });
+  if (!changed) {
+    // No element actually changed — preserve the original references
+    // so the zundo equality function can short-circuit the pastState
+    // push. Returning a fresh `[]` here would still produce
+    // reference-equal `nodes`/`edges` (both empty), so the shortcut
+    // works for the empty-graph case too.
+    return { nodes: params.nodes, edges: params.edges };
+  }
+  return { nodes, edges };
 }
 
 // Mark every node and edge as not selected. Returned arrays are new arrays
-// so the Zustand store picks up the change as a reference diff.
+// so the Zustand store picks up the change as a reference diff — UNLESS
+// every element is already unselected, in which case the original
+// arrays are returned. See `selectAllElements` for the rationale.
 export function clearAllSelections(params: {
   nodes: VertexNode[];
   edges: GraphEdge[];
@@ -260,14 +279,21 @@ export function clearAllSelections(params: {
   nodes: VertexNode[];
   edges: GraphEdge[];
 } {
-  return {
-    nodes: params.nodes.map((node) =>
-      node.selected ? { ...node, selected: false } : node,
-    ),
-    edges: params.edges.map((edge) =>
-      edge.selected ? { ...edge, selected: false } : edge,
-    ),
-  };
+  let changed = false;
+  const nodes = params.nodes.map((node) => {
+    if (!node.selected) return node;
+    changed = true;
+    return { ...node, selected: false };
+  });
+  const edges = params.edges.map((edge) => {
+    if (!edge.selected) return edge;
+    changed = true;
+    return { ...edge, selected: false };
+  });
+  if (!changed) {
+    return { nodes: params.nodes, edges: params.edges };
+  }
+  return { nodes, edges };
 }
 
 // Shallow-clone the subgraph for clipboard storage. IDs are preserved so the

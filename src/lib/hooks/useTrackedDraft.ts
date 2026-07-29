@@ -60,9 +60,24 @@ export function useTrackedDraft<T>({
   const [trackedSource, setTrackedSource] = useState<T>(source);
   const [trackedKey, setTrackedKey] = useState<unknown>(trackKey);
 
+  // Drift check uses `Object.is` instead of `!==` so NaN values
+  // compare equal to themselves. With `!==`, `NaN !== NaN` is `true`,
+  // so a NaN source would trigger a reset on every render and the
+  // queued setState calls would loop React into a "Too many
+  // re-renders" error. The current call sites (`VertexPropertyPanel`)
+  // normalize the rotation source through `normalizeRotation` which
+  // already maps NaN → 0, so this is a latent bug — but the hook is
+  // small enough that fixing the comparison is cheaper than
+  // documenting the limitation.
+  //
+  // `Object.is` also distinguishes `+0` from `-0`. The two current
+  // call sites use `normalizeRotation` (always non-negative) and
+  // strings (no zero distinction), so this is not a behavior change
+  // in practice. Future object sources get reference equality, same
+  // as `!==`.
   const driftDetected =
     !skipDriftCheck &&
-    (trackedSource !== source || trackedKey !== trackKey);
+    (!Object.is(trackedSource, source) || !Object.is(trackedKey, trackKey));
 
   // Reset the draft + trackers during render. React queues these
   // setState calls and re-renders before painting; the current

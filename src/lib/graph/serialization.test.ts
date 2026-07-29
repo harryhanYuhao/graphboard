@@ -459,4 +459,79 @@ describe("exportGraphJson / importGraphJson", () => {
       expect(result.document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     }
   });
+
+  // Trust boundary: the validator only checks the structural shape
+  // (graph/view slices with arrays). Other required fields
+  // (id / title / createdAt / updatedAt) are NOT validated — a
+  // document missing them is accepted and the missing fields are
+  // `undefined` on the returned object. We don't try to repair this
+  // (the call sites always supply all fields) but pin the behavior
+  // so a future tightening of the validator is a deliberate change.
+  it("accepts a document with `graph`/`view` slices but missing other required fields", () => {
+    const minimal = JSON.stringify({
+      graph: { nodes: [], edges: [] },
+      view: { nodes: [], edges: [] },
+    });
+    const result = importGraphJson(minimal);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Missing fields are spread as `undefined`.
+      expect(result.document.id).toBeUndefined();
+      expect(result.document.title).toBeUndefined();
+      expect(result.document.createdAt).toBeUndefined();
+      expect(result.document.updatedAt).toBeUndefined();
+    }
+  });
+
+  it("accepts a document with `graph`/`view` slices but with extra top-level fields", () => {
+    // The validator spreads the parsed object, so extra fields ride
+    // along into the returned document. Useful for forward-compat
+    // (e.g. a tool that adds a `tags` field this version ignores).
+    const extra = JSON.stringify({
+      id: "x",
+      title: "extra-fields",
+      graph: { nodes: [], edges: [] },
+      view: { nodes: [], edges: [] },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+      tags: ["research", "wip"],
+      author: "alice",
+    });
+    const result = importGraphJson(extra);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const doc = result.document as unknown as Record<string, unknown>;
+      expect(doc.tags).toEqual(["research", "wip"]);
+      expect(doc.author).toBe("alice");
+    }
+  });
+
+  it("accepts a document with `graph`/`view` slices but with extra fields in the slices", () => {
+    // Same trust-boundary pin: extra fields inside `graph` or `view`
+    // ride along. (Hydration only reads the documented fields.)
+    const extra = JSON.stringify({
+      id: "x",
+      title: "extra-slice-fields",
+      graph: {
+        nodes: [],
+        edges: [],
+        metadata: { author: "alice", version: 2 },
+      },
+      view: {
+        nodes: [],
+        edges: [],
+        customFlags: { grid: true },
+      },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    });
+    const result = importGraphJson(extra);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const graph = result.document.graph as unknown as Record<string, unknown>;
+      const view = result.document.view as unknown as Record<string, unknown>;
+      expect(graph.metadata).toEqual({ author: "alice", version: 2 });
+      expect(view.customFlags).toEqual({ grid: true });
+    }
+  });
 });

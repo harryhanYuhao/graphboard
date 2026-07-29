@@ -36,7 +36,7 @@ export function compute_tensor(input: any, on_progress?: Function | null): any;
 export function init_panic_hook(): void;
 
 /**
- * Trivial round-trip smoke test.
+ * Trivial round-trip smoke test for frontend integration
  * Used by `scripts/ping-wasm.mts` to confirm the wasm pipeline is
  * healthy end-to-end.
  */

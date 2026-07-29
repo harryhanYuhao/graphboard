@@ -58,7 +58,7 @@ export function init_panic_hook() {
 }
 
 /**
- * Trivial round-trip smoke test.
+ * Trivial round-trip smoke test for frontend integration
  * Used by `scripts/ping-wasm.mts` to confirm the wasm pipeline is
  * healthy end-to-end.
  * @returns {string}
