@@ -22,7 +22,10 @@
 // `compute_api_version`). The `JsValue`-taking `compute_tensor` cannot
 // be tested without a JS runtime and is intentionally not exercised here.
 
-use zxw::{GraphEdgeRecord, GraphNodeRecord, GraphSlice, VertexData, VertexType};
+use zxw::{
+    FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendGraphSlice, FrontendVertexData,
+    VertexType,
+};
 
 // ---- small helpers ---------------------------------------------------------
 //
@@ -35,7 +38,7 @@ use zxw::{GraphEdgeRecord, GraphNodeRecord, GraphSlice, VertexData, VertexType};
 /// Helper: assert the JSON fails to deserialize as `GraphSlice`.
 #[track_caller]
 fn assert_rejects(json: &str, fragment: &str) {
-    let result: Result<GraphSlice, _> = serde_json::from_str(json);
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(json);
     assert!(
         result.is_err(),
         "expected deserialization to fail (fragment: {fragment:?}), got: {result:?}"
@@ -49,8 +52,8 @@ fn assert_rejects(json: &str, fragment: &str) {
 
 /// Helper: assert the JSON deserializes as `GraphSlice`.
 #[track_caller]
-fn assert_accepts(json: &str) -> GraphSlice {
-    serde_json::from_str::<GraphSlice>(json)
+fn assert_accepts(json: &str) -> FrontendGraphSlice {
+    serde_json::from_str::<FrontendGraphSlice>(json)
         .unwrap_or_else(|e| panic!("expected deserialization to succeed, got: {e}"))
 }
 
@@ -144,21 +147,24 @@ fn uppercase_vertex_type_z_is_rejected() {
 // 7. `vertexType: "ZBOX"` (all caps).
 #[test]
 fn all_caps_vertex_type_zbox_is_rejected() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "ZBOX"}}], "edges": []}"#;
+    let json =
+        r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "ZBOX"}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
 // 8. `vertexType: "z-box"` (with dash).
 #[test]
 fn dashed_vertex_type_is_rejected() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z-box"}}], "edges": []}"#;
+    let json =
+        r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z-box"}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
 // 9. `vertexType: "boundary"` (made-up type).
 #[test]
 fn fabricated_vertex_type_boundary_is_rejected() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "boundary"}}], "edges": []}"#;
+    let json =
+        r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "boundary"}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
@@ -204,7 +210,7 @@ fn all_vertex_types_are_lowercase_only() {
                 r#"{{"nodes":[{{"id":"n","data":{{"label":"","vertexType":"{}"}}}}],"edges":[]}}"#,
                 bad
             );
-            let result: Result<GraphSlice, _> = serde_json::from_str(&json);
+            let result: Result<FrontendGraphSlice, _> = serde_json::from_str(&json);
             assert!(
                 result.is_err(),
                 "vertexType {:?} should be rejected (only {:?} is valid), got: {:?}",
@@ -291,14 +297,16 @@ fn missing_label_field_is_rejected() {
 // 17. `label: null`.
 #[test]
 fn null_label_is_rejected() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": null, "vertexType": "z"}}], "edges": []}"#;
+    let json =
+        r#"{"nodes": [{"id": "a", "data": {"label": null, "vertexType": "z"}}], "edges": []}"#;
     assert_rejects(json, "expected a string");
 }
 
 // 18. `label: 123` (number not string).
 #[test]
 fn numeric_label_is_rejected() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": 123, "vertexType": "z"}}], "edges": []}"#;
+    let json =
+        r#"{"nodes": [{"id": "a", "data": {"label": 123, "vertexType": "z"}}], "edges": []}"#;
     assert_rejects(json, "expected a string");
 }
 
@@ -423,7 +431,10 @@ fn empty_label_round_trips() {
     let slice = assert_accepts(json);
     assert_eq!(slice.nodes[0].data.label, "");
     let back = serde_json::to_string(&slice).unwrap();
-    assert!(back.contains(r#""label":""#), "empty label must survive, got: {back}");
+    assert!(
+        back.contains(r#""label":""#),
+        "empty label must survive, got: {back}"
+    );
 }
 
 // 28. Unicode in `id` (e.g. `"λ"`).
@@ -433,7 +444,7 @@ fn unicode_id_round_trips_intact() {
     let slice = assert_accepts(json);
     assert_eq!(slice.nodes[0].id, "λ");
     let back = serde_json::to_string(&slice).unwrap();
-    let reparsed: GraphSlice = serde_json::from_str(&back).unwrap();
+    let reparsed: FrontendGraphSlice = serde_json::from_str(&back).unwrap();
     assert_eq!(reparsed.nodes[0].id, "λ");
 }
 
@@ -481,9 +492,9 @@ fn self_loop_edge_deserializes() {
 #[test]
 fn serialization_key_order_is_stable() {
     // Node: `id`, then `data` (which is `label`, then `vertexType`).
-    let node = GraphNodeRecord {
+    let node = FrontendGraphNodeRecord {
         id: "z".into(),
-        data: VertexData {
+        data: FrontendVertexData {
             label: "l".into(),
             vertex_type: VertexType::Z,
         },
@@ -494,7 +505,7 @@ fn serialization_key_order_is_stable() {
     );
 
     // Edge: `id`, `source`, `target`, then optional handles.
-    let edge_with_handles = GraphEdgeRecord {
+    let edge_with_handles = FrontendGraphEdgeRecord {
         id: "e".into(),
         source: "s".into(),
         target: "t".into(),
@@ -507,7 +518,10 @@ fn serialization_key_order_is_stable() {
     );
 
     // Whole slice: `nodes`, then `edges`.
-    let slice = GraphSlice { nodes: vec![], edges: vec![] };
+    let slice = FrontendGraphSlice {
+        nodes: vec![],
+        edges: vec![],
+    };
     assert_eq!(
         serde_json::to_string(&slice).unwrap(),
         r#"{"nodes":[],"edges":[]}"#
@@ -515,7 +529,11 @@ fn serialization_key_order_is_stable() {
 
     // Two structurally-identical slices produce byte-identical output.
     let a = serde_json::to_string(&slice).unwrap();
-    let b = serde_json::to_string(&GraphSlice { nodes: vec![], edges: vec![] }).unwrap();
+    let b = serde_json::to_string(&FrontendGraphSlice {
+        nodes: vec![],
+        edges: vec![],
+    })
+    .unwrap();
     assert_eq!(a, b);
 }
 
@@ -526,7 +544,7 @@ fn serialization_key_order_is_stable() {
 // `skip_serializing_if` predicate is symmetric.
 #[test]
 fn edge_with_handles_serializes_them() {
-    let edge = GraphEdgeRecord {
+    let edge = FrontendGraphEdgeRecord {
         id: "e".into(),
         source: "s".into(),
         target: "t".into(),
@@ -534,11 +552,17 @@ fn edge_with_handles_serializes_them() {
         target_handle: Some(1),
     };
     let json = serde_json::to_string(&edge).unwrap();
-    assert!(json.contains(r#""sourceHandle":0"#), "Some(0) handle must appear, got: {json}");
-    assert!(json.contains(r#""targetHandle":1"#), "Some(1) handle must appear, got: {json}");
+    assert!(
+        json.contains(r#""sourceHandle":0"#),
+        "Some(0) handle must appear, got: {json}"
+    );
+    assert!(
+        json.contains(r#""targetHandle":1"#),
+        "Some(1) handle must appear, got: {json}"
+    );
 
     // And the round-trip preserves them.
-    let back: GraphEdgeRecord = serde_json::from_str(&json).unwrap();
+    let back: FrontendGraphEdgeRecord = serde_json::from_str(&json).unwrap();
     assert_eq!(back.source_handle, Some(0));
     assert_eq!(back.target_handle, Some(1));
 }

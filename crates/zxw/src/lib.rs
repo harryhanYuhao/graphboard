@@ -25,8 +25,13 @@ mod utils;
 // wrapper, downstream rlib users) don't have to spell the full path.
 pub use contraction::{compute_tensor, TensorResult};
 pub use error::{ComputeError, PhaseError};
-pub use graph::{GraphEdgeRecord, GraphNodeRecord, GraphSlice, VertexData, VertexType};
-pub use nodes::{and_gate, build_vertex_tensor, empty, h_box, w_node, x_box, x_spider, z_box, z_spider};
+pub use graph::{
+    FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendGraphSlice, FrontendVertexData,
+    VertexType,
+};
+pub use nodes::{
+    and_gate, build_vertex_tensor, empty, h_box, w_node, x_box, x_spider, z_box, z_spider,
+};
 pub use phase::parse_phase;
 pub use tensor::{Cplx, Tensor};
 

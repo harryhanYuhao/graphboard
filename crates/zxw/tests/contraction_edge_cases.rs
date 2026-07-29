@@ -15,22 +15,20 @@
 
 use approx::assert_relative_eq;
 use std::cell::RefCell;
-use zxw::{compute_tensor, ComputeError, GraphSlice};
+use zxw::{compute_tensor, ComputeError, FrontendGraphSlice};
 
 /// Helper: parse a JSON graph payload, run `compute_tensor`, return the
 /// `TensorResult`. Panics on parse or compute errors so test bodies
 /// stay focused on values.
 fn compute(json: &str) -> zxw::TensorResult {
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     compute_tensor(&graph, None).expect("compute_tensor should succeed")
 }
 
 /// Helper: like `compute`, but expects a `ComputeError`. Returns it so
 /// the test can assert on the variant.
 fn compute_err(json: &str) -> ComputeError {
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     compute_tensor(&graph, None).expect_err("compute_tensor should error")
 }
 
@@ -278,7 +276,12 @@ fn self_loop_on_empty_node_is_rejected_not_panicked() {
     }"#;
     let err = compute_err(json);
     match err {
-        ComputeError::DegreeOverflow { vertex_id, vertex_type, degree, max } => {
+        ComputeError::DegreeOverflow {
+            vertex_id,
+            vertex_type,
+            degree,
+            max,
+        } => {
             assert_eq!(vertex_id, "e");
             assert_eq!(vertex_type, zxw::VertexType::Empty);
             assert_eq!(degree, 2, "self-loop → degree 2");
@@ -588,8 +591,7 @@ fn on_progress_fires_once_with_one_one_for_single_self_loop() {
         "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
         "edges": [{"id":"s","source":"z","target":"z"}]
     }"#;
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     let calls: RefCell<Vec<(usize, usize)>> = RefCell::new(Vec::new());
     let cb = |done: usize, total: usize| {
         calls.borrow_mut().push((done, total));

@@ -45,4 +45,9 @@ CLAUDE.md
 .harness
 .zcode
 
+# Rust builds
 target/
+public/wasm/
+
+# Local Netlify folder
+.netlify

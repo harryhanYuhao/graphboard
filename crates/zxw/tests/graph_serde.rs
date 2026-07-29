@@ -11,7 +11,7 @@
 // The payload below mirrors what crosses the WASM boundary in Phase 5:
 // only `doc.graph`, never `doc.view`.
 
-use zxw::{GraphEdgeRecord, GraphSlice, GraphNodeRecord, VertexType};
+use zxw::{FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendGraphSlice, VertexType};
 
 /// Hand-written payload matching `projectDocument()` output exactly.
 /// Includes: nested `data`, every `vertexType` spelling, edges with and
@@ -34,7 +34,7 @@ const FRONTEND_PAYLOAD: &str = r#"{
 
 #[test]
 fn deserializes_frontend_payload_with_camel_case_and_nested_data() {
-    let slice: GraphSlice =
+    let slice: FrontendGraphSlice =
         serde_json::from_str(FRONTEND_PAYLOAD).expect("frontend payload must deserialize");
 
     assert_eq!(slice.nodes.len(), 6);
@@ -60,8 +60,7 @@ fn deserializes_frontend_payload_with_camel_case_and_nested_data() {
 
 #[test]
 fn absent_handle_fields_become_none_not_zero() {
-    let slice: GraphSlice =
-        serde_json::from_str(FRONTEND_PAYLOAD).expect("deserialize");
+    let slice: FrontendGraphSlice = serde_json::from_str(FRONTEND_PAYLOAD).expect("deserialize");
     // e1 has no handle fields at all → both ends None.
     let e1 = &slice.edges[0];
     assert_eq!(e1.id, "e1");
@@ -79,9 +78,9 @@ fn reserialize_round_trips_through_the_struct() {
     // Deserialize → re-serialize → deserialize again, and check the
     // second pass sees the same values. Catches asymmetric serde
     // attributes (e.g. `serialize_with` without a matching `deserialize_with`).
-    let once: GraphSlice = serde_json::from_str(FRONTEND_PAYLOAD).unwrap();
+    let once: FrontendGraphSlice = serde_json::from_str(FRONTEND_PAYLOAD).unwrap();
     let json = serde_json::to_value(&once).unwrap();
-    let twice: GraphSlice = serde_json::from_value(json).unwrap();
+    let twice: FrontendGraphSlice = serde_json::from_value(json).unwrap();
 
     assert_eq!(once.nodes.len(), twice.nodes.len());
     for (a, b) in once.nodes.iter().zip(twice.nodes.iter()) {
@@ -101,7 +100,7 @@ fn empty_edge_handles_omitted_when_none() {
     // should omit the fields (skip_serializing_if), matching the
     // frontend's emitted shape. An edge that never had handles shouldn't
     // sprout `"sourceHandle": null` on the way back out.
-    let edge = GraphEdgeRecord {
+    let edge = FrontendGraphEdgeRecord {
         id: "x".into(),
         source: "s".into(),
         target: "t".into(),
@@ -123,9 +122,9 @@ fn empty_edge_handles_omitted_when_none() {
 fn struct_can_be_built_and_named_directly() {
     // Sanity-check the field names compile against the public API —
     // catches accidental renames a downstream caller would hit.
-    let _node = GraphNodeRecord {
+    let _node = FrontendGraphNodeRecord {
         id: "n".into(),
-        data: zxw::VertexData {
+        data: zxw::FrontendVertexData {
             label: "label".into(),
             vertex_type: VertexType::Empty,
         },
@@ -144,8 +143,9 @@ fn rejects_unknown_vertex_type() {
     // The eight lowercase spellings are the only valid values. A typo
     // or a future type ("t") must surface as a deserialization error,
     // not deserialize to a default variant.
-    let bad = r#"{ "nodes": [{ "id": "x", "data": { "label": "", "vertexType": "t" } }], "edges": [] }"#;
-    let result: Result<GraphSlice, _> = serde_json::from_str(bad);
+    let bad =
+        r#"{ "nodes": [{ "id": "x", "data": { "label": "", "vertexType": "t" } }], "edges": [] }"#;
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(
         result.is_err(),
         "unknown vertex type 't' should be rejected, got: {:?}",
@@ -166,7 +166,7 @@ fn rejects_snake_case_vertex_type_field() {
     // be rejected — otherwise a stale payload schema slips through and
     // every node silently deserializes with an empty label.
     let bad = r#"{ "nodes": [{ "id": "x", "data": { "label": "hi", "vertex_type": "z" } }], "edges": [] }"#;
-    let result: Result<GraphSlice, _> = serde_json::from_str(bad);
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(
         result.is_err(),
         "snake_case `vertex_type` field should be rejected (camelCase only), got: {:?}",
@@ -181,7 +181,7 @@ fn rejects_missing_data_wrapper() {
     // proposed) must fail — without this check, a refactor that
     // flattens `data` would silently lose every label.
     let flat = r#"{ "nodes": [{ "id": "x", "label": "hi", "vertexType": "z" }], "edges": [] }"#;
-    let result: Result<GraphSlice, _> = serde_json::from_str(flat);
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(flat);
     assert!(result.is_err(), "flat node (no `data`) must be rejected");
 }
 
@@ -191,7 +191,7 @@ fn rejects_node_missing_id() {
     // walks edges by. Missing it should fail at deserialize, not
     // surface as a panic deep inside Phase 4's vertex lookup.
     let bad = r#"{ "nodes": [{ "data": { "label": "", "vertexType": "z" } }], "edges": [] }"#;
-    let result: Result<GraphSlice, _> = serde_json::from_str(bad);
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(result.is_err(), "node without id must be rejected");
 }
 
@@ -200,7 +200,7 @@ fn rejects_edge_missing_endpoints() {
     // Edges must name both `source` and `target`. Missing either is a
     // structural error the compute layer can't recover from.
     let no_target = r#"{ "nodes": [], "edges": [{ "id": "e", "source": "a" } ]}"#;
-    let result: Result<GraphSlice, _> = serde_json::from_str(no_target);
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(no_target);
     assert!(result.is_err(), "edge without target must be rejected");
 }
 
@@ -212,7 +212,7 @@ fn empty_graph_slice_round_trips() {
     // starts here: deserializing `{ nodes: [], edges: [] }` must
     // succeed and give empty (not null) vectors.
     let empty = r#"{ "nodes": [], "edges": [] }"#;
-    let slice: GraphSlice =
+    let slice: FrontendGraphSlice =
         serde_json::from_str(empty).expect("empty graph must deserialize");
     assert!(slice.nodes.is_empty());
     assert!(slice.edges.is_empty());
@@ -243,7 +243,7 @@ fn all_ten_vertex_types_round_trip() {
       ],
       "edges": []
     }"#;
-    let slice: GraphSlice = serde_json::from_str(json).unwrap();
+    let slice: FrontendGraphSlice = serde_json::from_str(json).unwrap();
     assert_eq!(slice.nodes.len(), 10);
     let got: Vec<VertexType> = slice.nodes.iter().map(|n| n.data.vertex_type).collect();
     assert_eq!(
@@ -273,7 +273,7 @@ fn unicode_label_round_trips_intact() {
         r#"{{"nodes":[{{"id":"x","data":{{"label":{lbl},"vertexType":"z"}}}}],"edges":[]}}"#,
         lbl = serde_json::to_string(label).unwrap()
     );
-    let slice: GraphSlice = serde_json::from_str(&json).unwrap();
+    let slice: FrontendGraphSlice = serde_json::from_str(&json).unwrap();
     assert_eq!(slice.nodes[0].data.label, label);
 }
 
@@ -287,7 +287,7 @@ fn negative_and_large_handle_indices_deserialize() {
         "nodes": [{"id":"a","data":{"label":"","vertexType":"z"}},{"id":"b","data":{"label":"","vertexType":"z"}}],
         "edges": [{"id":"e","source":"a","target":"b","sourceHandle":0,"targetHandle":1}]
     }"#;
-    let slice: GraphSlice = serde_json::from_str(valid).unwrap();
+    let slice: FrontendGraphSlice = serde_json::from_str(valid).unwrap();
     assert_eq!(slice.edges[0].source_handle, Some(0));
     assert_eq!(slice.edges[0].target_handle, Some(1));
 
@@ -296,8 +296,7 @@ fn negative_and_large_handle_indices_deserialize() {
         "edges": [{"id":"e","source":"a","target":"b","sourceHandle":-1}]
     }"#;
     assert!(
-        serde_json::from_str::<GraphSlice>(negative).is_err(),
+        serde_json::from_str::<FrontendGraphSlice>(negative).is_err(),
         "negative handle index must be rejected (u32)"
     );
 }
-

@@ -25,23 +25,23 @@ use serde::{Deserialize, Serialize};
 /// never sees.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GraphSlice {
-    pub nodes: Vec<GraphNodeRecord>,
-    pub edges: Vec<GraphEdgeRecord>,
+pub struct FrontendGraphSlice {
+    pub nodes: Vec<FrontendGraphNodeRecord>,
+    pub edges: Vec<FrontendGraphEdgeRecord>,
 }
 
 /// A persisted vertex: id + the data the compute layer consumes (label +
 /// type). The nesting (`data: { label, vertexType }`) matches the TS
 /// contract exactly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphNodeRecord {
+pub struct FrontendGraphNodeRecord {
     pub id: String,
-    pub data: VertexData,
+    pub data: FrontendVertexData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct VertexData {
+pub struct FrontendVertexData {
     pub label: String,
     pub vertex_type: VertexType,
 }
@@ -77,7 +77,7 @@ pub enum VertexType {
 /// sprout `"sourceHandle": null` on the way back out.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GraphEdgeRecord {
+pub struct FrontendGraphEdgeRecord {
     pub id: String,
     pub source: String,
     pub target: String,

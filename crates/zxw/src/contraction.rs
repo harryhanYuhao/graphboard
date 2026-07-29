@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ComputeError;
-use crate::graph::{GraphSlice, VertexType};
+use crate::graph::{FrontendGraphSlice, VertexType};
 use crate::nodes::build_vertex_tensor;
 use crate::phase::parse_phase;
 use crate::tensor::Tensor;
@@ -119,7 +119,7 @@ pub struct TensorResult {
 /// with `(edges_done, total_edges)`. The Phase 5 WASM bridge wraps a JS
 /// callback into this closure; native tests pass `None`.
 pub fn compute_tensor(
-    graph: &GraphSlice,
+    graph: &FrontendGraphSlice,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<TensorResult, ComputeError> {
     // Phase A — empty graph is the scalar multiplicative identity (§5.6).
@@ -258,13 +258,7 @@ pub fn compute_tensor(
                 role: LegRole::Neutral,
             })
             .collect();
-        groups.insert(
-            id.clone(),
-            Group {
-                tensor,
-                free_axes,
-            },
-        );
+        groups.insert(id.clone(), Group { tensor, free_axes });
     }
 
     // Phase C — union-find + edge walk.
@@ -432,19 +426,23 @@ pub fn compute_tensor(
                 // Prefer Neutral legs so a boundary-tagged leg (Input /
                 // Output) stays free and reaches the result — otherwise
                 // a later boundary edge would have no leg to tag.
-                let pos_src = pick_free_axis_for_vertex(&group.free_axes, src_order)
-                    .ok_or_else(|| ComputeError::DegreeOverflow {
-                        vertex_id: edge.source.clone(),
-                        vertex_type: node_index[&edge.source].1,
-                        degree: *degree.get(&edge.source).unwrap_or(&0),
-                        max: 0,
+                let pos_src =
+                    pick_free_axis_for_vertex(&group.free_axes, src_order).ok_or_else(|| {
+                        ComputeError::DegreeOverflow {
+                            vertex_id: edge.source.clone(),
+                            vertex_type: node_index[&edge.source].1,
+                            degree: *degree.get(&edge.source).unwrap_or(&0),
+                            max: 0,
+                        }
                     })?;
-                let pos_tgt = pick_free_axis_for_vertex(&group.free_axes, tgt_order)
-                    .ok_or_else(|| ComputeError::DegreeOverflow {
-                        vertex_id: edge.target.clone(),
-                        vertex_type: node_index[&edge.target].1,
-                        degree: *degree.get(&edge.target).unwrap_or(&0),
-                        max: 0,
+                let pos_tgt =
+                    pick_free_axis_for_vertex(&group.free_axes, tgt_order).ok_or_else(|| {
+                        ComputeError::DegreeOverflow {
+                            vertex_id: edge.target.clone(),
+                            vertex_type: node_index[&edge.target].1,
+                            degree: *degree.get(&edge.target).unwrap_or(&0),
+                            max: 0,
+                        }
                     })?;
                 // Contract over the two axes (use trace since both live
                 // in the same tensor). Ensure pos_src != pos_tgt — they
@@ -483,7 +481,9 @@ pub fn compute_tensor(
                 let pos_tgt = pick_free_axis_for_vertex(&group_tgt.free_axes, tgt_order)
                     .expect("tgt endpoint must have a free leg in its group");
 
-                let contracted = group_src.tensor.contract(group_tgt.tensor, pos_src, pos_tgt);
+                let contracted = group_src
+                    .tensor
+                    .contract(group_tgt.tensor, pos_src, pos_tgt);
                 // Concatenate free_axes: src's remainder, then tgt's
                 // remainder (matches contract's [A_free, B_free] order).
                 let mut merged_free_axes: Vec<FreeAxis> = Vec::with_capacity(
@@ -569,10 +569,7 @@ pub fn compute_tensor(
     // Phase E — §5.4 final partition. Stable-sort by role (Input first,
     // then Output, then Neutral); within each role, by node_order then
     // leg_index. Apply the same permutation to the tensor data.
-    let mut indexed: Vec<(usize, FreeAxis)> = combined_free_axes
-        .into_iter()
-        .enumerate()
-        .collect();
+    let mut indexed: Vec<(usize, FreeAxis)> = combined_free_axes.into_iter().enumerate().collect();
     indexed.sort_by(|a, b| {
         let role_rank = |r: LegRole| match r {
             LegRole::Input => 0,
@@ -694,7 +691,7 @@ impl UnionFind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::{GraphEdgeRecord, GraphNodeRecord, VertexData};
+    use crate::graph::{FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendVertexData};
 
     /// Build a `GraphSlice` quickly from `(id, type, label)` tuples +
     /// `(id, src, tgt)` edge tuples. Keeps test bodies focused on the
@@ -702,13 +699,13 @@ mod tests {
     fn graph(
         nodes: &[(&str, VertexType, &str)],
         edges: &[(&str, &str, &str)],
-    ) -> GraphSlice {
-        GraphSlice {
+    ) -> FrontendGraphSlice {
+        FrontendGraphSlice {
             nodes: nodes
                 .iter()
-                .map(|(id, vt, label)| GraphNodeRecord {
+                .map(|(id, vt, label)| FrontendGraphNodeRecord {
                     id: (*id).into(),
-                    data: VertexData {
+                    data: FrontendVertexData {
                         label: (*label).into(),
                         vertex_type: *vt,
                     },
@@ -716,7 +713,7 @@ mod tests {
                 .collect(),
             edges: edges
                 .iter()
-                .map(|(id, src, tgt)| GraphEdgeRecord {
+                .map(|(id, src, tgt)| FrontendGraphEdgeRecord {
                     id: (*id).into(),
                     source: (*src).into(),
                     target: (*tgt).into(),
@@ -735,10 +732,7 @@ mod tests {
         // computation — it's downgraded to a warning + phase 0
         // substitution (plan §5.5). With phase 0 on an isolated
         // z spider (arity 0), the scalar value is 1 + e^{i·0} = 2.
-        let g = graph(
-            &[("z", VertexType::Z, "totally not a phase")],
-            &[],
-        );
+        let g = graph(&[("z", VertexType::Z, "totally not a phase")], &[]);
         let result = compute_tensor(&g, None).expect("parse failure must not fail compute");
         assert_eq!(result.data.len(), 1);
         assert!((result.data[0].0 - 2.0).abs() < 1e-10, "phase 0 → 1+1 = 2");
@@ -769,10 +763,7 @@ mod tests {
         // on them produces NO warning (plan §5.5). Use `empty` (no
         // arity constraint, degree 0 is fine) so we don't trip the
         // H-box arity-2 check.
-        let g = graph(
-            &[("e", VertexType::Empty, "this is not parsed")],
-            &[],
-        );
+        let g = graph(&[("e", VertexType::Empty, "this is not parsed")], &[]);
         let result = compute_tensor(&g, None).expect("compute should succeed");
         assert!(
             result.warnings.is_empty(),

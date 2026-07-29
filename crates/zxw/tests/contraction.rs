@@ -11,22 +11,20 @@
 // caught with a clear story, not just a number diff.
 
 use approx::assert_relative_eq;
-use zxw::{compute_tensor, ComputeError, GraphSlice};
+use zxw::{compute_tensor, ComputeError, FrontendGraphSlice};
 
 /// Helper: parse a JSON graph payload, run `compute_tensor`, return the
 /// `TensorResult`. Panics on parse or compute errors so test bodies
 /// stay focused on values.
 fn compute(json: &str) -> zxw::TensorResult {
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     compute_tensor(&graph, None).expect("compute_tensor should succeed")
 }
 
 /// Helper: like `compute`, but expects a `ComputeError`. Returns it so
 /// the test can assert on the variant.
 fn compute_err(json: &str) -> ComputeError {
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     compute_tensor(&graph, None).expect_err("compute_tensor should error")
 }
 
@@ -126,10 +124,10 @@ fn z_h_z_chain_with_boundaries_is_z_h_z_matrix() {
     let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
     // Expected (1/√2) [[1, 1], [i, -i]] in row-major order.
     let expected = [
-        (inv_sqrt2, 0.0),       // (0,0) = 1/√2
-        (inv_sqrt2, 0.0),       // (0,1) = 1/√2
-        (0.0, inv_sqrt2),       // (1,0) = i/√2
-        (0.0, -inv_sqrt2),      // (1,1) = -i/√2
+        (inv_sqrt2, 0.0),  // (0,0) = 1/√2
+        (inv_sqrt2, 0.0),  // (0,1) = 1/√2
+        (0.0, inv_sqrt2),  // (1,0) = i/√2
+        (0.0, -inv_sqrt2), // (1,1) = -i/√2
     ];
     assert_data(&r.data, &expected);
 }
@@ -523,8 +521,16 @@ fn and_gate_two_inputs_is_logical_and() {
     // Indices: i1*4 + i2*2 + out. For (1,1,1) = 1*4 + 1*2 + 1 = 7.
     assert!(r.data[7].0.abs() - 1.0 < 1e-10, "AND(1,1,1) should be 1");
     // Ensure all other entries are zero.
-    let non_zeros: Vec<_> = r.data.iter().filter(|(re, im)| re.abs() + im.abs() > 1e-10).collect();
-    assert_eq!(non_zeros.len(), 1, "AND should have exactly 1 non-zero entry across 8");
+    let non_zeros: Vec<_> = r
+        .data
+        .iter()
+        .filter(|(re, im)| re.abs() + im.abs() > 1e-10)
+        .collect();
+    assert_eq!(
+        non_zeros.len(),
+        1,
+        "AND should have exactly 1 non-zero entry across 8"
+    );
 }
 
 #[test]
@@ -642,8 +648,8 @@ fn two_inputs_two_outputs_basis_order_is_big_endian() {
     assert_eq!(r.input_count, 2);
     assert_eq!(r.output_count, 2);
     assert_eq!(r.data.len(), 16);
-    assert_relative_eq!(r.data[0].0, 1.0, epsilon = 1e-10);   // all-0 = 1
-    assert_relative_eq!(r.data[15].0, 1.0, epsilon = 1e-10);  // all-1 = 1
+    assert_relative_eq!(r.data[0].0, 1.0, epsilon = 1e-10); // all-0 = 1
+    assert_relative_eq!(r.data[15].0, 1.0, epsilon = 1e-10); // all-1 = 1
     for (i, (re, im)) in r.data.iter().enumerate() {
         if i == 0 || i == 15 {
             continue;
@@ -827,8 +833,7 @@ fn on_progress_is_invoked_once_per_edge_with_running_and_total_counts() {
             {"id":"e3","source":"c","target":"d"}
         ]
     }"#;
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
 
     use std::cell::RefCell;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -861,8 +866,7 @@ fn on_progress_not_called_when_there_are_zero_edges() {
         "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
         "edges": []
     }"#;
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     let fired = std::sync::atomic::AtomicUsize::new(0);
     compute_tensor(
         &graph,
@@ -896,8 +900,7 @@ fn degree_overflow_is_defensive_only_parallel_plus_selfloops() {
             {"id":"e4","source":"z1","target":"z1"}
         ]
     }"#;
-    let graph: GraphSlice =
-        serde_json::from_str(json).expect("test graph JSON must parse");
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     // Pins: this well-formed graph computes to a scalar (all legs consumed).
     // DegreeOverflow is unreachable for valid inputs because arity always
     // equals degree, and each edge consumes exactly 2 legs total.

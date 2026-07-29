@@ -1,3 +1,8 @@
 {
-    "js/ts.tsdk.path": "node_modules/typescript/lib"
+    "js/ts.tsdk.path": "node_modules/typescript/lib",
+    // Index the crate with the `wasm` feature on so rust-analyzer analyzes
+    // `src/wasm.rs` (otherwise it's cfg'd out under `default = []`). The
+    // wasm-bindgen deps build fine on the host target — nothing here needs
+    // wasm32-unknown-unknown.
+    "rust-analyzer.cargo.features": ["wasm"]
 }

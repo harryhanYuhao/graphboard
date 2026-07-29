@@ -53,7 +53,7 @@ pub fn compute_tensor(
     // Deserialize the JS object into the Rust `GraphSlice`. Any shape
     // mismatch (missing field, wrong type, unknown vertex type) fails
     // here as a serde error.
-    let graph: crate::GraphSlice = serde_wasm_bindgen::from_value(input)
+    let graph: crate::FrontendGraphSlice = serde_wasm_bindgen::from_value(input)
         .map_err(|e| JsValue::from_str(&format!("invalid graph input: {e}")))?;
 
     // Wrap the optional JS callback in a Rust closure. When `None`,
