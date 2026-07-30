@@ -481,6 +481,57 @@ describe("save / hydrate round-trip via localStorage", () => {
     expect(state.hasHydrated).toBe(true);
   });
 
+  it("hydrate into a non-empty graph bumps fitViewNonce so the view frames it", () => {
+    // A reload into a saved graph should auto-frame it exactly once. We
+    // check the store-side nonce (the view layer's fitView() runs in
+    // response to it). See the comment in `hydrate()` for the empty-graph
+    // counterpart and the reason we don't rely on `<ReactFlow fitView>`.
+    localStorage.setItem(
+      "graph-board-document",
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "local-document",
+        title: "Non-empty",
+        graph: {
+          nodes: [{ id: "x", data: { label: "lbl", vertexType: "z" } }],
+          edges: [],
+        },
+        view: { nodes: [{ id: "x", position: { x: 5, y: 7 } }], edges: [] },
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      }),
+    );
+
+    // Reset the nonce to its initial value so the assertion isn't
+    // contaminated by a prior test's bump.
+    useGraphStore.setState({ fitViewNonce: 0 });
+    useGraphStore.getState().hydrate();
+    expect(useGraphStore.getState().fitViewNonce).toBe(1);
+  });
+
+  it("hydrate into an empty graph leaves fitViewNonce at 0 (no stale queued fit)", () => {
+    // Regression guard: an empty canvas must NOT queue a fit. Otherwise the
+    // first vertex added later triggers xyflow's stale fitViewQueued and
+    // snaps the camera to it. Empty graph => nonce stays 0 => view stays at
+    // the default viewport (zoom 1).
+    localStorage.setItem(
+      "graph-board-document",
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "local-document",
+        title: "Empty",
+        graph: { nodes: [], edges: [] },
+        view: { nodes: [], edges: [] },
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      }),
+    );
+
+    useGraphStore.setState({ fitViewNonce: 0 });
+    useGraphStore.getState().hydrate();
+    expect(useGraphStore.getState().fitViewNonce).toBe(0);
+  });
+
   it("save preserves the document's createdAt across repeated calls", () => {
     // Regression guard: `save()` used to regenerate `createdAt` on
     // every call, which clobbered the creation timestamp with "now"

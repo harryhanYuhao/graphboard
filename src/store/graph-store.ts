@@ -310,6 +310,11 @@ export const useGraphStore = create<GraphStore>()(
 
         useGraphStore.temporal.getState().clear();
 
+        // Frame the graph on reload only when there's something to frame.
+        if (hydrated.nodes.length > 0) {
+          set({ fitViewNonce: get().fitViewNonce + 1 });
+        }
+
         // Auto-open the first-run intro guide exactly once. We stamp the
         // localStorage flag *now* (when we decide to open it), not when the
         // dialog closes — so even if the user force-closes the tab mid-tour

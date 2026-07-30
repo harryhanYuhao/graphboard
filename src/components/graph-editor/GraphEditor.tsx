@@ -127,10 +127,14 @@ function GraphEditorInner() {
     hydrate();
   }, [hydrate]);
 
-  // Refit the viewport after a graph is imported. The store bumps
-  // `fitViewNonce` from inside `importJson`; the view layer reacts here.
-  // Skip the initial 0 so we don't double-fit on first mount (the
-  // `<ReactFlow fitView>` prop already handles that).
+  // Refit the viewport when the store signals the graph was replaced —
+  // bumped from `importJson` (graph import) and from `hydrate()` (reload
+  // into a non-empty saved graph). The `0` guard skips the pre-hydrate
+  // render; we deliberately do NOT fit an empty graph, so placing the
+  // first vertex on an empty canvas doesn't snap the camera to it. (We
+  // rely on this explicit nonce rather than `<ReactFlow fitView>`, whose
+  // queued fit lingers stale on an empty graph and fires when the first
+  // node is finally measured.)
   useEffect(() => {
     if (fitViewNonce === 0) return;
     reactFlow.fitView({ duration: 400 });
@@ -200,7 +204,7 @@ function GraphEditorInner() {
         selectionOnDrag={mode === EDITOR_MODES.addEdge}
         onSelectionEnd={handleSelectionEnd}
         nodesConnectable={false}
-        fitView
+        defaultViewport={{ x: 0, y: 0, zoom: 2 }}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
         <Controls />
