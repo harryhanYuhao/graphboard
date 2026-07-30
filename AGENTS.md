@@ -36,7 +36,9 @@ Typecheck runs through `next build` and the VS Code TS SDK
   it composes `VertexGlyphs.tsx` (SVG shapes), `VertexHandles.tsx` (React
   Flow `<Handle>`s), `VertexLabelEditor.tsx` (inline phase/text edit), plus
   `VertexPropertyPanel.tsx`, `VertexSwatch.tsx`, `VertexTypeMenu.tsx`,
-  `GraphToolbar.tsx`, dialog components.
+  `GraphToolbar.tsx`, dialog components (`ConfirmationDialog`,
+  `KeyboardShortcutsDialog` — the Help page, with a button that reopens the
+  `IntroGuideDialog` first-run stepper, `ComputeResultDialog`).
 - `src/lib/graph/edge-geometry.ts` — pure edge-endpoint math (rotation-aware)
   for `StraightCenterEdge`. Keep geometry here, not in the component, so it
   is unit-testable without React Flow.
@@ -50,6 +52,10 @@ Typecheck runs through `next build` and the VS Code TS SDK
   (create/delete), `serialization.ts` (document + `localStorage`),
   `vertex-types.ts` (ZXW generator metadata).
 - `src/lib/hooks/` — small reusable React hooks (e.g. `useTrackedDraft`).
+- `src/lib/onboarding/intro.ts` — first-run gate for the intro guide
+  (`hasSeenIntro` / `markIntroSeen` / `shouldShowIntro`). SSR-guarded
+  localStorage helpers mirroring `serialization.ts`; the store's
+  `hydrate()` stamps the flag at open time so the guide shows exactly once.
 - `src/lib/download.ts`, `src/lib/filename.ts` — JSON export helpers.
 - `src/lib/compute/` — browser-side wrapper around the Rust/WASM compute
   layer. `index.ts` owns the Web Worker lifecycle and exposes
@@ -207,7 +213,9 @@ of the WASM boundary; `crates/zxw/tests/phase_grammar.rs` pins it.
 ## Persistence & export gotchas
 
 - Auto-save is debounced (~2s) in `GraphEditor.tsx` after node/edge changes.
-- `localStorage` key: `graph-board-document`.
+- `localStorage` key: `graph-board-document`. The first-run intro gate uses
+  a separate key, `graph-board-seen-intro` (see
+  `src/lib/onboarding/intro.ts`).
 - All storage functions guard `typeof window === "undefined"` for SSR safety.
 - JSON export (`exportJson` → `src/lib/download.ts`) prefers the File System
   Access API (`window.showSaveFilePicker`) and falls back to anchor-download.

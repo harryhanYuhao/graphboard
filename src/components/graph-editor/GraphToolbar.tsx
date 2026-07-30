@@ -137,9 +137,9 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
         </ToolbarButton>
 
         <ToolbarButton
-          title="Keyboard shortcuts (?)"
+          title="Help (?)"
           onClick={openHelp}
-          aria-label="Show keyboard shortcuts"
+          aria-label="Open help"
         >
           <CircleQuestionMark size={18} />
         </ToolbarButton>

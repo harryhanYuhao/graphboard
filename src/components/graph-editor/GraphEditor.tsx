@@ -21,6 +21,7 @@ import { VertexTypeMenu } from "./VertexTypeMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { IntroGuideDialog } from "./IntroGuideDialog";
 import { ComputeResultDialog } from "./ComputeResultDialog";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useCompute } from "@/lib/hooks/useCompute";
@@ -46,10 +47,11 @@ function GraphEditorInner() {
       hasHydrated: state.hasHydrated,
     })),
   );
-  const { confirmDialogue, isHelpOpen } = useGraphStore(
+  const { confirmDialogue, isHelpOpen, isIntroOpen } = useGraphStore(
     useShallow((state) => ({
       confirmDialogue: state.confirmDialogue,
       isHelpOpen: state.isHelpOpen,
+      isIntroOpen: state.isIntroOpen,
     })),
   );
 
@@ -68,6 +70,8 @@ function GraphEditorInner() {
   const handleVertexClick = useGraphStore((state) => state.handleVertexClick);
   const closeConfirm = useGraphStore((state) => state.closeConfirmDialogue);
   const closeHelp = useGraphStore((state) => state.closeHelp);
+  const openIntro = useGraphStore((state) => state.openIntro);
+  const closeIntro = useGraphStore((state) => state.closeIntro);
   // Bumps whenever the store replaces the graph (import today, possibly
   // hydrate/load later). We watch it so the view layer can refit the
   // viewport — the store can't call `fitView()` itself because React
@@ -224,7 +228,13 @@ function GraphEditorInner() {
         onCancel={closeConfirm}
       />
 
-      <KeyboardShortcutsDialog isOpen={isHelpOpen} onClose={closeHelp} />
+      <KeyboardShortcutsDialog
+        isOpen={isHelpOpen}
+        onClose={closeHelp}
+        onShowIntro={openIntro}
+      />
+
+      <IntroGuideDialog isOpen={isIntroOpen} onClose={closeIntro} />
 
       <ComputeResultDialog
         key={`compute-${compute.computeSeq}`}

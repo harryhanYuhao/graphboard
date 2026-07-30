@@ -14,17 +14,22 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { X } from "lucide-react";
+import { GraduationCap, X } from "lucide-react";
 import { getShortcutGroups } from "@/lib/keyboard/shortcuts";
 
 interface KeyboardShortcutsDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  // Opens the first-run intro guide. The Help dialog closes itself first so
+  // the intro isn't stacked behind a modal. Optional so the component stays
+  // usable in isolation (e.g. tests).
+  onShowIntro?: () => void;
 }
 
 export function KeyboardShortcutsDialog({
   isOpen,
   onClose,
+  onShowIntro,
 }: KeyboardShortcutsDialogProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -49,6 +54,14 @@ export function KeyboardShortcutsDialog({
     }
   };
 
+  // Close this dialog before opening the intro so it isn't stacked behind a
+  // modal. The orchestration (which actions to call) lives in the parent;
+  // this stays a pure/presentational component.
+  const handleShowIntro = () => {
+    onClose();
+    onShowIntro?.();
+  };
+
   if (!isOpen) return null;
 
   const groups = getShortcutGroups();
@@ -59,7 +72,7 @@ export function KeyboardShortcutsDialog({
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="shortcuts-title"
+      aria-labelledby="help-title"
     >
       <div
         className="relative w-full max-w-xl rounded-lg bg-white p-6 shadow-xl"
@@ -70,18 +83,27 @@ export function KeyboardShortcutsDialog({
           type="button"
           onClick={onClose}
           className="absolute right-4 top-4 rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300"
-          aria-label="Close shortcuts dialog"
+          aria-label="Close help dialog"
         >
           <X size={20} />
         </button>
 
         <div className="space-y-4">
           <h2
-            id="shortcuts-title"
+            id="help-title"
             className="text-xl font-semibold text-slate-900"
           >
-            Keyboard shortcuts
+            Help
           </h2>
+
+          <button
+            type="button"
+            onClick={handleShowIntro}
+            className="flex w-full items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <GraduationCap size={18} className="shrink-0 text-slate-500" />
+            <span>Show intro guide</span>
+          </button>
 
           <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
             {groups.map((group) => (

@@ -42,6 +42,7 @@ import {
 import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 
 import { toSafeFilename } from "@/lib/filename";
+import { markIntroSeen, shouldShowIntro } from "@/lib/onboarding/intro";
 
 // One shape for the destructive-action confirmation dialog. `null`
 // means "no dialog open"; consumers should `confirmDialogue?.onConfirm`
@@ -84,6 +85,12 @@ type GraphStore = {
   // in the store so the global `?` keybinding and the toolbar button share
   // a single source of truth.
   isHelpOpen: boolean;
+
+  // First-run intro guide dialog. Auto-opened once by `hydrate()` when the
+  // `graph-board-seen-intro` localStorage flag is absent; afterwards it can
+  // be reopened from the Help dialog. The flag is stamped at open time
+  // (not at close) so the intro never reappears on reload.
+  isIntroOpen: boolean;
 
   // Session-scoped clipboard. Not persisted — paste should not survive a reload.
   clipboard: {
@@ -135,6 +142,9 @@ type GraphStore = {
   openHelp: () => void;
   closeHelp: () => void;
   toggleHelp: () => void;
+
+  openIntro: () => void;
+  closeIntro: () => void;
 
 
   isStateEmpty: () => boolean;
@@ -275,6 +285,8 @@ export const useGraphStore = create<GraphStore>()(
 
       isHelpOpen: false,
 
+      isIntroOpen: false,
+
       clipboard: null,
 
       hydrate: () => {
@@ -297,6 +309,16 @@ export const useGraphStore = create<GraphStore>()(
         });
 
         useGraphStore.temporal.getState().clear();
+
+        // Auto-open the first-run intro guide exactly once. We stamp the
+        // localStorage flag *now* (when we decide to open it), not when the
+        // dialog closes — so even if the user force-closes the tab mid-tour
+        // or reloads, the intro never reappears. See
+        // `src/lib/onboarding/intro.ts`.
+        if (shouldShowIntro()) {
+          markIntroSeen();
+          set({ isIntroOpen: true });
+        }
       },
 
       setMode: (mode) => {
@@ -669,6 +691,14 @@ export const useGraphStore = create<GraphStore>()(
 
       toggleHelp: () => {
         set({ isHelpOpen: !get().isHelpOpen });
+      },
+
+      openIntro: () => {
+        set({ isIntroOpen: true });
+      },
+
+      closeIntro: () => {
+        set({ isIntroOpen: false });
       },
 
       // Return true if and only if the graph has no nodes.
