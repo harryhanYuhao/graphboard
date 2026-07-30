@@ -1,8 +1,9 @@
 // src/components/graph-editor/ComputeResultDialog.tsx
 //
 // Modal that shows the result of clicking the Compute button (plan
-// §6.4). The parent (`GraphToolbar`) owns the `computePromise` +
-// `progress` state; this dialog awaits the promise and renders:
+// §6.4). The parent (`GraphEditor`, via the `useCompute` hook) owns the
+// `computePromise` + `progress` state; this dialog awaits the promise
+// and renders:
 //   - while pending: a determinate progress bar fed by `progress`
 //     (contracted / total edges),
 //   - on success: a shape summary using `inputCount`/`outputCount`,
@@ -51,7 +52,7 @@ export function ComputeResultDialog({
 
   // Await the parent-supplied promise. The state-reset that would
   // normally live at the top of an effect is done by the parent
-  // remounting this component via a `key` — see GraphToolbar — so the
+  // remounting this component via a `key` — see GraphEditor — so the
   // effect body itself only runs the async work and updates state from
   // inside the promise callbacks.
   useEffect(() => {

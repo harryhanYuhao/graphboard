@@ -69,6 +69,7 @@ describe("getShortcutGroups", () => {
       "Selection",
       "Edit",
       "View",
+      "Compute",
       "Help",
     ]);
   });
@@ -116,6 +117,7 @@ describe("getShortcutGroups", () => {
     expect(allKeys.has("x")).toBe(true); // cut
     expect(allKeys.has("z")).toBe(true); // undo
     expect(allKeys.has("y")).toBe(true); // redo
+    expect(allKeys.has("enter")).toBe(true); // compute tensor
   });
 
   it("includes the modifier symbol in the Edit group entries", () => {

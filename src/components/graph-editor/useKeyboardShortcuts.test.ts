@@ -17,7 +17,10 @@ import { makeVertex } from "@/test-utils/factories";
 // `useReactFlow` requires a `ReactFlowProvider` context which we don't
 // mount here. Mock just that one export, share the fitView spy via
 // `vi.hoisted` so tests can assert on it directly.
-const { fitViewMock } = vi.hoisted(() => ({ fitViewMock: vi.fn() }));
+const { fitViewMock, onComputeMock } = vi.hoisted(() => ({
+  fitViewMock: vi.fn(),
+  onComputeMock: vi.fn(),
+}));
 
 vi.mock("@xyflow/react", async () => {
   const actual =
@@ -30,6 +33,7 @@ vi.mock("@xyflow/react", async () => {
 
 beforeEach(() => {
   fitViewMock.mockClear();
+  onComputeMock.mockClear();
   useGraphStore.setState({
     title: "Untitled Graph",
     nodes: [],
@@ -46,6 +50,15 @@ afterEach(() => {
   useGraphStore.temporal.getState().clear();
 });
 
+// The hook now takes an `onCompute` callback (compute orchestration
+// lives in `useCompute`, outside the store). Every test mounts the hook
+// the same way, so funnel through one helper that wires the shared spy.
+function renderShortcuts() {
+  return renderHook(() =>
+    useKeyboardShortcuts({ onCompute: onComputeMock }),
+  );
+}
+
 function pressKey(target: EventTarget, init: KeyboardEventInit) {
   fireEvent.keyDown(target, init);
 }
@@ -57,19 +70,19 @@ function pressOnBody(init: KeyboardEventInit) {
 describe("mode-switch shortcuts", () => {
   it("s switches to select mode", () => {
     useGraphStore.setState({ mode: "add-vertex" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "s" });
     expect(useGraphStore.getState().mode).toBe("select");
   });
 
   it("v switches to add-vertex mode", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "v" });
     expect(useGraphStore.getState().mode).toBe("add-vertex");
   });
 
   it("e switches to add-edge mode", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "e" });
     expect(useGraphStore.getState().mode).toBe("add-edge");
   });
@@ -79,7 +92,7 @@ describe("mode-switch shortcuts", () => {
     // `event.key`, so Shift+S (capital) silently did nothing while
     // lowercase s worked. Caps-lock users hit the same path.
     useGraphStore.setState({ mode: "add-vertex" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "S", shiftKey: true });
     expect(useGraphStore.getState().mode).toBe("select");
 
@@ -97,7 +110,7 @@ describe("modifier-bearing shortcuts", () => {
         makeVertex("b"),
       ],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "a",
@@ -112,7 +125,7 @@ describe("modifier-bearing shortcuts", () => {
   });
 
   it("Cmd+A on macOS-style modifier also selects everything", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     const event = new KeyboardEvent("keydown", {
       key: "a",
       metaKey: true,
@@ -129,7 +142,7 @@ describe("modifier-bearing shortcuts", () => {
         makeVertex("a", { x: 0, y: 0 }, true),
       ],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "d",
@@ -154,7 +167,7 @@ describe("modifier-bearing shortcuts", () => {
     const saveSpy = vi
       .spyOn(useGraphStore.getState(), "save")
       .mockImplementation(() => {});
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "s",
@@ -171,7 +184,7 @@ describe("modifier-bearing shortcuts", () => {
 
   it("Ctrl+Z calls undo", () => {
     const undoSpy = vi.spyOn(useGraphStore.temporal.getState(), "undo");
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "z",
@@ -188,7 +201,7 @@ describe("modifier-bearing shortcuts", () => {
 
   it("Ctrl+Shift+Z calls redo", () => {
     const redoSpy = vi.spyOn(useGraphStore.temporal.getState(), "redo");
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "Z",
@@ -206,7 +219,7 @@ describe("modifier-bearing shortcuts", () => {
 
 describe("single-key shortcuts", () => {
   it("f calls fitView on the React Flow instance", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "f" });
     expect(fitViewMock).toHaveBeenCalledTimes(1);
     expect(fitViewMock).toHaveBeenCalledWith({
@@ -216,7 +229,7 @@ describe("single-key shortcuts", () => {
   });
 
   it("? toggles the help dialog", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     expect(useGraphStore.getState().isHelpOpen).toBe(false);
 
     pressOnBody({ key: "?" });
@@ -233,7 +246,7 @@ describe("single-key shortcuts", () => {
         makeVertex("b"),
       ],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "Delete" });
     expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["b"]);
@@ -245,7 +258,7 @@ describe("single-key shortcuts", () => {
         makeVertex("a", { x: 0, y: 0 }, true),
       ],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "Backspace" });
     expect(useGraphStore.getState().nodes).toHaveLength(0);
@@ -258,7 +271,7 @@ describe("Escape ladder", () => {
       mode: "add-edge",
       pendingEdgeSources: ["a", "b"],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "Escape" });
     expect(useGraphStore.getState().pendingEdgeSources).toEqual([]);
@@ -272,7 +285,7 @@ describe("Escape ladder", () => {
         makeVertex("a", { x: 0, y: 0 }, true),
       ],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "Escape" }); // clears pending (already empty)
     expect(useGraphStore.getState().nodes[0].selected).toBe(false);
@@ -285,14 +298,14 @@ describe("Escape ladder", () => {
       nodes: [],
       edges: [],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "Escape" });
     expect(useGraphStore.getState().mode).toBe("select");
   });
 
   it("Escape in select mode with nothing selected is a no-op", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "Escape" });
     expect(useGraphStore.getState().mode).toBe("select");
   });
@@ -301,7 +314,7 @@ describe("Escape ladder", () => {
 describe("vertex-type number shortcuts (add-vertex mode only)", () => {
   it("press 1 selects the first vertex type in add-vertex mode", () => {
     useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "1" });
     // VERTEX_TYPES[0] is "zbox" per vertex-types.ts — assert the
@@ -311,7 +324,7 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
 
   it("press 4 selects the 4th vertex type", () => {
     useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "4" });
     // VERTEX_TYPES[3] is "input" per vertex-types.ts (order: zbox, z,
@@ -321,7 +334,7 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
 
   it("press 0 is a no-op (index 0 not accepted)", () => {
     useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "0" });
     expect(useGraphStore.getState().selectedVertexType).toBe("z");
@@ -330,7 +343,7 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
   it("press 9 selects the 9th vertex type (h)", () => {
     // 10 types today → digits 1–9 are all valid; 9 maps to index 8 = "h".
     useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "9" });
     expect(useGraphStore.getState().selectedVertexType).toBe("h");
@@ -338,7 +351,7 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
 
   it("number keys are ignored outside add-vertex mode", () => {
     useGraphStore.setState({ mode: "select", selectedVertexType: "z" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "1" });
     expect(useGraphStore.getState().selectedVertexType).toBe("z");
@@ -350,7 +363,7 @@ describe("input target guard", () => {
     const input = document.createElement("input");
     document.body.appendChild(input);
 
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     fireEvent.keyDown(input, { key: "v" });
     expect(useGraphStore.getState().mode).toBe("select");
@@ -365,7 +378,7 @@ describe("input target guard", () => {
     const ta = document.createElement("textarea");
     document.body.appendChild(ta);
 
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     fireEvent.keyDown(ta, { key: "?" });
     expect(useGraphStore.getState().isHelpOpen).toBe(false);
@@ -376,7 +389,7 @@ describe("input target guard", () => {
 
 describe("modifier-bearing keys outside the known set", () => {
   it("does not preventDefault on Ctrl+F (leave the browser alone)", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "f",
@@ -412,7 +425,7 @@ describe("Cmd/Ctrl+C (copy) / Cmd+V (paste) / Cmd+X (cut)", () => {
         makeVertex("b"),
       ],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = fireMod("c");
 
@@ -430,7 +443,7 @@ describe("Cmd/Ctrl+C (copy) / Cmd+V (paste) / Cmd+X (cut)", () => {
         pasteCount: 0,
       },
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = fireMod("v");
 
@@ -446,7 +459,7 @@ describe("Cmd/Ctrl+C (copy) / Cmd+V (paste) / Cmd+X (cut)", () => {
         makeVertex("b"),
       ],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = fireMod("x");
 
@@ -473,7 +486,7 @@ describe("Cmd/Ctrl+C (copy) / Cmd+V (paste) / Cmd+X (cut)", () => {
 describe("Cmd/Ctrl+Y (redo alternative)", () => {
   it("Ctrl+Y calls redo and preventDefaults", () => {
     const redoSpy = vi.spyOn(useGraphStore.temporal.getState(), "redo");
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "y",
@@ -490,7 +503,7 @@ describe("Cmd/Ctrl+Y (redo alternative)", () => {
 
   it("Cmd+Y also calls redo on macOS-style modifier", () => {
     const redoSpy = vi.spyOn(useGraphStore.temporal.getState(), "redo");
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "y",
@@ -504,13 +517,46 @@ describe("Cmd/Ctrl+Y (redo alternative)", () => {
     expect(event.defaultPrevented).toBe(true);
     redoSpy.mockRestore();
   });
+
+  it("Ctrl+Enter calls onCompute and preventDefaults", () => {
+    // Compute orchestration lives in `useCompute` (outside the store);
+    // the hook reaches it via the `onCompute` callback. Assert the spy
+    // fired and the default was suppressed.
+    renderShortcuts();
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onComputeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cmd+Enter also calls onCompute on macOS-style modifier", () => {
+    renderShortcuts();
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onComputeMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Ctrl+Z without shift does not trigger redo", () => {
   it("plain Ctrl+Z calls undo, not redo", () => {
     const undoSpy = vi.spyOn(useGraphStore.temporal.getState(), "undo");
     const redoSpy = vi.spyOn(useGraphStore.temporal.getState(), "redo");
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "z",
@@ -532,7 +578,7 @@ describe("vertex-type shortcut outside add-vertex mode does not match", () => {
     // The number-key branch is gated on mode === "add-vertex", so any
     // other mode swallows the key silently.
     useGraphStore.setState({ mode: "select", selectedVertexType: "z" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     fireEvent.keyDown(document.body, { key: "5" });
     expect(useGraphStore.getState().selectedVertexType).toBe("z");
@@ -547,7 +593,7 @@ describe("? key with the help dialog already open", () => {
   // button, bubbles up to the window, and the global handler runs.
   it("pressing ? while the help dialog is open closes it", () => {
     useGraphStore.setState({ isHelpOpen: true });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "?" });
     expect(useGraphStore.getState().isHelpOpen).toBe(false);
@@ -555,7 +601,7 @@ describe("? key with the help dialog already open", () => {
 
   it("pressing ? repeatedly toggles the help dialog open/closed", () => {
     useGraphStore.setState({ isHelpOpen: false });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     pressOnBody({ key: "?" });
     expect(useGraphStore.getState().isHelpOpen).toBe(true);
@@ -576,26 +622,26 @@ describe("shift + letter keys", () => {
   // escape ladder and the help toggle with shift.
   it("Shift+S also switches to select mode (uppercase S)", () => {
     useGraphStore.setState({ mode: "add-vertex" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "S", shiftKey: true });
     expect(useGraphStore.getState().mode).toBe("select");
   });
 
   it("Shift+V also switches to add-vertex mode (uppercase V)", () => {
     useGraphStore.setState({ mode: "select" });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "V", shiftKey: true });
     expect(useGraphStore.getState().mode).toBe("add-vertex");
   });
 
   it("Shift+E also switches to add-edge mode (uppercase E)", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     pressOnBody({ key: "E", shiftKey: true });
     expect(useGraphStore.getState().mode).toBe("add-edge");
   });
 
   it("Shift+? (uppercase) also toggles the help dialog", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
     expect(useGraphStore.getState().isHelpOpen).toBe(false);
 
     pressOnBody({ key: "?", shiftKey: true });
@@ -605,7 +651,7 @@ describe("shift + letter keys", () => {
 
 describe("event.preventDefault behavior", () => {
   it("does not preventDefault on a non-handled key (letter 'a' without modifier)", () => {
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "a",
@@ -623,7 +669,7 @@ describe("event.preventDefault behavior", () => {
     useGraphStore.setState({
       nodes: [makeVertex("a", { x: 0, y: 0 }, true)],
     });
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "Delete",
@@ -644,7 +690,7 @@ describe("event.preventDefault behavior", () => {
     // The 'f' key (fit view) is handled but does NOT call
     // preventDefault — without a Ctrl modifier, 'f' has no browser
     // default in a regular page. Pin the current behavior.
-    renderHook(() => useKeyboardShortcuts());
+    renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
       key: "f",

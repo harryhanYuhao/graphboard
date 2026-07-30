@@ -11,23 +11,45 @@
 // Input guard: every shortcut is suppressed when an `<input>` or
 // `<textarea>` has focus, so editing a vertex label doesn't accidentally
 // trigger a mode switch.
+//
+// `onCompute` is the one shortcut that deliberately bypasses the store:
+// compute orchestration (the WASM worker, promise/progress state, the
+// result dialog) lives in the `useCompute` hook outside the store, so the
+// Cmd/Ctrl+Enter binding reaches it via a callback prop instead of a
+// store action. A ref keeps the latest callback without re-subscribing
+// the listener on every render, preserving the single-listener invariant.
 
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { useGraphStore } from "@/store/graph-store";
 import { hasSelection } from "@/store/selectors";
 import { EDITOR_MODES, type VertexType } from "@/lib/graph/types";
 import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
 
+export interface KeyboardShortcutOptions {
+  onCompute: () => void;
+}
+
 function isTypingTarget(target: EventTarget | null): boolean {
   const tag = (target as HTMLElement | null)?.tagName;
   return tag === "INPUT" || tag === "TEXTAREA";
 }
 
-export function useKeyboardShortcuts(): void {
+export function useKeyboardShortcuts({
+  onCompute,
+}: KeyboardShortcutOptions): void {
   const reactFlow = useReactFlow();
+  // Keep the latest `onCompute` for use inside the long-lived keydown
+  // listener without making it an effect dependency (which would tear
+  // down and re-add the window listener on every parent render). The
+  // ref is mutated from an effect — never during render — per the
+  // React "latest ref" pattern.
+  const onComputeRef = useRef(onCompute);
+  useEffect(() => {
+    onComputeRef.current = onCompute;
+  }, [onCompute]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -63,6 +85,17 @@ export function useKeyboardShortcuts(): void {
           // Ctrl/Cmd+S — save. Suppress the browser's "save page as" dialog.
           event.preventDefault();
           save();
+          return;
+        }
+
+        if (key === "enter") {
+          // Ctrl/Cmd+Enter — compute tensor. Suppress the browser's
+          // default so the same chord isn't double-handled (e.g.
+          // submitting a form if one ever wraps the canvas). Compute
+          // orchestration lives in `useCompute`, reached via the
+          // `onCompute` prop rather than a store action.
+          event.preventDefault();
+          onComputeRef.current();
           return;
         }
 

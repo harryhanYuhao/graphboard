@@ -84,6 +84,15 @@ export function getShortcutGroups(): ShortcutGroup[] {
       ],
     },
     {
+      title: "Compute",
+      entries: [
+        {
+          description: "Compute the represented tensor",
+          keys: [mod, "Enter"],
+        },
+      ],
+    },
+    {
       title: "Help",
       entries: [{ description: "Show this dialog", keys: ["?"] }],
     },

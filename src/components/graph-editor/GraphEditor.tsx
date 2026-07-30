@@ -21,7 +21,9 @@ import { VertexTypeMenu } from "./VertexTypeMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { ComputeResultDialog } from "./ComputeResultDialog";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useCompute } from "@/lib/hooks/useCompute";
 import { useGraphStore } from "@/store/graph-store";
 import {
   EDGE_TYPES,
@@ -74,6 +76,13 @@ function GraphEditorInner() {
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
+  // Compute orchestration (WASM worker, promise/progress state, result
+  // dialog) lives in a hook rather than the store — it's a one-shot async
+  // computation, not graph state. Both the toolbar button and the
+  // Cmd/Ctrl+Enter shortcut call `requestCompute`, and the dialog is
+  // rendered here alongside the other top-level modals.
+  const compute = useCompute();
+
   const nodeTypes = useMemo<NodeTypes>(
     () => ({
       vertex: VertexNode,
@@ -123,7 +132,7 @@ function GraphEditorInner() {
     reactFlow.fitView({ duration: 400 });
   }, [fitViewNonce, reactFlow]);
 
-  useKeyboardShortcuts();
+  useKeyboardShortcuts({ onCompute: compute.requestCompute });
 
   // Auto save
   useEffect(() => {
@@ -194,7 +203,7 @@ function GraphEditorInner() {
         <MiniMap />
       </ReactFlow>
 
-      <GraphToolbar />
+      <GraphToolbar onCompute={compute.requestCompute} />
       <VertexTypeMenu />
       <VertexPropertyPanel />
 
@@ -216,6 +225,14 @@ function GraphEditorInner() {
       />
 
       <KeyboardShortcutsDialog isOpen={isHelpOpen} onClose={closeHelp} />
+
+      <ComputeResultDialog
+        key={`compute-${compute.computeSeq}`}
+        isOpen={compute.computeOpen}
+        onClose={compute.closeCompute}
+        computePromise={compute.computePromise}
+        progress={compute.progress}
+      />
     </div>
   );
 }
