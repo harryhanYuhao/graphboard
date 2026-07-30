@@ -2,7 +2,7 @@
 
 This app is a online graph board for zxw calculus, which is available at [https://zxwgraphboard.netlify.app/](https://zxwgraphboard.netlify.app/).
 
-Its detailed documentation can be found at
+Its detailed documentation is in a separate repository and can be found at
 	- [zxwgraph-doc github repo](https://github.com/Fabrial-Research/zxw-graphboard-doc)
 	- [https://zxwgraphboard-doc.netlify.app/](https://zxwgraphboard-doc.netlify.app/)
 

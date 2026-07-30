@@ -1,0 +1,3 @@
+[submodule "doc/zxw-graphboard-doc"]
+	path = doc/zxw-graphboard-doc
+	url = git@github.com:harryhanYuhao/zxw-graphboard-doc.git

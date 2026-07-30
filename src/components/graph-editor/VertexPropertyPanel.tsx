@@ -26,6 +26,7 @@ import {
 import { normalizeRotation } from "@/lib/graph/serialization";
 import type { VertexType } from "@/lib/graph/types";
 import { useTrackedDraft } from "@/lib/hooks/useTrackedDraft";
+import { useKatexReady } from "@/lib/hooks/useKatexReady";
 import { renderLabel } from "@/lib/label/renderLabel";
 import { parsePhase } from "@/lib/phase/parser";
 import { VertexSwatch } from "./VertexSwatch";
@@ -297,6 +298,9 @@ function LabelPreview({
   vertexType: VertexType;
 }) {
   const isSpider = isSpiderType(vertexType);
+  // Re-render once the lazy-loaded KaTeX chunk resolves so a LaTeX
+  // preview that painted as escaped text upgrades to rendered math.
+  useKatexReady();
   if (label === "" && !isSpider) return null;
 
   const rendered = renderLabel(label);

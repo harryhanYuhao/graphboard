@@ -1,6 +1,6 @@
 // src/lib/label/renderLabel.ts
 //
-// Render a vertex `label` as HTML, with optional KaTeX support. 
+// Render a vertex `label` as HTML, with optional KaTeX support.
 // The convention is:
 //
 //   - A label that *is* a single math expression — i.e. its trimmed
@@ -16,8 +16,16 @@
 // value* is meaningful for the vertex's compute role (e.g. as a
 // phase on a Z/X spider) is a separate concern — see
 // `src/lib/phase/parser.ts`.
+//
+// KaTeX is lazy-loaded (see `katex-loader.ts`) so it stays off the
+// route's critical-path import graph. `renderLabel` itself stays
+// synchronous: it reads the cached KaTeX module directly. If a LaTeX
+// label is rendered in the brief window before the chunk loads, it
+// falls back to escaped plain text for that single paint; React
+// components that consume this re-render once KaTeX is ready (see
+// `useKatexReady`).
 
-import katex from "katex";
+import { getKatex } from "./katex-loader";
 
 /**
  * True if `label` is a single math expression — i.e. the entire
@@ -81,6 +89,15 @@ export function renderLabel(label: string): RenderedLabel {
 
   const block = extractMathBlock(label);
   if (!block) {
+    return { html: escapeHtml(label), isLatex: false };
+  }
+
+  // KaTeX is lazy-loaded. If a LaTeX label is painted before the chunk
+  // has resolved, fall back to escaped text for this one render — the
+  // consuming component re-renders once KaTeX is ready (see
+  // `useKatexReady`), so the correct math HTML appears shortly after.
+  const katex = getKatex();
+  if (!katex) {
     return { html: escapeHtml(label), isLatex: false };
   }
 

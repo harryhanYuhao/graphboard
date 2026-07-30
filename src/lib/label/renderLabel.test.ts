@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 import { isLatexLabel, renderLabel } from "./renderLabel";
+import { whenKatexReady } from "./katex-loader";
 
 describe("isLatexLabel", () => {
   it("empty string is not LaTeX", () => {
@@ -89,19 +90,25 @@ describe("renderLabel — plain text", () => {
 });
 
 describe("renderLabel — KaTeX", () => {
-  it("inline math renders with katex wrapper span", () => {
+  // KaTeX is lazy-loaded as a separate chunk. Wait for it to resolve
+  // before asserting on the LaTeX path so the test doesn't race the
+  // load. Plain-text cases above don't need KaTeX and stay synchronous.
+  it("inline math renders with katex wrapper span", async () => {
+    await whenKatexReady();
     const r = renderLabel("$\\alpha$");
     expect(r.isLatex).toBe(true);
     expect(r.html).toContain("katex");
   });
 
-  it("display math sets displayMode (katex-display class)", () => {
+  it("display math sets displayMode (katex-display class)", async () => {
+    await whenKatexReady();
     const r = renderLabel("$$\\frac{\\pi}{4}$$");
     expect(r.isLatex).toBe(true);
     expect(r.html).toContain("katex-display");
   });
 
-  it("unparseable math falls back to escaped plain text", () => {
+  it("unparseable math falls back to escaped plain text", async () => {
+    await whenKatexReady();
     // KaTeX with default options rejects `\foo` because `foo` is
     // not a known command; we wrap the call so a user typo doesn't
     // produce a red `katex-error` span inside a vertex body.

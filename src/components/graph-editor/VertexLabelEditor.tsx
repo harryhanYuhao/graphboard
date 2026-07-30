@@ -22,6 +22,7 @@
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { renderLabel } from "@/lib/label/renderLabel";
+import { useKatexReady } from "@/lib/hooks/useKatexReady";
 
 export type VertexLabelEditorProps = {
   value: string;
@@ -56,6 +57,10 @@ export const VertexLabelEditor = forwardRef<
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Re-render once the lazy-loaded KaTeX chunk resolves so a LaTeX label
+  // that painted as escaped text upgrades to rendered math. Cheap: a
+  // single useSyncExternalStore subscription that fires once.
+  useKatexReady();
 
   const startEditing = useCallback(() => {
     // Gate on mode / capability first.
