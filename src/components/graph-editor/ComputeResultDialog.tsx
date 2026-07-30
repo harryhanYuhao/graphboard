@@ -1,7 +1,7 @@
 // src/components/graph-editor/ComputeResultDialog.tsx
 //
-// Modal that shows the result of clicking the Compute button (plan
-// §6.4). The parent (`GraphEditor`, via the `useCompute` hook) owns the
+// Modal that shows the result of the computation.
+// The parent (`GraphEditor`, via the `useCompute` hook) owns the
 // `computePromise` + `progress` state; this dialog awaits the promise
 // and renders:
 //   - while pending: a determinate progress bar fed by `progress`
@@ -9,7 +9,7 @@
 //   - on success: a shape summary using `inputCount`/`outputCount`,
 //     a value grid (rows = inputs, cols = outputs when both > 0), and
 //     a collapsible warnings block,
-//   - on error: an inline error card with the message + remediation hint.
+//   - on error: an inline error card with the error message
 //
 // Mirrors the visual + a11y shape of `KeyboardShortcutsDialog` /
 // `ConfirmationDialog` so the modals feel like siblings: backdrop click

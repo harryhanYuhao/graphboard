@@ -4,8 +4,7 @@
 // parallel slices (see `./types.ts`):
 //
 //   - `graph` — graph-theoretic data only (nodes, edges, labels, types).
-//     This is the contract the computational backend consumes; nothing
-//     visual lives here.
+//      This is all the information the computation backend needs.
 //   - `view` — visual data only (positions, rotation). The backend never
 //     sees this slice.
 //
