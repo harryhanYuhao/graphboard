@@ -44,6 +44,10 @@ export function VertexPropertyPanel() {
     const selected = nodes.filter((node) => node.selected);
     return selected.length === 1 ? selected[0] : null;
   }, [nodes]);
+  const validationErrors = useGraphStore((state) => state.validationErrors);
+  const selectedErrors = selectedVertex
+    ? validationErrors[selectedVertex.id] ?? []
+    : [];
 
   // Local drafts avoid pushing every keystroke/tick into the store (which
   // would clutter the undo stack). `trackKey` is the selected vertex id, so
@@ -140,6 +144,17 @@ export function VertexPropertyPanel() {
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Vertex
         </div>
+
+        {/* Validation errors from the last compute (if any). */}
+        {selectedErrors.length > 0 && (
+          <div className="mb-3 space-y-1 rounded-md border border-red-200 bg-red-50 p-2">
+            {selectedErrors.map((e, i) => (
+              <p key={i} className="text-xs text-red-700">
+                {e.message}
+              </p>
+            ))}
+          </div>
+        )}
 
         {/* Type selector — compact swatch grid */}
         <div className="mb-3">

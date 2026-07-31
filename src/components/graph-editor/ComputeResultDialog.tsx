@@ -426,6 +426,9 @@ function ErrorView({
       case "h-box-arity":
       case "boundary-degree":
       case "degree-overflow":
+      case "duplicate-node-id":
+      case "w-input-count":
+      case "w-output-count":
         return <>This is a graph-structure error — check the highlighted vertex or edge.</>;
       default:
         return null;

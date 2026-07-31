@@ -35,4 +35,7 @@ export type ComputeErrorKind =
   | "h-box-arity"
   | "boundary-degree"
   | "degree-overflow"
+  | "duplicate-node-id"
+  | "w-input-count"
+  | "w-output-count"
   | "unknown";

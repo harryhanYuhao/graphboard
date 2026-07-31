@@ -41,14 +41,14 @@ fn assert_data(actual: &[(f64, f64)], expected: &[(f64, f64)]) {
 }
 
 // ============================================================================
-// 1. Direct boundary-to-boundary edge
+// 1. Direct boundary-to-boundary edge → identity wire
 // ============================================================================
 
 #[test]
-fn boundary_to_boundary_edge_is_rejected_not_panicked() {
-    // An edge directly joining input↔output (no tensor vertex between them)
-    // has no tensor to contract. Surfaces as a structured
-    // `BoundaryToBoundaryEdge` error rather than guessing a semantics.
+fn boundary_to_boundary_edge_yields_identity_matrix() {
+    // input → output: boundaries act as identity tensors, so a direct edge
+    // is an identity wire. Result is the 2×2 identity matrix (1 input, 1
+    // output). Axes [in, out], row-major: data = [1,0,0,1].
     let json = r#"{
         "nodes": [
             {"id":"in","data":{"label":"","vertexType":"input"}},
@@ -58,15 +58,11 @@ fn boundary_to_boundary_edge_is_rejected_not_panicked() {
             {"id":"e1","source":"in","target":"out"}
         ]
     }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::BoundaryToBoundaryEdge { edge_id, from, to } => {
-            assert_eq!(edge_id, "e1");
-            assert_eq!(from, "in");
-            assert_eq!(to, "out");
-        }
-        other => panic!("expected BoundaryToBoundaryEdge, got {other:?}"),
-    }
+    let r = compute(json);
+    assert_eq!(r.shape, vec![2, 2]);
+    assert_eq!(r.input_count, 1);
+    assert_eq!(r.output_count, 1);
+    assert_data(&r.data, &[(1.0, 0.0), (0.0, 0.0), (0.0, 0.0), (1.0, 0.0)]);
 }
 
 // ============================================================================
@@ -185,27 +181,6 @@ fn self_loop_plus_regular_edge_consumes_correct_leg_count() {
 }
 
 // ============================================================================
-// 6. Self-loop on a boundary → BoundaryDegreeViolation
-// ============================================================================
-
-#[test]
-fn self_loop_on_output_boundary_is_rejected() {
-    // A self-loop gives the boundary degree 2 (> 1) → rejection.
-    let json = r#"{
-        "nodes": [{"id":"o","data":{"label":"","vertexType":"output"}}],
-        "edges": [{"id":"s","source":"o","target":"o"}]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::BoundaryDegreeViolation { vertex_id, degree } => {
-            assert_eq!(vertex_id, "o");
-            assert_eq!(degree, 2);
-        }
-        other => panic!("expected BoundaryDegreeViolation, got {other:?}"),
-    }
-}
-
-// ============================================================================
 // 6b. Self-loop on an arity-0 builder (empty) — rank/degree mismatch guard
 // ============================================================================
 //
@@ -220,116 +195,16 @@ fn self_loop_on_empty_node_is_rejected_not_panicked() {
         "edges": [{"id":"s","source":"e","target":"e"}]
     }"#;
     let err = compute_err(json);
-    match err {
-        ComputeError::DegreeOverflow {
-            vertex_id,
-            vertex_type,
-            degree,
-            max,
-        } => {
-            assert_eq!(vertex_id, "e");
-            assert_eq!(vertex_type, zxw::VertexType::Empty);
-            assert_eq!(degree, 2, "self-loop → degree 2");
-            assert_eq!(max, 0, "empty() builder has rank 0");
-        }
-        other => panic!("expected DegreeOverflow, got {other:?}"),
-    }
-}
-
-// ============================================================================
-// 7-9. H-box arity violations: degree 0, 1, 4
-// ============================================================================
-
-#[test]
-fn hbox_degree_zero_is_rejected_with_arity_zero() {
-    // Isolated H-box (degree 0) → HBoxArity { arity: 0 }.
-    let json = r#"{
-        "nodes": [{"id":"h","data":{"label":"","vertexType":"h"}}],
-        "edges": []
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::HBoxArity { vertex_id, arity } => {
-            assert_eq!(vertex_id, "h");
-            assert_eq!(arity, 0);
-        }
-        other => panic!("expected HBoxArity, got {other:?}"),
-    }
-}
-
-#[test]
-fn hbox_degree_one_is_rejected_with_arity_one() {
-    // H-box with one edge → degree 1 → HBoxArity { arity: 1 }.
-    let json = r#"{
-        "nodes": [
-            {"id":"h","data":{"label":"","vertexType":"h"}},
-            {"id":"z","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [{"id":"e","source":"h","target":"z"}]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::HBoxArity { vertex_id, arity } => {
-            assert_eq!(vertex_id, "h");
-            assert_eq!(arity, 1);
-        }
-        other => panic!("expected HBoxArity, got {other:?}"),
-    }
-}
-
-#[test]
-fn hbox_degree_four_is_rejected_with_arity_four() {
-    // H-box with four edges → degree 4 → HBoxArity { arity: 4 }.
-    let json = r#"{
-        "nodes": [
-            {"id":"h","data":{"label":"","vertexType":"h"}},
-            {"id":"a","data":{"label":"","vertexType":"z"}},
-            {"id":"b","data":{"label":"","vertexType":"z"}},
-            {"id":"c","data":{"label":"","vertexType":"z"}},
-            {"id":"d","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"a","target":"h"},
-            {"id":"e2","source":"b","target":"h"},
-            {"id":"e3","source":"c","target":"h"},
-            {"id":"e4","source":"d","target":"h"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::HBoxArity { vertex_id, arity } => {
-            assert_eq!(vertex_id, "h");
-            assert_eq!(arity, 4);
-        }
-        other => panic!("expected HBoxArity, got {other:?}"),
-    }
-}
-
-// ============================================================================
-// 10. Boundary degree > 1 via parallel edges
-// ============================================================================
-
-#[test]
-fn boundary_degree_two_via_parallel_multi_edge_is_rejected() {
-    // Two parallel edges to one output → degree counts both → 2 → reject.
-    let json = r#"{
-        "nodes": [
-            {"id":"o","data":{"label":"","vertexType":"output"}},
-            {"id":"z","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"z","target":"o"},
-            {"id":"e2","source":"z","target":"o"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::BoundaryDegreeViolation { vertex_id, degree } => {
-            assert_eq!(vertex_id, "o");
-            assert_eq!(degree, 2);
-        }
-        other => panic!("expected BoundaryDegreeViolation, got {other:?}"),
-    }
+    let ComputeError::DegreeOverflow {
+        vertex_id,
+        vertex_type,
+        degree,
+        max,
+    } = err;
+    assert_eq!(vertex_id, "e");
+    assert_eq!(vertex_type, zxw::VertexType::Empty);
+    assert_eq!(degree, 2, "self-loop → degree 2");
+    assert_eq!(max, 0, "empty() builder has rank 0");
 }
 
 // ============================================================================
@@ -406,31 +281,6 @@ fn empty_string_node_id_computes_normally() {
     let r = compute(json);
     assert_eq!(r.shape, Vec::<usize>::new());
     assert_relative_eq!(r.data[0].0, 2.0, epsilon = 1e-10);
-}
-
-// ============================================================================
-// 14. Duplicate node ids (two nodes share an id)
-// ============================================================================
-
-#[test]
-fn duplicate_node_id_is_rejected_not_silently_clobbered() {
-    // Node id is the graph's identity contract (union-find, `groups`,
-    // `node_index` all key on it). A duplicate is rejected up front as
-    // `DuplicateNodeId` rather than silently clobbering the HashMap.
-    let json = r#"{
-        "nodes": [
-            {"id":"z","data":{"label":"","vertexType":"z"}},
-            {"id":"z","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": []
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::DuplicateNodeId { vertex_id } => {
-            assert_eq!(vertex_id, "z");
-        }
-        other => panic!("expected DuplicateNodeId, got {other:?}"),
-    }
 }
 
 // ============================================================================
@@ -542,123 +392,4 @@ fn mixed_input_output_dangling_both_outer_product() {
     assert_eq!(r.input_count, 1);
     assert_eq!(r.output_count, 1);
     assert_data(&r.data, &[(1.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)]);
-}
-
-// ============================================================================
-// 19. ComputeError variants carry correct fields
-// ============================================================================
-
-#[test]
-fn vertex_not_found_error_carries_offending_vertex_and_edge_ids() {
-    // Source-side miss: both vertex_id and edge_id must match the payload.
-    let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
-        "edges": [{"id":"edge-X","source":"missing","target":"z"}]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::VertexNotFound { vertex_id, edge_id } => {
-            assert_eq!(vertex_id, "missing");
-            assert_eq!(edge_id, "edge-X");
-        }
-        other => panic!("expected VertexNotFound, got {other:?}"),
-    }
-}
-
-#[test]
-fn vertex_not_found_target_side_carries_target_vertex_id() {
-    // Target-side miss: `vertex_id` is the missing target, not the source.
-    let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
-        "edges": [{"id":"e7","source":"z","target":"nope"}]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::VertexNotFound { vertex_id, edge_id } => {
-            assert_eq!(vertex_id, "nope");
-            assert_eq!(edge_id, "e7");
-        }
-        other => panic!("expected VertexNotFound, got {other:?}"),
-    }
-}
-
-#[test]
-fn hbox_arity_error_carries_vertex_id_and_arity_field() {
-    // H-box with degree 5 → arity must equal 5.
-    let json = r#"{
-        "nodes": [
-            {"id":"h","data":{"label":"","vertexType":"h"}},
-            {"id":"a","data":{"label":"","vertexType":"z"}},
-            {"id":"b","data":{"label":"","vertexType":"z"}},
-            {"id":"c","data":{"label":"","vertexType":"z"}},
-            {"id":"d","data":{"label":"","vertexType":"z"}},
-            {"id":"e","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"a","target":"h"},
-            {"id":"e2","source":"b","target":"h"},
-            {"id":"e3","source":"c","target":"h"},
-            {"id":"e4","source":"d","target":"h"},
-            {"id":"e5","source":"e","target":"h"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::HBoxArity { vertex_id, arity } => {
-            assert_eq!(vertex_id, "h");
-            assert_eq!(arity, 5);
-        }
-        other => panic!("expected HBoxArity, got {other:?}"),
-    }
-}
-
-#[test]
-fn boundary_degree_violation_carries_vertex_id_and_degree_field() {
-    // An output with 3 spider neighbours → degree 3.
-    let json = r#"{
-        "nodes": [
-            {"id":"o","data":{"label":"","vertexType":"output"}},
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}},
-            {"id":"z3","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"z1","target":"o"},
-            {"id":"e2","source":"z2","target":"o"},
-            {"id":"e3","source":"z3","target":"o"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::BoundaryDegreeViolation { vertex_id, degree } => {
-            assert_eq!(vertex_id, "o");
-            assert_eq!(degree, 3);
-        }
-        other => panic!("expected BoundaryDegreeViolation, got {other:?}"),
-    }
-}
-
-#[test]
-fn input_boundary_degree_violation_uses_input_vertex_id() {
-    // On an `input` boundary: field carries the real boundary id, not a
-    // hardcoded "output" string.
-    let json = r#"{
-        "nodes": [
-            {"id":"in","data":{"label":"","vertexType":"input"}},
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"in","target":"z1"},
-            {"id":"e2","source":"in","target":"z2"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::BoundaryDegreeViolation { vertex_id, degree } => {
-            assert_eq!(vertex_id, "in");
-            assert_eq!(degree, 2);
-        }
-        other => panic!("expected BoundaryDegreeViolation, got {other:?}"),
-    }
 }

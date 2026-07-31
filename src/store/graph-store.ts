@@ -48,6 +48,7 @@ import {
 import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 
 import { toSafeFilename } from "@/lib/filename";
+import type { ValidationError } from "@/lib/graph/validate";
 import { markIntroSeen, shouldShowIntro } from "@/lib/onboarding/intro";
 
 // Shape for the destructive-action confirmation dialog. `null` means
@@ -86,9 +87,17 @@ type GraphStore = {
   isHelpOpen: boolean;
 
   // First-run intro. Auto-opened by `hydrate()` when the
-  // `graph-board-seen-intro` flag is absent; the flag is stamped at
-  // open time so the intro never reappears on reload.
+  // `graph-board-seen-intro` flag is absent; the flag is stamped at open
+  // time so the intro never reappears on reload.
   isIntroOpen: boolean;
+
+  // Per-vertex validation errors from the last compute. Keyed by vertex
+  // id so a node's renderer selects only its own slice. Ephemeral — not
+  // persisted, not on the undo stack (`partialize` snapshots only
+  // `{nodes, edges}`). Cleared/replaced on every compute.
+  validationErrors: Record<string, ValidationError[]>;
+  setValidationErrors: (errors: ValidationError[]) => void;
+  clearValidationErrors: () => void;
 
   // Session-scoped clipboard; not persisted.
   clipboard: {
@@ -274,6 +283,8 @@ export const useGraphStore = create<GraphStore>()(
 
       isIntroOpen: false,
 
+      validationErrors: {},
+
       clipboard: null,
 
       hydrate: () => {
@@ -289,6 +300,7 @@ export const useGraphStore = create<GraphStore>()(
           nodes: hydrated.nodes,
           edges: hydrated.edges,
           hasHydrated: true,
+          validationErrors: {},
         });
 
         useGraphStore.temporal.getState().clear();
@@ -547,6 +559,7 @@ export const useGraphStore = create<GraphStore>()(
             pendingEdgeSources: [],
             clipboard: null,
             isHelpOpen: false,
+            validationErrors: {},
             // Refit now that the graph replaced.
             fitViewNonce: get().fitViewNonce + 1,
           });
@@ -644,6 +657,7 @@ export const useGraphStore = create<GraphStore>()(
           isHelpOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
+          validationErrors: {},
         });
 
         persistLocal(hydrated);
@@ -692,6 +706,22 @@ export const useGraphStore = create<GraphStore>()(
 
       closeIntro: () => {
         set({ isIntroOpen: false });
+      },
+
+      // Group the flat error list by vertex id into a Record. Errors
+      // without a `vertexId` (none today, but defended) are dropped —
+      // they can't be attributed to a rendered node.
+      setValidationErrors: (errors) => {
+        const grouped: Record<string, ValidationError[]> = {};
+        for (const e of errors) {
+          if (e.vertexId === undefined) continue;
+          (grouped[e.vertexId] ??= []).push(e);
+        }
+        set({ validationErrors: grouped });
+      },
+
+      clearValidationErrors: () => {
+        set({ validationErrors: {} });
       },
 
       // True iff the graph has no nodes.

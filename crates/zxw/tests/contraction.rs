@@ -2,23 +2,16 @@
 //
 // End-to-end tests for `compute_tensor`. Each builds a `GraphSlice` from
 // a JSON literal (matching the frontend wire shape), runs the
-// contraction, and asserts on `TensorResult` or the `ComputeError`
-// variant. Expected values are noted inline so a builder/axis change
-// fails with a clear story.
+// contraction, and asserts on `TensorResult`. Expected values are noted
+// inline so a builder/axis change fails with a clear story.
 
 use approx::assert_relative_eq;
-use zxw::{compute_tensor, ComputeError, FrontendGraphSlice};
+use zxw::{compute_tensor, FrontendGraphSlice};
 
 /// Parse JSON, run `compute_tensor`, return the result. Panics on error.
 fn compute(json: &str) -> zxw::TensorResult {
     let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     compute_tensor(&graph, None).expect("compute_tensor should succeed")
-}
-
-/// Like `compute`, but expects a `ComputeError`.
-fn compute_err(json: &str) -> ComputeError {
-    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
-    compute_tensor(&graph, None).expect_err("compute_tensor should error")
 }
 
 /// Assert the tensor's complex entries match the expected `(re, im)` pairs
@@ -167,56 +160,6 @@ fn self_loop_z_spider_yields_trace() {
 }
 
 // ---- Boundary handling -----------------------------------------------------
-
-#[test]
-fn boundary_degree_2_rejected() {
-    // Output with degree 2 → error.
-    let json = r#"{
-        "nodes": [
-            {"id":"o","data":{"label":"","vertexType":"output"}},
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"z1","target":"o"},
-            {"id":"e2","source":"z2","target":"o"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::BoundaryDegreeViolation { vertex_id, degree } => {
-            assert_eq!(vertex_id, "o");
-            assert_eq!(degree, 2);
-        }
-        other => panic!("expected BoundaryDegreeViolation, got {other:?}"),
-    }
-}
-
-#[test]
-fn hbox_wrong_arity_rejected() {
-    // H-box with degree 3 → error.
-    let json = r#"{
-        "nodes": [
-            {"id":"h","data":{"label":"","vertexType":"h"}},
-            {"id":"a","data":{"label":"","vertexType":"z"}},
-            {"id":"b","data":{"label":"","vertexType":"z"}},
-            {"id":"c","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"a","target":"h"},
-            {"id":"e2","source":"b","target":"h"},
-            {"id":"e3","source":"c","target":"h"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::HBoxArity { vertex_id, arity } => {
-            assert_eq!(vertex_id, "h");
-            assert_eq!(arity, 3);
-        }
-        other => panic!("expected HBoxArity, got {other:?}"),
-    }
-}
 
 #[test]
 fn input_output_counts_flow_through() {
@@ -470,67 +413,6 @@ fn w_node_one_input_two_outputs_yields_directional_state() {
     );
 }
 
-#[test]
-fn w_node_validates_input_and_output_counts() {
-    // W requires exactly 1 input edge and ≥ 2 output edges. The three
-    // invalid topologies below each trigger a count error.
-
-    // 0 inputs → WInputCount.
-    let zero_input = r#"{
-        "nodes": [
-            {"id":"w","data":{"label":"","vertexType":"w"}},
-            {"id":"o0","data":{"label":"","vertexType":"output"}},
-            {"id":"o1","data":{"label":"","vertexType":"output"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"w","target":"o0"},
-            {"id":"e2","source":"w","target":"o1"}
-        ]
-    }"#;
-    assert!(matches!(
-        compute_err(zero_input),
-        ComputeError::WInputCount { actual: 0, .. }
-    ));
-
-    // 2 inputs → WInputCount.
-    let two_input = r#"{
-        "nodes": [
-            {"id":"w","data":{"label":"","vertexType":"w"}},
-            {"id":"i0","data":{"label":"","vertexType":"input"}},
-            {"id":"i1","data":{"label":"","vertexType":"input"}},
-            {"id":"o0","data":{"label":"","vertexType":"output"}},
-            {"id":"o1","data":{"label":"","vertexType":"output"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"i0","target":"w"},
-            {"id":"e2","source":"i1","target":"w"},
-            {"id":"e3","source":"w","target":"o0"},
-            {"id":"e4","source":"w","target":"o1"}
-        ]
-    }"#;
-    assert!(matches!(
-        compute_err(two_input),
-        ComputeError::WInputCount { actual: 2, .. }
-    ));
-
-    // 1 output → WOutputCount (needs ≥ 2).
-    let one_output = r#"{
-        "nodes": [
-            {"id":"w","data":{"label":"","vertexType":"w"}},
-            {"id":"i","data":{"label":"","vertexType":"input"}},
-            {"id":"o","data":{"label":"","vertexType":"output"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"i","target":"w"},
-            {"id":"e2","source":"w","target":"o"}
-        ]
-    }"#;
-    assert!(matches!(
-        compute_err(one_output),
-        ComputeError::WOutputCount { actual: 1, .. }
-    ));
-}
-
 // ---- Multi-vertex chains --------------------------------------------------
 
 #[test]
@@ -719,50 +601,7 @@ fn unparseable_label_warning_flows_through_end_to_end() {
     assert_data(&r.data, &[(1.0, 0.0), (0.0, 0.0), (0.0, 0.0), (1.0, 0.0)]);
 }
 
-// ---- Coverage: error variants, on_progress, dangling boundaries -----------
-
-#[test]
-fn edge_referencing_unknown_source_vertex_is_vertex_not_found() {
-    // Edge names a source not in `nodes` → VertexNotFound fires before any
-    // tensor is built.
-    let json = r#"{
-        "nodes": [
-            {"id":"z","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"ghost","target":"z"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::VertexNotFound { vertex_id, edge_id } => {
-            assert_eq!(vertex_id, "ghost");
-            assert_eq!(edge_id, "e1");
-        }
-        other => panic!("expected VertexNotFound, got {other:?}"),
-    }
-}
-
-#[test]
-fn edge_referencing_unknown_target_vertex_is_vertex_not_found() {
-    // Symmetric target-side miss (separate branch).
-    let json = r#"{
-        "nodes": [
-            {"id":"z","data":{"label":"","vertexType":"z"}}
-        ],
-        "edges": [
-            {"id":"e1","source":"z","target":"ghost"}
-        ]
-    }"#;
-    let err = compute_err(json);
-    match err {
-        ComputeError::VertexNotFound { vertex_id, edge_id } => {
-            assert_eq!(vertex_id, "ghost");
-            assert_eq!(edge_id, "e1");
-        }
-        other => panic!("expected VertexNotFound, got {other:?}"),
-    }
-}
+// ---- Coverage: on_progress, dangling boundaries ----------------------------
 
 #[test]
 fn dangling_degree_zero_input_contributes_basis_state_axis() {

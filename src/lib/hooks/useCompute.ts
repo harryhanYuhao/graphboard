@@ -9,9 +9,11 @@
 import { useCallback, useRef, useState } from "react";
 import { useGraphStore } from "@/store/graph-store";
 import { computeTensor, type ComputeCallbacks } from "@/lib/compute";
+import { ComputeError } from "@/lib/compute/errors";
 import type { TensorResult } from "@/lib/compute/result-types";
 import { projectDocument } from "@/lib/graph/serialization";
 import { PERSISTED_IDS } from "@/lib/graph/types";
+import { validateGraphForCompute } from "@/lib/graph/validate";
 
 export interface ComputeState {
   /** Whether the result dialog is open. */
@@ -54,6 +56,29 @@ export function useCompute(): ComputeState {
       updatedAt: new Date().toISOString(),
     });
     const graph = doc.graph;
+
+    // Structural validation runs before the worker — catches bad W
+    // topology, boundary degree, H-box arity, dangling refs, etc. so the
+    // user gets immediate feedback without a WASM round-trip.
+    const errors = validateGraphForCompute(graph);
+    // Publish errors to the store on every compute — valid graph clears
+    // the map (empty), invalid graph lights up the offending vertices.
+    useGraphStore.getState().setValidationErrors(errors);
+    if (errors.length > 0) {
+      const first = errors[0];
+      // The promise is already-rejected; attach a no-op catch now so it
+      // can't become an unhandled rejection before the dialog mounts and
+      // reads it. The dialog still settles via its own `.then`/`.catch`.
+      const rejected = Promise.reject<never>(
+        new ComputeError(first.kind, first.message),
+      );
+      rejected.catch(() => {});
+      setProgress(null);
+      setComputePromise(rejected);
+      setComputeSeq((n) => n + 1);
+      setComputeOpen(true);
+      return;
+    }
 
     const controller = new AbortController();
     abortRef.current = controller;

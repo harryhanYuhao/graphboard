@@ -20,6 +20,7 @@ function resetStore() {
     confirmDialogue: null,
     isHelpOpen: false,
     clipboard: null,
+    validationErrors: {},
   });
   // Clear the undo/redo stack so prior tests don't leak via snapshots.
   useGraphStore.temporal.getState().clear();
@@ -663,5 +664,53 @@ describe("vertex-property-edit gesture (onVertexPropertyEditStart/End)", () => {
     const pastAfter = useGraphStore.temporal.getState().pastStates;
     expect(pastAfter.length).toBe(baseline + 1);
     expect(pastAfter[pastAfter.length - 1].nodes[0].rotation).toBe(0);
+  });
+});
+
+describe("validation errors", () => {
+  it("setValidationErrors groups by vertex id", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "a", vertexId: "w1" },
+      { kind: "w-output-count", message: "b", vertexId: "w1" },
+      { kind: "h-box-arity", message: "c", vertexId: "h1" },
+    ]);
+    const errs = useGraphStore.getState().validationErrors;
+    expect(Object.keys(errs).sort()).toEqual(["h1", "w1"]);
+    expect(errs.w1).toHaveLength(2);
+    expect(errs.h1).toHaveLength(1);
+  });
+
+  it("setValidationErrors drops errors without a vertexId", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "a", vertexId: "w1" },
+      { kind: "w-input-count", message: "orphan" },
+    ]);
+    const errs = useGraphStore.getState().validationErrors;
+    expect(errs).toEqual({ w1: [{ kind: "w-input-count", message: "a", vertexId: "w1" }] });
+  });
+
+  it("setValidationErrors([]) clears the map", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "a", vertexId: "w1" },
+    ]);
+    useGraphStore.getState().setValidationErrors([]);
+    expect(useGraphStore.getState().validationErrors).toEqual({});
+  });
+
+  it("clearValidationErrors empties the map", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "a", vertexId: "w1" },
+    ]);
+    useGraphStore.getState().clearValidationErrors();
+    expect(useGraphStore.getState().validationErrors).toEqual({});
+  });
+
+  it("changing validationErrors does not push onto the undo stack", () => {
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "a", vertexId: "w1" },
+    ]);
+    useGraphStore.getState().clearValidationErrors();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
   });
 });

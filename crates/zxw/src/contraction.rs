@@ -67,6 +67,15 @@ struct PendingBoundary {
     neighbour_id: Option<String>,
 }
 
+/// Map a boundary `VertexType` to its result-leg role.
+fn boundary_role(vt: VertexType) -> LegRole {
+    match vt {
+        VertexType::Input => LegRole::Input,
+        VertexType::Output => LegRole::Output,
+        _ => unreachable!("boundary_role only called on boundary vertices"),
+    }
+}
+
 /// Result of `compute_tensor`. The UI displays the rank-(n+m) tensor as a
 /// 2^n × 2^m matrix (n = `input_count`, m = `output_count`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,13 +106,12 @@ struct GraphCtx<'a> {
 
 impl<'a> GraphCtx<'a> {
     fn build(graph: &'a FrontendGraphSlice) -> Result<Self, ComputeError> {
+        // Precondition: the frontend validated the graph (no duplicate ids,
+        // no dangling edge refs, valid W/H/boundary topology) before
+        // calling compute. We don't re-check here; a malformed graph would
+        // produce a wrong result rather than a clean error.
         let mut node_index: HashMap<String, (usize, VertexType, String)> = HashMap::new();
         for (i, node) in graph.nodes.iter().enumerate() {
-            if node_index.contains_key(&node.id) {
-                return Err(ComputeError::DuplicateNodeId {
-                    vertex_id: node.id.clone(),
-                });
-            }
             node_index.insert(
                 node.id.clone(),
                 (i, node.data.vertex_type, node.data.label.clone()),
@@ -214,7 +222,6 @@ pub fn compute_tensor(
     }
 
     let ctx = GraphCtx::build(graph)?;
-    validate_w_nodes(&ctx)?;
 
     // Phase B — build per-vertex groups + collect boundaries.
     let (mut groups, mut pending_boundaries, warnings) = build_initial_groups(&ctx)?;
@@ -256,43 +263,6 @@ fn empty_result() -> TensorResult {
     }
 }
 
-// ---- W-node validation ------------------------------------------------------
-
-/// Validate every W node: exactly 1 input edge (targeting the W) and
-/// ≥ 2 output edges (with the W as source).
-fn validate_w_nodes(ctx: &GraphCtx) -> Result<(), ComputeError> {
-    for node in &ctx.graph.nodes {
-        if node.data.vertex_type != VertexType::W {
-            continue;
-        }
-        let id = &node.id;
-        let mut input_edges = 0usize;
-        let mut output_edges = 0usize;
-        for edge in &ctx.graph.edges {
-            if edge.source == *id && edge.target == *id {
-                output_edges += 2; // self-loop: ill-defined for W
-            } else if edge.target == *id {
-                input_edges += 1;
-            } else if edge.source == *id {
-                output_edges += 1;
-            }
-        }
-        if input_edges != 1 {
-            return Err(ComputeError::WInputCount {
-                vertex_id: id.clone(),
-                actual: input_edges,
-            });
-        }
-        if output_edges < 2 {
-            return Err(ComputeError::WOutputCount {
-                vertex_id: id.clone(),
-                actual: output_edges,
-            });
-        }
-    }
-    Ok(())
-}
-
 // ---- Phase B: build initial groups + pending boundaries --------------------
 
 /// Build one `Group` per tensor-vertex; boundaries become `PendingBoundary`.
@@ -311,14 +281,8 @@ fn build_initial_groups(
         let label = &node.data.label;
         let deg = *ctx.degree.get(id).unwrap_or(&0);
 
-        // Boundary — no tensor.
+        // Boundary — no tensor. (Degree validated frontend-side.)
         if matches!(vt, VertexType::Input | VertexType::Output) {
-            if deg > 1 {
-                return Err(ComputeError::BoundaryDegreeViolation {
-                    vertex_id: id.clone(),
-                    degree: deg,
-                });
-            }
             let role = if vt == VertexType::Input {
                 LegRole::Input
             } else {
@@ -330,13 +294,6 @@ fn build_initial_groups(
                 neighbour_id: None,
             });
             continue;
-        }
-
-        if vt == VertexType::H && deg != 2 {
-            return Err(ComputeError::HBoxArity {
-                vertex_id: id.clone(),
-                arity: deg,
-            });
         }
 
         let phase = if matches!(
@@ -403,7 +360,16 @@ fn combine_components(
                 .iter()
                 .map(|fa| fa.sort_key)
                 .min()
-                .unwrap_or(ctx.order_key[ctx.id_to_order[&id]]);
+                .unwrap_or_else(|| {
+                    // Empty free_axes (no open legs) — fall back to the
+                    // vertex's order key. Synthetic groups (e.g. identity
+                    // wires keyed by edge id) aren't vertex ids, so guard
+                    // the lookup; their min_key only matters for sort order.
+                    ctx.id_to_order
+                        .get(&id)
+                        .map(|&o| ctx.order_key[o])
+                        .unwrap_or(u32::MAX)
+                });
             (min_key as usize, g)
         })
         .collect();
@@ -534,8 +500,9 @@ fn flatten_result(
 mod edge {
     use super::*;
 
-    /// Walk `graph.edges` in input order, dispatching each to a branch.
-    /// Validates endpoint existence and rejects boundary-to-boundary edges.
+    /// Walk `graph.edges` in input order, dispatching each to one of four
+    /// branches: boundary-to-boundary, self-loop, boundary-to-tensor, or
+    /// tensor-to-tensor.
     pub(super) fn walk_edges(
         ctx: &GraphCtx,
         groups: &mut HashMap<String, Group>,
@@ -545,31 +512,21 @@ mod edge {
     ) -> Result<(), ComputeError> {
         let total_edges = ctx.graph.edges.len();
         for (edge_i, edge) in ctx.graph.edges.iter().enumerate() {
-            if !ctx.node_index.contains_key(&edge.source) {
-                return Err(ComputeError::VertexNotFound {
-                    vertex_id: edge.source.clone(),
-                    edge_id: edge.id.clone(),
-                });
-            }
-            if !ctx.node_index.contains_key(&edge.target) {
-                return Err(ComputeError::VertexNotFound {
-                    vertex_id: edge.target.clone(),
-                    edge_id: edge.id.clone(),
-                });
-            }
+            // Edge endpoint existence validated frontend-side.
 
             let src_is_boundary = ctx.is_boundary(&edge.source);
             let tgt_is_boundary = ctx.is_boundary(&edge.target);
 
             if src_is_boundary && tgt_is_boundary {
-                return Err(ComputeError::BoundaryToBoundaryEdge {
-                    edge_id: edge.id.clone(),
-                    from: edge.source.clone(),
-                    to: edge.target.clone(),
-                });
-            }
-
-            if edge.source == edge.target {
+                // input → output: boundaries act as identity tensors, so
+                // this edge is an identity wire.
+                handle_boundary_to_boundary_edge(
+                    ctx,
+                    edge,
+                    groups,
+                    pending_boundaries,
+                )?;
+            } else if edge.source == edge.target {
                 handle_self_loop(ctx, edge, groups)?;
             } else if src_is_boundary || tgt_is_boundary {
                 handle_boundary_edge(ctx, edge, groups, pending_boundaries, src_is_boundary)?;
@@ -581,6 +538,59 @@ mod edge {
                 cb(edge_i + 1, total_edges);
             }
         }
+        Ok(())
+    }
+
+    /// Boundary-to-boundary edge (e.g. `input → output`): boundaries act as
+    /// identity tensors, so this is an identity wire. Synthesize a group with
+    /// the 2×2 identity tensor and two free axes tagged with each boundary's
+    /// role. The contracted axis disappears; the two open axes survive as one
+    /// Input and one Output of the result.
+    fn handle_boundary_to_boundary_edge(
+        ctx: &GraphCtx,
+        edge: &crate::graph::FrontendGraphEdgeRecord,
+        groups: &mut HashMap<String, Group>,
+        pending_boundaries: &mut Vec<PendingBoundary>,
+    ) -> Result<(), ComputeError> {
+        let src_order = ctx.id_to_order[&edge.source];
+        let tgt_order = ctx.id_to_order[&edge.target];
+        let src_role = boundary_role(ctx.vertex_type(&edge.source));
+        let tgt_role = boundary_role(ctx.vertex_type(&edge.target));
+
+        // Mark both boundaries as attached so Phase D doesn't add them as
+        // dangling (degree-0) open legs.
+        for pb in pending_boundaries.iter_mut() {
+            if pb.node_order == src_order || pb.node_order == tgt_order {
+                pb.neighbour_id = Some(edge.id.clone());
+            }
+        }
+
+        // A standalone identity-wire group, keyed by the edge id so it
+        // flows through Phases D/E as its own component. The 2×2 identity
+        // tensor is the result: result[in_bit, out_bit] = δ(in_bit, out_bit).
+        let mut tensor = Tensor::zeros(&[2, 2]);
+        *tensor.get_mut(&[0, 0]) = num_complex::Complex::new(1.0, 0.0);
+        *tensor.get_mut(&[1, 1]) = num_complex::Complex::new(1.0, 0.0);
+        groups.insert(
+            edge.id.clone(),
+            Group {
+                tensor,
+                free_axes: vec![
+                    FreeAxis {
+                        node_order: src_order,
+                        leg_index: 0,
+                        role: src_role,
+                        sort_key: ctx.order_key[src_order],
+                    },
+                    FreeAxis {
+                        node_order: tgt_order,
+                        leg_index: 1,
+                        role: tgt_role,
+                        sort_key: ctx.order_key[tgt_order],
+                    },
+                ],
+            },
+        );
         Ok(())
     }
 
@@ -905,19 +915,6 @@ mod tests {
         );
         let result = compute_tensor(&g, None).expect("compute should succeed");
         assert_eq!(result.warnings.len(), 2);
-    }
-
-    #[test]
-    fn edge_to_unknown_vertex_returns_vertex_not_found() {
-        let g = graph(&[("a", VertexType::Z, "")], &[("e", "a", "ghost")]);
-        let err = compute_tensor(&g, None).expect_err("unknown vertex must error");
-        match err {
-            ComputeError::VertexNotFound { vertex_id, edge_id } => {
-                assert_eq!(vertex_id, "ghost");
-                assert_eq!(edge_id, "e");
-            }
-            other => panic!("expected VertexNotFound, got {other:?}"),
-        }
     }
 
     #[test]

@@ -18,6 +18,11 @@ import {
   type VertexLabelEditorHandle,
 } from "./VertexLabelEditor";
 
+// Stable empty-array ref for the no-error case so the Zustand selector
+// returns the same reference and skips re-renders when unrelated vertices'
+// errors change.
+const NO_ERRORS: readonly never[] = [];
+
 export function VertexNode({
   id,
   data,
@@ -33,6 +38,12 @@ export function VertexNode({
   const rotation = useGraphStore(
     (state) => nodesById(state.nodes).get(id)?.rotation ?? 0,
   );
+  // This vertex's validation errors (from the last compute). The stable
+  // `NO_ERRORS` ref keeps the no-error case from re-rendering on unrelated
+  // error changes.
+  const errors = useGraphStore(
+    (state) => state.validationErrors[id] ?? NO_ERRORS,
+  );
 
   const isPendingEdgeSource = pendingEdgeSources.includes(id);
 
@@ -41,11 +52,14 @@ export function VertexNode({
 
   // CSS borders don't follow a clip-path silhouette; a drop-shadow respects
   // the clipped alpha shape, so it works uniformly across all shapes.
-  const highlightFilter = isPendingEdgeSource
-    ? "drop-shadow(0 0 4px rgb(245 158 11))"
-    : selected
-      ? "drop-shadow(0 0 3px rgb(37 99 235))"
-      : undefined;
+  // Validation errors take precedence (red) over selected/pending.
+  const highlightFilter = errors.length > 0
+    ? "drop-shadow(0 0 4px rgb(220 38 38))"
+    : isPendingEdgeSource
+      ? "drop-shadow(0 0 4px rgb(245 158 11))"
+      : selected
+        ? "drop-shadow(0 0 3px rgb(37 99 235))"
+        : undefined;
 
   const className = [
     "flex items-center justify-center font-semibold shadow-sm",
@@ -87,7 +101,7 @@ export function VertexNode({
               "pointer-events-none absolute top-0 z-10 flex min-w-[0.9rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white",
               data.vertexType === "input"
                 ? "left-0 -translate-x-1/2 -translate-y-1/2 bg-blue-600"
-                : "right-0 translate-x-1/2 -translate-y-1/2 bg-green-600",
+                : "right-0 translate-x-1/2 translate-y-3 bg-green-600",
             ].join(" ")}
           >
             {data.order}
@@ -130,6 +144,19 @@ export function VertexNode({
           </div>
         </div>
       </div>
+
+      {/* On-canvas error text. Outside the rotated wrapper so it stays
+          readable at any rotation. Below the body, pointer-events-none so
+          it never intercepts canvas clicks/drags. */}
+      {errors.length > 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 max-w-[10rem] -translate-x-1/2 text-center text-[10px] leading-tight text-red-600">
+          {errors.map((e, i) => (
+            <div key={i} className="break-words">
+              {e.message}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
