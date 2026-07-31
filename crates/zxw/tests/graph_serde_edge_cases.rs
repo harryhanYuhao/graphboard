@@ -1,26 +1,9 @@
 // crates/zxw/tests/graph_serde_edge_cases.rs
 //
-// Edge-case probe for the `GraphSlice` serde contract and the `wasm`
-// module's compute-path logic. Mirrors `tests/graph_serde.rs` conventions
-// (`serde_json::from_str` / `to_string`, `assert_eq`, `matches!`) but
-// does NOT duplicate its cases — each test here pins exactly one extra
-// behavior that the sibling file leaves implicit.
-//
-// Contract source of truth:
-//   - Rust structs:    `crates/zxw/src/graph.rs`
-//   - TS wire shape:   `src/lib/graph/types.ts` (`GraphNodeRecord`,
-//                      `GraphEdgeRecord`, `VertexType`)
-//   - Handle meaning:  `src/lib/graph/serialization.ts` (`handleIdToIndex`:
-//                      0 = top, 1 = bottom; absent => default).
-//
-// Run:
-//   cargo test -p zxw --test graph_serde_edge_cases
-//   cargo test -p zxw --test graph_serde_edge_cases --features wasm
-//
-// The wasm-gated tests at the bottom of this file exercise the
-// `zxw::wasm` shim's plain-Rust-callable functions (`ping`,
-// `compute_api_version`). The `JsValue`-taking `compute_tensor` cannot
-// be tested without a JS runtime and is intentionally not exercised here.
+// Edge-case probes for the `GraphSlice` serde contract (and the wasm
+// compute-path functions under `--features wasm`). Mirrors graph_serde.rs
+// but pins behaviors that file leaves implicit. Error-fragment matching
+// uses a stable substring (serde's exact wording is unstable).
 
 use zxw::{
     FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendGraphSlice, FrontendVertexData,
@@ -28,14 +11,8 @@ use zxw::{
 };
 
 // ---- small helpers ---------------------------------------------------------
-//
-// Centralizing the round-trip + error-fragment assertions keeps each test
-// one-liner and the failure messages uniform. Error-fragment matching
-// follows `tests/graph_serde.rs::rejects_unknown_vertex_type`: serde's
-// exact wording is unstable, so we match on a stable substring rather
-// than the full message.
 
-/// Helper: assert the JSON fails to deserialize as `GraphSlice`.
+/// Assert the JSON fails to deserialize, naming the expected error fragment.
 #[track_caller]
 fn assert_rejects(json: &str, fragment: &str) {
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(json);
@@ -61,19 +38,11 @@ fn assert_accepts(json: &str) -> FrontendGraphSlice {
 // §1  Edge handle edge cases
 // ============================================================================
 //
-// `source_handle` / `target_handle` are `Option<u32>` with
-// `#[serde(default, skip_serializing_if = "Option::is_none")]`. The TS
-// side (`handleIdToIndex`) only ever emits absent or 0/1; everything
-// else here is a robustness probe of the Rust deserializer.
+// Handles are `Option<u32>` with `#[serde(default, skip_serializing_if =
+// "Option::is_none")]`. The TS side only emits absent or 0/1; the rest
+// here are robustness probes of the Rust deserializer.
 
-// 1. `sourceHandle: null` (explicit JSON null) vs absent.
-//
-// serde treats an explicit `null` for an `Option<T>` field as `None`
-// (the deserializer's `deserialize_option` short-circuits on null). The
-// TS serializer never emits null (it omits the field — see
-// `handleIdToIndex` returning `undefined`), so a null on the wire is
-// technically out-of-contract, but serde accepts it rather than
-// erroring. Pin that behavior: explicit null => `None`, no error.
+// 1. Explicit `null` → `None` (serde short-circuits on null for Option<T>).
 #[test]
 fn explicit_null_handle_deserializes_as_none() {
     let json = r#"{
@@ -85,47 +54,29 @@ fn explicit_null_handle_deserializes_as_none() {
     assert_eq!(slice.edges[0].target_handle, None);
 }
 
-// 2. `sourceHandle: "0"` (string instead of number).
-//
-// u32 does not coerce from string; serde_json rejects with "invalid
-// type: string ... expected u32". Pin the error.
+// 2. String handle → rejected (u32 won't coerce from string).
 #[test]
 fn string_handle_value_is_rejected() {
     let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "sourceHandle": "0"}]}"#;
     assert_rejects(json, "u32");
 }
 
-// 3. `sourceHandle: -1` (negative).
-//
-// The task brief speculates "-1 round-trips intact (compute layer
-// ignores the value in v1)". That premise is wrong: the field is typed
-// `Option<u32>`, and u32 rejects negatives at deserialization time
-// BEFORE the compute layer ever sees it. (This is already pinned in
-// `tests/graph_serde.rs::negative_and_large_handle_indices_deserialize`;
-// we re-pin `-1` explicitly here so the contract is locally obvious.)
-// NOT a bug — the type is intentionally `u32`, so negative is correctly
-// rejected.
+// 3. `-1` → rejected. The field is `Option<u32>`, which rejects negatives
+// at deserialize time (before the compute layer sees it).
 #[test]
 fn negative_handle_minus_one_is_rejected() {
     let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "sourceHandle": -1}]}"#;
     assert_rejects(json, "u32");
 }
 
-// 4. `sourceHandle: 4294967296` (u32::MAX + 1, overflow).
-//
-// Above the u32 range; serde_json rejects with "invalid value: integer
-// ... expected u32". Pin the error.
+// 4. Above u32 range → rejected (overflow).
 #[test]
 fn handle_value_above_u32_max_is_rejected() {
     let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "sourceHandle": 4294967296}]}"#;
     assert_rejects(json, "u32");
 }
 
-// 5. `sourceHandle: 0.5` (float).
-//
-// serde_json's integer deserializer rejects floats with "invalid type:
-// floating point ... expected u32". Note serde_json does NOT silently
-// truncate 0.5 to 0. Pin the error.
+// 5. Float handle → rejected (no silent truncation).
 #[test]
 fn fractional_handle_value_is_rejected() {
     let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "sourceHandle": 0.5}]}"#;
@@ -175,14 +126,13 @@ fn empty_string_vertex_type_is_rejected() {
     assert_rejects(json, "unknown variant");
 }
 
-// 30. Explicit case-sensitivity table for all 10 vertex types.
+// 30. Case-sensitivity table for all 10 vertex types.
 //
-// `tests/graph_serde.rs::all_ten_vertex_types_round_trip` covers the
-// lowercase happy path; this test pins that every uppercase / camelCase
-// spelling is rejected. One test, all 10, to keep the table compact.
+// graph_serde.rs covers the lowercase happy path; this pins that every
+// uppercase/camelCase spelling is rejected.
 #[test]
 fn all_vertex_types_are_lowercase_only() {
-    // Each entry: (lowercase-valid, at-least-one-rejected-spelling).
+    // (lowercase-valid, rejected spellings)
     let table: &[(&str, &[&str])] = &[
         ("z", &["Z", "Z-spider"]),
         ("empty", &["Empty", "EMPTY"]),
@@ -228,42 +178,29 @@ fn all_vertex_types_are_lowercase_only() {
 
 // 11. Missing `data` wrapper (flat `{id, label, vertexType}`).
 //
-// Re-pinned explicitly here even though
-// `tests/graph_serde.rs::rejects_missing_data_wrapper` covers it — the
-// flat shape is the single most likely accidental regression (a
-// refactor flattening `data`), so it deserves its own clearly-named
-// test in this file.
+// Re-pinned here because the flat shape is the most likely accidental
+// regression (a refactor flattening `data`).
 #[test]
 fn flat_node_without_data_wrapper_is_rejected() {
     let json = r#"{"nodes": [{"id": "x", "label": "hi", "vertexType": "z"}], "edges": []}"#;
     assert_rejects(json, "data");
 }
 
-// 12. `data: null`.
-//
-// `Option`-free struct field; serde rejects null with "invalid type:
-// null, expected struct VertexData".
+// 12. `data: null` → rejected (struct field, not Option).
 #[test]
 fn null_data_wrapper_is_rejected() {
     let json = r#"{"nodes": [{"id": "a", "data": null}], "edges": []}"#;
     assert_rejects(json, "vertexdata");
 }
 
-// 13. `data: {}` (empty data object).
-//
-// Both `label` and `vertexType` are required; serde reports "missing
-// field `label`" (it short-circuits on the first missing field).
+// 13. `data: {}` → "missing field `label`" (first missing required field).
 #[test]
 fn empty_data_object_is_rejected() {
     let json = r#"{"nodes": [{"id": "a", "data": {}}], "edges": []}"#;
     assert_rejects(json, "missing field");
 }
 
-// 14. Extra unknown field inside `data`.
-//
-// serde's derived `Deserialize` ignores unknown fields by default (no
-// `#[serde(deny_unknown_fields)]` anywhere in the chain). Pin that an
-// extra key inside `data` is silently dropped, NOT an error.
+// 14. Extra field inside `data` → silently ignored (no deny_unknown_fields).
 #[test]
 fn extra_field_inside_data_is_ignored() {
     let json = r#"{"nodes": [{"id": "a", "data": {"label": "l", "vertexType": "z", "extra": 42}}], "edges": []}"#;
@@ -272,11 +209,7 @@ fn extra_field_inside_data_is_ignored() {
     assert_eq!(slice.nodes[0].data.vertex_type, VertexType::Z);
 }
 
-// 15. Extra unknown field at node level.
-//
-// The TS payload sometimes carries extra runtime fields (e.g.
-// `selected` from a pre-split document — see types.ts comment about the
-// `selected`-persistence bug). serde ignores them. Pin accepted.
+// 15. Extra field at node level → ignored (TS may carry `selected`, etc.).
 #[test]
 fn extra_field_at_node_level_is_ignored() {
     let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z"}, "selected": true, "position": {"x": 1, "y": 2}}], "edges": []}"#;
@@ -284,10 +217,7 @@ fn extra_field_at_node_level_is_ignored() {
     assert_eq!(slice.nodes[0].id, "a");
 }
 
-// 16. Missing `label`.
-//
-// Empty string is valid (tested in `tests/graph_serde.rs`), but an
-// absent field is a structural error.
+// 16. Missing `label` → rejected (empty string is valid, absent is not).
 #[test]
 fn missing_label_field_is_rejected() {
     let json = r#"{"nodes": [{"id": "a", "data": {"vertexType": "z"}}], "edges": []}"#;
@@ -321,12 +251,8 @@ fn numeric_id_is_rejected() {
     assert_rejects(json, "expected a string");
 }
 
-// 20. `id: ""` (empty string id).
-//
-// serde accepts an empty string for `id` — there is no non-empty
-// validation at the type level. Whether the compute layer later chokes
-// on an empty join key is a separate (Phase 4) concern; here we only
-// pin serde.
+// 20. `id: ""` → accepted (no non-empty validation at the type level;
+// whether the compute layer handles an empty join key is its concern).
 #[test]
 fn empty_string_id_deserializes() {
     let json = r#"{"nodes": [{"id": "", "data": {"label": "", "vertexType": "z"}}], "edges": []}"#;
@@ -334,11 +260,8 @@ fn empty_string_id_deserializes() {
     assert_eq!(slice.nodes[0].id, "");
 }
 
-// 21. Duplicate `id` values across two nodes.
-//
-// No uniqueness check at the type level — serde happily deserializes
-// two nodes with the same id. The compute layer (Phase 4 vertex
-// lookup) would later collide, but that is its problem, not serde's.
+// 21. Duplicate `id` → accepted (no uniqueness check at the type level;
+// the compute layer may collide, but that's its concern).
 #[test]
 fn duplicate_node_ids_deserialize() {
     let json = r#"{"nodes": [
@@ -355,11 +278,8 @@ fn duplicate_node_ids_deserialize() {
 // §5  Whole-slice structural shape
 // ============================================================================
 
-// 22. Empty `nodes` array with non-empty `edges`.
-//
-// serde has no cross-field validation, so this deserializes fine; the
-// compute layer would later raise `VertexNotFound` (see `error.rs`).
-// Pin serde-only success.
+// 22. Empty `nodes` with non-empty `edges` → deserializes fine (no
+// cross-field validation; the compute layer raises VertexNotFound later).
 #[test]
 fn empty_nodes_with_edges_deserializes() {
     let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b"}]}"#;
@@ -368,43 +288,28 @@ fn empty_nodes_with_edges_deserializes() {
     assert_eq!(slice.edges.len(), 1);
 }
 
-// 23. `nodes` absent entirely.
-//
-// `GraphSlice.nodes` is `Vec<_>` with no `#[serde(default)]`, so a
-// missing field is an error.
+// 23. `nodes` absent → rejected (Vec with no `#[serde(default)]`).
 #[test]
 fn missing_nodes_field_is_rejected() {
     let json = r#"{"edges": []}"#;
     assert_rejects(json, "missing field `nodes`");
 }
 
-// 24. `edges` absent entirely.
-//
-// Same reasoning as above — no `#[serde(default)]` on `edges`. Pin
-// rejected. (If the schema ever wants edges to be optional, that change
-// needs an explicit `#[serde(default)]` on the field, and this test
-// should be updated to match.)
+// 24. `edges` absent → rejected (same reason).
 #[test]
 fn missing_edges_field_is_rejected() {
     let json = r#"{"nodes": []}"#;
     assert_rejects(json, "missing field `edges`");
 }
 
-// 25. Top-level JSON array instead of object.
-//
-// serde_json reports "invalid length 0, expected struct GraphSlice with
-// 2 elements" (it tries to deserialize a struct from a sequence). Pin
-// rejected.
+// 25. Top-level JSON array → rejected (serde tries a struct-from-sequence).
 #[test]
 fn top_level_json_array_is_rejected() {
     let json = r#"[]"#;
     assert_rejects(json, "GraphSlice");
 }
 
-// 26. Top-level JSON scalars.
-//
-// Each of `42`, `"hi"`, `true` is rejected; serde_json reports an
-// "invalid type" message naming `GraphSlice`.
+// 26. Top-level JSON scalars → rejected with an "invalid type" naming GraphSlice.
 #[test]
 fn top_level_json_integer_is_rejected() {
     assert_rejects("42", "GraphSlice");
@@ -448,10 +353,7 @@ fn unicode_id_round_trips_intact() {
     assert_eq!(reparsed.nodes[0].id, "λ");
 }
 
-// 29. Very long label (10000 chars).
-//
-// Confirms serde does not truncate; the parser/compute layer must see
-// the same length the wire carried.
+// 29. Very long label (10000 chars) → no truncation.
 #[test]
 fn very_long_label_round_trips_without_truncation() {
     let long = "x".repeat(10_000);
@@ -468,10 +370,7 @@ fn very_long_label_round_trips_without_truncation() {
 // §7  Edge structural cases
 // ============================================================================
 
-// 31. `GraphEdgeRecord` with `source == target` (self-loop).
-//
-// serde has no constraint against it; compute handles (or rejects) it
-// later. Pin serde-only success and that the handles survive the trip.
+// 31. `source == target` (self-loop) → accepted by serde; handles survive.
 #[test]
 fn self_loop_edge_deserializes() {
     let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z"}}], "edges": [{"id": "e", "source": "a", "target": "a", "sourceHandle": 0, "targetHandle": 1}]}"#;
@@ -482,16 +381,13 @@ fn self_loop_edge_deserializes() {
     assert_eq!(slice.edges[0].target_handle, Some(1));
 }
 
-// 32. Serialization produces stable key order.
+// 32. Serialization key order is stable (declaration order, not sorted).
 //
-// serde_json's derived `Serialize` for structs emits fields in
-// declaration order (NOT sorted). Pin the exact byte layout of a node
-// and an edge so a future field reorder is caught here, not in a
-// subtle frontend deserialization regression. Two equivalent graphs
-// re-serialize byte-identically.
+// Pin the exact byte layout of a node/edge/slice so a field reorder is
+// caught here; two structurally-identical slices re-serialize byte-identically.
 #[test]
 fn serialization_key_order_is_stable() {
-    // Node: `id`, then `data` (which is `label`, then `vertexType`).
+    // Node: `id`, then `data` (`label`, then `vertexType`).
     let node = FrontendGraphNodeRecord {
         id: "z".into(),
         data: FrontendVertexData {
@@ -538,11 +434,8 @@ fn serialization_key_order_is_stable() {
     assert_eq!(a, b);
 }
 
-// 33. Round-trip an edge WITH handles — they must appear in re-serialized output.
-//
-// `tests/graph_serde.rs::empty_edge_handles_omitted_when_none` covers
-// the None case (omitted); this pins the Some case (present) so the
-// `skip_serializing_if` predicate is symmetric.
+// 33. Round-trip an edge WITH handles — they must appear in output (the
+// symmetric counterpart to the None case covered in graph_serde.rs).
 #[test]
 fn edge_with_handles_serializes_them() {
     let edge = FrontendGraphEdgeRecord {
@@ -562,7 +455,7 @@ fn edge_with_handles_serializes_them() {
         "Some(1) handle must appear, got: {json}"
     );
 
-    // And the round-trip preserves them.
+    // The round-trip preserves them.
     let back: FrontendGraphEdgeRecord = serde_json::from_str(&json).unwrap();
     assert_eq!(back.source_handle, Some(0));
     assert_eq!(back.target_handle, Some(1));
@@ -572,52 +465,30 @@ fn edge_with_handles_serializes_them() {
 // §8  WASM compute-path logic (gated behind `--features wasm`)
 // ============================================================================
 //
-// The `#[wasm_bindgen]` macro does NOT change the underlying Rust
-// signature — it only adds JS glue — so `ping` and `compute_api_version`
-// are callable as plain Rust functions from a native test. Verified by
-// probe before this file was written.
-//
-// `compute_tensor` takes `JsValue` + `Option<js_sys::Function>` and
-// cannot be exercised without a JS runtime; it is intentionally not
-// tested here. The serde-boundary tests in §1–§7 above ARE the
-// contract `compute_tensor` depends on at its entry point.
+// `#[wasm_bindgen]` only adds JS glue, so `ping` and `compute_api_version`
+// are callable as plain Rust functions. `compute_tensor` takes `JsValue`
+// and can't be tested without a JS runtime; its entry contract is covered
+// indirectly by the serde_json tests in §1–§7.
 
 #[cfg(feature = "wasm")]
 mod wasm_tests {
-    // 34. `ping()` returns "pong".
-    //
-    // The frontend's `scripts/ping-wasm.mts` uses this as the WASM
-    // pipeline health check. The native-callable path returns the same
-    // value the JS binding would.
+    // 34. `ping()` returns "pong" (the frontend WASM health check).
     #[test]
     fn ping_returns_pong() {
         let s: String = zxw::wasm::ping();
         assert_eq!(s, "pong");
     }
 
-    // 34b. `compute_api_version()` returns the crate version.
-    //
-    // The frontend asserts the wasm export matches the version in the
-    // built `package.json` before calling any compute fn; this pins
-    // that the export is driven by `env!("CARGO_PKG_VERSION")` so the
-    // two stay in sync.
+    // 34b. `compute_api_version()` is driven by `env!("CARGO_PKG_VERSION")`.
+    // Asserts the literal "0.1.0" too so a version bump surfaces here.
     #[test]
     fn compute_api_version_matches_crate_version() {
         let v: String = zxw::wasm::compute_api_version();
         assert_eq!(v, env!("CARGO_PKG_VERSION"));
-        // Sanity: the crate is at 0.1.0 today; assert the literal too so
-        // a Cargo.toml version bump without a matching export update
-        // surfaces here rather than silently passing via env!.
         assert_eq!(v, "0.1.0");
     }
 
-    // 35. The serde-wasm-bindgen boundary — SKIPPED without a browser.
-    //
-    // `compute_tensor` deserializes a `JsValue` via
-    // `serde_wasm_bindgen::from_value`, which requires a JS object, not
-    // a serde_json string. There is no native proxy that exercises the
-    // same code path, so the wasm-boundary correctness is covered
-    // indirectly by the serde_json tests in §1–§7 (serde-wasm-bindgen
-    // delegates to the same derived `Deserialize`). A real browser test
-    // would belong in `scripts/` (see `ping-wasm.mts`), not here.
+    // 35. The serde-wasm-bindgen boundary needs a JS runtime (JsValue, not a
+    // serde_json string). Covered indirectly by §1–§7; a real browser test
+    // belongs in `scripts/`.
 }

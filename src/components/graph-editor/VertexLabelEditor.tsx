@@ -1,21 +1,10 @@
 // src/components/graph-editor/VertexLabelEditor.tsx
 //
-// The double-click-to-edit interaction for a vertex label. Owns its
-// own editing / draft state and the input element. The parent decides
-// when editing is allowed (typically: only in select / add-vertex
-// modes — outside those, double-click is a no-op so the gesture
-// doesn't fight React Flow's own double-click-to-reset-view).
-//
-// When the label is empty, the parent's `glyph` (e.g. the And gate's
-// SVG Λ) is shown instead — see `VertexNode` for the wiring. Clearing
-// the label reveals the glyph again.
-//
-// The inner `<span>` here still carries `onDoubleClick` as the
-// semantic trigger ("double-click the editor to edit it") — the unit
-// tests pin that surface. `VertexNode` additionally wires
-// `onDoubleClick` on its own outer div so clicks that land on the
-// body background (where there's no glyph/text to receive the event)
-// still reach the editor via the imperative handle exposed below.
+// Double-click-to-edit interaction for a vertex label; owns its own editing
+// and draft state. The parent gates editing via `canStartEditing` (typically
+// select/add-vertex modes only). When the label is empty the parent's `glyph`
+// is shown instead. The imperative `startEditing` handle lets the parent
+// trigger edits from double-clicks that land on the body background.
 
 "use client";
 
@@ -26,23 +15,16 @@ import { useKatexReady } from "@/lib/hooks/useKatexReady";
 
 export type VertexLabelEditorProps = {
   value: string;
-  // Default visual content shown when `value` is empty. The parent's
-  // own glyph (e.g. an SVG) is used; we don't render any fallback
-  // text here so the empty case can be a fully-rendered element.
+  // Default content shown when `value` is empty (parent's glyph element).
   glyph: ReactNode;
-  // Called with the trimmed label when the user commits (Enter / blur).
+  /** Called with the trimmed label when the user commits (Enter / blur). */
   onCommit: (label: string) => void;
-  // Whether the editor should accept a start-editing gesture. The
-  // parent typically gates this on the current editor mode.
+  /** Whether the editor should accept a start-editing gesture (parent-gated). */
   canStartEditing: boolean;
 };
 
-// Imperative surface for the parent to request "start editing now"
-// from somewhere *outside* this component's DOM subtree. The inner
-// span's own onDoubleClick only catches clicks that land directly
-// on the label/glyph; clicks on the body background or on the React
-// Flow Handle overlays would otherwise miss it (events bubble up
-// the DOM, never down). See VertexNode.tsx for the wiring.
+// Lets the parent request "start editing" from outside this subtree — the
+// inner span's onDoubleClick only catches direct hits on the label/glyph.
 export type VertexLabelEditorHandle = {
   startEditing: () => void;
 };
@@ -58,32 +40,23 @@ export const VertexLabelEditor = forwardRef<
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
   // Re-render once the lazy-loaded KaTeX chunk resolves so a LaTeX label
-  // that painted as escaped text upgrades to rendered math. Cheap: a
-  // single useSyncExternalStore subscription that fires once.
+  // upgrades from escaped text to rendered math.
   useKatexReady();
 
   const startEditing = useCallback(() => {
-    // Gate on mode / capability first.
     if (!canStartEditing) return;
-    // If we're already editing, the user is interacting with the
-    // `<input>` (typing, selecting text via double-click, etc.). A
-    // stray double-click that bubbles up to the parent's outer-div
-    // handler should not reset the draft they're currently typing
-    // into — `setDraft(value)` would clobber their in-progress text.
+    // Ignore a re-entrant double-click while already editing so the draft in
+    // flight isn't clobbered.
     if (isEditing) return;
     setDraft(value);
     setIsEditing(true);
   }, [canStartEditing, isEditing, value]);
 
-  // Expose `startEditing` so the parent can trigger it from a
-  // double-click anywhere on the vertex, not just on the inner span.
-  // The callback is stable when its deps don't change, so the handle
-  // isn't recreated on every render.
+  // Expose `startEditing` so the parent can trigger edits from anywhere.
   useImperativeHandle(ref, () => ({ startEditing }), [startEditing]);
 
   function commit() {
-    // Always commit, including the empty string — clearing the label
-    // reveals the parent's default glyph again.
+    // Committing the empty string reveals the parent's default glyph.
     onCommit(draft.trim());
     setIsEditing(false);
   }
@@ -116,16 +89,9 @@ export const VertexLabelEditor = forwardRef<
     );
   }
 
-  // User has typed a custom label — show it. The type's default
-  // glyph is intentionally hidden in this state; clearing the label
-  // reveals the glyph again.
-  //
-  // Labels are routed through `renderLabel`, which KaTeX-renders
-  // any `$...$` / `$$...$$` content and otherwise returns plain text
-  // (HTML-escaped). `renderLabel` is XSS-safe — see its doc comment
-  // for the trust / fallback rules. We use `dangerouslySetInnerHTML`
-  // here because KaTeX output is HTML, not text; the escape happens
-  // upstream.
+  // User has a custom label — render it. `renderLabel` is XSS-safe (plain text
+  // is escaped; LaTeX uses `trust: false`); we use `dangerouslySetInnerHTML`
+  // only because KaTeX output is HTML.
   if (value) {
     const rendered = renderLabel(value);
     return (
@@ -136,11 +102,7 @@ export const VertexLabelEditor = forwardRef<
     );
   }
 
-  // No user label — show the type's default glyph (e.g. the And
-  // gate's SVG Λ) so the body has something inside. `h-full w-full`
-  // on the SVG lets it fill the body box uniformly regardless of
-  // the type's `size` or label length.
-  // Wrapped in a span so the double-click target matches the
-  // label-rendered path.
+  // No user label — show the type's default glyph. Wrapped in a span so the
+  // double-click target matches the label-rendered path.
   return <span onDoubleClick={startEditing}>{glyph}</span>;
 });

@@ -1,10 +1,7 @@
 // src/lib/graph/vertex-types.ts
 //
-// All visual information on vertex types, which corresponds to
-// different tensors nodes
-// It is consumed by the vertex renderer (VertexNode),
-// add-vertex side menu (VertexTypeMenu), and vertex property panel 
-// (VertexPropertyPanel)
+// Visual metadata for each vertex type (tensor node). Consumed by the vertex
+// renderer (VertexNode), add-vertex menu (VertexTypeMenu), and property panel.
 
 import { createElement, type ReactNode } from "react";
 import type { VertexType } from "./types";
@@ -12,21 +9,14 @@ import { AndGateGlyph } from "@/components/graph-editor/VertexGlyphs";
 
 type VertexShape = "circle" | "square" | "triangle";
 
-// `true` for vertex types that are asymmetric, false for symmetric
-// ATM there are only two assymmetric tensor, W and AND
+// True for asymmetric vertex types — currently just W and And gate.
 export function isDirectionalVertex(vertexType: VertexType): boolean {
   return VERTEX_TYPE_MAP[vertexType]?.directional === true;
 }
 
-// Vertex types whose label is interpreted as a *phase expression*
-// rather than free-form text. For Z/X spiders and Z/X boxes the
-// label-as-phase convention applies (see `AGENTS.md` §"Label as
-// phase"); for H / W / AND / empty the label is decoration only.
-//
-// This is the single source of truth for "should I parse this label
-// as a phase?" — the property panel live preview, the Rust compute
-// entry point, and any future test that needs the same predicate
-// all go through here.
+// True for vertex types whose label is parsed as a phase expression (Z/X
+// spiders and boxes; see `AGENTS.md` §"Label as phase") rather than free text.
+// Single source of truth for "parse this label as a phase?".
 export function isSpiderType(vertexType: VertexType): boolean {
   return (
     vertexType === "z" ||
@@ -36,25 +26,18 @@ export function isSpiderType(vertexType: VertexType): boolean {
   );
 }
 
-// Boundary vertex types — `input` and `output`. These are NOT tensors:
-// they declare open legs of the resulting tensor (each leg dimension 2),
-// so n inputs + m outputs → 2^m × 2^n matrix after contraction; no
-// boundaries → scalar. They render as labeled circles (like `empty`)
-// with symmetric handles, and must have degree ≤ 1 (enforced at compute
-// time, not at edge-creation time — matches plan §5.6).
-//
-// Single source of truth for "is this a boundary marker?", paralleling
-// `isSpiderType` and `isDirectionalVertex`.
+// Boundary marker types (input/output) — not tensors; they declare open legs
+// (dimension 2 each), so n inputs + m outputs → 2^m × 2^n matrix after
+// contraction, no boundaries → scalar. Render as labeled circles with
+// symmetric handles; degree ≤ 1 enforced at compute time (plan §5.6). Single
+// source of truth for "is this a boundary marker?".
 export function isBoundaryVertex(vertexType: VertexType): boolean {
   return vertexType === "input" || vertexType === "output";
 }
 
-// Tailwind class for the corner radius matching each shape. The
-// "empty" string for triangles is intentional — triangles are
-// clipped to their silhouette, so a CSS border-radius on the box
-// wouldn't follow the visible edges anyway. `rounded-sm` is kept
-// for squares (instead of the `rounded-md` originally used in the
-// swatch) so the live editor renders the same shape it always has.
+// Tailwind corner-radius class per shape. Triangles return "" because they're
+// clip-pathed to their silhouette, so a CSS border-radius wouldn't follow the
+// visible edges.
 function shapeRadiusClass(shape: VertexShape): string {
   switch (shape) {
     case "circle":
@@ -67,53 +50,38 @@ function shapeRadiusClass(shape: VertexShape): string {
 }
 
 // Base shape metadata declared inline per type in `VERTEX_TYPES`.
-// `radiusClass` and `isTriangle` are derived from `shape` so they
-// can't drift between the entry and the consumers — see the
-// `enrich` step below.
+// `radiusClass` / `isTriangle` are derived from `shape` via `enrich` so they
+// can't drift from the entry.
 type VertexTypeMetaBase = {
   type: VertexType;
-  // Label is also the phase of the vertex
+  // Also the vertex's phase (for spider types).
   label: string;
 
   shape: VertexShape;
-  // control the size, which is also used to determine anchors
+  // Body size; also determines handle anchor positions.
   size: number;
 
-  // Tailwind classes applied to the shape body (fill + text + border color).
+  // Tailwind classes for the shape body (fill + text + border color).
   className: string;
 
-  // Default text content for the vertex body, used as the initial
-  // `VertexData.label` when a vertex of this type is created. The user
-  // can override this by typing a custom label.
+  // Initial `VertexData.label` for a newly created vertex of this type.
   defaultText: string,
 
-  // Optional default visual glyph (e.g. an SVG) shown when the vertex
-  // label is empty. Used for types whose "default" interior isn't a
-  // font character (the And gate's Λ used to be — now an SVG, see
-  // VertexGlyphs.tsx). Glyphs render in addition to (not instead of)
-  // the type's color/shape, so they automatically pick up the
-  // `className` text color via `currentColor`.
+  // Optional glyph (SVG) shown when the label is empty. Renders on top of
+  // color/shape and inherits `className`'s text color via `currentColor`.
   glyph?: ReactNode,
 
-  // If true, the vertex has a directional structure with a single
-  // target edge at the top and multiple source edges spread across
-  // the bottom. Used by vertex types that are asymmetric in ZXW
-  // calculus — the W node ("copy", one input fan-out to many
-  // outputs) and the And gate. The renderer (VertexNode) and the
-  // edge component (StraightCenterEdge) both key off this flag;
-  // symmetric types leave it unset and behave as before (edges meet
-  // at the body center).
+  // True for asymmetric ZXW types (W node, And gate): one target at the top,
+  // multiple sources across the bottom. Renderer (VertexNode) and edge
+  // component (StraightCenterEdge) key off this; symmetric types leave it
+  // unset and route edges through the body center.
   directional?: boolean,
 };
 
 export type VertexTypeMeta = VertexTypeMetaBase & {
-  // Derived from `shape` at module load. Pre-computed so the live
-  // vertex and the type-menu swatch can never disagree on the
-  // rounding class.
+  // Derived from `shape` at module load so the vertex and menu swatch agree.
   radiusClass: string;
-  // Convenience boolean — replaces the
-  // `meta.shape === "triangle"` checks scattered across
-  // VertexNode / VertexSwatch.
+  // Convenience boolean replacing scattered `meta.shape === "triangle"` checks.
   isTriangle: boolean;
 };
 
@@ -146,10 +114,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     defaultText: ""
   },
   {
-    // Boundary marker: declares one open INPUT leg of the resulting
-    // tensor. Not a tensor itself — see `isBoundaryVertex`. Rendered
-    // as a labeled blue-dotted circle so it reads as "wire entering
-    // the circuit" at a glance.
+    // Boundary marker: one open INPUT leg (see `isBoundaryVertex`).
     type: "input",
     label: "input",
     shape: "circle",
@@ -158,9 +123,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     defaultText: ""
   },
   {
-    // Boundary marker: declares one open OUTPUT leg. Same shape as
-    // input; green border distinguishes it. Both must have degree ≤ 1
-    // (validated at compute time).
+    // Boundary marker: one open OUTPUT leg. Same shape as input; green border distinguishes it.
     type: "output",
     label: "output",
     shape: "circle",
@@ -191,10 +154,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     size: 5,
     className: "bg-slate-900 text-white pt-3 text-[10px]",
     defaultText: "",
-    // W is the "copy" generator: one input (top) fans out to many
-    // outputs (bottom). Renderer places one target handle at the top
-    // and N source handles across the bottom; edges route
-    // accordingly (see StraightCenterEdge).
+    // W is the "copy" generator: one input (top) fans out to many outputs (bottom).
     directional: true,
   },
   {
@@ -212,14 +172,9 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     size: 4,
     className: "bg-white text-slate-900 border-grey-900 border-2 text-sm",
     defaultText: "",
-    // The And gate's interior is a logical-AND shape, drawn as an
-    // SVG (see VertexGlyphs.tsx) rather than the Λ font glyph. The
-    // font character is missing or visually inconsistent on systems
-    // without a font that ships the Greek block, so the gate used
-    // to render differently across machines.
+    // AND interior is drawn as an SVG (VertexGlyphs.tsx), not a font glyph.
     glyph: createElement(AndGateGlyph),
-    // And gate is directional like W: one input at the top, many
-    // outputs at the bottom.
+    // Directional like W: one input at the top, many outputs at the bottom.
     directional: true,
   },
 ];
@@ -234,8 +189,7 @@ function enrich(base: VertexTypeMetaBase): VertexTypeMeta {
 
 export const VERTEX_TYPES: VertexTypeMeta[] = RAW_VERTEX_TYPES.map(enrich);
 
-// Maps from type to typemeta (which is type info).
-// TOUSE:
+// Lookup from vertex type to its metadata.
 export const VERTEX_TYPE_MAP: Record<VertexType, VertexTypeMeta> =
   Object.fromEntries(VERTEX_TYPES.map((meta) => [meta.type, meta])) as Record<
     VertexType,

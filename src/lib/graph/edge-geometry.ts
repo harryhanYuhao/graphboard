@@ -1,20 +1,18 @@
 // src/lib/graph/edge-geometry.ts
 //
-// Pure geometry for `StraightCenterEdge`. The endpoint computation is
-// the part worth covering under test (the renderer just draws the
-// path); keeping it out of the component makes the rotation math
-// unit-testable without standing up React Flow internals.
+// Pure geometry for `StraightCenterEdge`. Kept out of the component so the
+// rotation math is unit-testable without React Flow internals.
 
 import { isDirectionalVertex } from "./vertex-types";
 import { normalizeRotation } from "./serialization";
 import type { VertexType } from "./types";
 
-// Inputs to a single edge endpoint. Mirrors the fields the React Flow
-// `useInternalNode` hook exposes, plus our custom `rotation`.
+// Inputs to a single edge endpoint. Mirrors React Flow's `useInternalNode`,
+// plus our custom `rotation`.
 export type EndpointInput = {
   // Top-left of the node in absolute (flow-space) coordinates.
   positionAbsolute: { x: number; y: number };
-  // Measured node size; React Flow fills these in after layout.
+  // React Flow fills these in after layout.
   width: number;
   height: number;
   vertexType: VertexType | undefined;
@@ -22,35 +20,28 @@ export type EndpointInput = {
   rotation: number;
 };
 
-// Compute where an edge endpoint should sit on a node.
-//   - for Directional (W / And gate, where input and output are different)
-//     *target* anchor on the top edge, *source* anchor one-third of the
-//     way down the body (a visual offset so the fan-out of outgoing
-//     edges doesn't pile on top of incoming edges at the center).
-//   - Everything else (symmetric vertices, both roles) anchors to center.
+// Where an edge endpoint sits on a node. Directional types (W / And gate)
+// anchor *target* on the top edge and *source* one-third down the body (so the
+// outgoing fan-out doesn't pile on incoming edges at the center); everything
+// else anchors to center.
 export function getEdgeEndpoint(
   node: EndpointInput,
   role: "source" | "target",
 ): { x: number; y: number } {
   const { positionAbsolute, width, height, vertexType } = node;
-  // Normalize at the boundary: a non-finite rotation (NaN, ±Infinity)
-  // would otherwise propagate through `Math.cos`/`Math.sin` and produce
-  // a `{x: NaN, y: NaN}` endpoint. `normalizeRotation` maps those to 0
-  // (and wraps any real value to [0, 360)), so the fast path below is
-  // also the recovery path for degenerate input.
+  // Normalize at the boundary: a non-finite rotation would propagate through
+  // sin/cos and yield NaN endpoints; normalizeRotation maps it to 0.
   const rotation = normalizeRotation(node.rotation);
   const isDirectional = vertexType
     ? isDirectionalVertex(vertexType)
     : false;
 
-  // Node center — the pivot for the CSS rotation.
+  // Node center — the CSS rotation pivot.
   const cx = positionAbsolute.x + width / 2;
   const cy = positionAbsolute.y + height / 2;
 
-  // Local offset of the un-rotated endpoint from the node center.
-  //   - directional target → top edge,      offset (0, -height/2)
-  //   - directional source → 1/3 down body, offset (0, +height/3)
-  //   - everything else    → center,        offset (0, 0)
+  // Local offset from center (un-rotated): directional target → (0, -height/2),
+  // directional source → (0, +height/3), everything else → (0, 0).
   const localX = 0;
 
   let localY = 0;

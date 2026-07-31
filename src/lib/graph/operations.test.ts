@@ -1,9 +1,5 @@
-// src/lib/graph/operations.test.ts
-//
-// Pure-function tests for the graph mutation helpers. These functions are
-// the canonical place to do graph-theoretic work (create, delete, copy,
-// paste, selection bookkeeping) — every consumer goes through them, so
-// they get the highest leverage per test written.
+// Graph mutation helpers (create, delete, copy, paste, selection). Every
+// consumer goes through them, so they get high leverage per test.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -47,14 +43,10 @@ describe("createGraphEdge", () => {
     expect(edge.target).toBe("b");
     expect(edge.type).toBe(EDGE_TYPES.straightCenter);
     expect(edge.id).toBeTruthy();
-    // Source side is always the bottom slot (HANDLE_IDS.centerSource)
-    // — the side edges leave from, regardless of vertex type.
+    // Source is always the bottom slot (centerSource), regardless of type.
     expect(edge.sourceHandle).toBe(HANDLE_IDS.centerSource);
-    // Without a node list we can't tell if the target is directional, so
-    // we default to the non-directional target handle (centerTarget) —
-    // matching sourceHandle's unconditional default. (Previously this
-    // was `undefined`, which silently became HANDLE_IDS.top on save/load
-    // for a directional target via the serializer's fallback.)
+    // Without a node list we can't tell if the target is directional, so the
+    // target defaults to the non-directional handle (centerTarget).
     expect(edge.targetHandle).toBe(HANDLE_IDS.centerTarget);
   });
 
@@ -240,11 +232,9 @@ describe("selectAllElements / clearAllSelections", () => {
 
 // ---- computeVertexClick ---------------------------------------------------
 //
-// The click dispatcher. Six mutually-exclusive cases; the store
-// integration tests cover the happy paths, but the per-case unit tests
-// below nail down the edge behavior (no-op on already-pending modifier
-// click, empty fan-out, selection cleared on commit, etc.) that the
-// store would otherwise only exercise end-to-end.
+// The click dispatcher's six mutually-exclusive cases. Store tests cover the
+// happy paths; these nail the edge behavior (no-op on pending modifier click,
+// empty fan-out, selection cleared on commit) the store only exercises end-to-end.
 
 describe("computeVertexClick", () => {
   const baseNodes = (): VertexNode[] => [
@@ -265,9 +255,7 @@ describe("computeVertexClick", () => {
     });
 
     it("returns null when the vertex is already pending (no-op)", () => {
-      // Modifier-click is for adding, not removing. Removing is the
-      // plain-click case. A no-op here keeps the keyboard/mouse
-      // gesture set consistent: only the un-modified click toggles.
+      // Modifier-click adds; only the un-modified click toggles/removes.
       const result = computeVertexClick({
         vertexId: "a",
         modifiers: { modifier: true, shift: false },
@@ -327,8 +315,7 @@ describe("computeVertexClick", () => {
     });
 
     it("shift click falls through to fan-out instead of toggling", () => {
-      // Shift+click on a pending vertex must still produce edges —
-      // otherwise shift would be a toggle-removal gesture too.
+      // Shift on a pending vertex must still fan out, not toggle-remove.
       const result = computeVertexClick({
         vertexId: "a",
         modifiers: { modifier: false, shift: true },
@@ -391,10 +378,8 @@ describe("computeVertexClick", () => {
     });
 
     it("still resets state when the fan-out yields no new edges", () => {
-      // Existing edges a→c and b→c mean the fan-out produces nothing
-      // new, but the plain-click gesture is still a commit-and-reset,
-      // so pending sources and the selection get cleared even though
-      // the edge list is unchanged.
+      // Existing a→c and b→c mean nothing new is added, but plain-click is
+      // still a commit-and-reset: pending sources and selection clear.
       const result = computeVertexClick({
         vertexId: "c",
         modifiers: { modifier: false, shift: false },
@@ -414,8 +399,7 @@ describe("computeVertexClick", () => {
     });
 
     it("skips duplicate pairs but still emits any non-duplicate ones", () => {
-      // a→c already exists; b→c is new. The patch should add only
-      // b→c, not duplicate a→c.
+      // a→c already exists; b→c is new → only b→c is added.
       const result = computeVertexClick({
         vertexId: "c",
         modifiers: { modifier: false, shift: false },

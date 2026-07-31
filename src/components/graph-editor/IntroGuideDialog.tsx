@@ -1,19 +1,10 @@
 // src/components/graph-editor/IntroGuideDialog.tsx
 //
-// First-run onboarding stepper. Auto-opens once per browser (the open gate
-// lives in the store's `hydrate()`, keyed off `graph-board-seen-intro`); can
-// be reopened from the Help dialog's "Show intro guide" button.
-//
-// Mirrors the visual + a11y shape of `KeyboardShortcutsDialog` so the two
-// feel like siblings:
-//   - backdrop click closes
-//   - Escape closes (with stopPropagation so the global shortcuts hook
-//     doesn't also see it)
-//   - the primary button is auto-focused on open
-//
-// This is a pure/presentational component — it never touches localStorage.
-// The store stamps the "seen" flag at open time, so any close path (Esc,
-// backdrop, the buttons) already counts as "seen".
+// First-run onboarding stepper. Auto-opens once per browser (gate in the
+// store's `hydrate()`, keyed off `graph-board-seen-intro`); reopenable from
+// Help. Sibling shape to `KeyboardShortcutsDialog` (backdrop/Escape close,
+// primary button auto-focused). Pure/presentational — the store owns the
+// "seen" flag, stamped at open so any close path counts.
 
 "use client";
 
@@ -85,8 +76,7 @@ function buildSteps(mod: string): IntroStep[] {
   ];
 }
 
-// Inline <kbd> chip styled to match the existing dialogs (they inline the
-// same classes). Kept as a local helper so the step bodies read cleanly.
+// Inline <kbd> chip matching the other dialogs; local helper keeps step bodies clean.
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
     <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
@@ -131,9 +121,8 @@ export function IntroGuideDialog({ isOpen, onClose }: IntroGuideDialogProps) {
         >
           <X size={20} />
         </button>
-        {/* Mounting the stepper fresh on every open means its `useState(0)`
-            initializer handles the reset — no effect-driven setState, which
-            the lint rule (and React's render model) frown on. */}
+        {/* Remounting the stepper on open lets its `useState(0)` initializer
+            handle the reset — no effect-driven setState. */}
         <IntroStepper key="intro-stepper" onClose={onClose} />
       </div>
     </div>
@@ -148,9 +137,7 @@ function IntroStepper({ onClose }: { onClose: () => void }) {
   const stepCount = steps.length;
   const isLast = step === stepCount - 1;
 
-  // Focus the primary button on mount so screen readers land somewhere
-  // sensible and Esc is one keypress away. Focusing an external DOM node is
-  // exactly what effects are for (no setState here).
+  // Focus the primary button on mount so Esc is one keypress away.
   useEffect(() => {
     nextRef.current?.focus();
   }, []);

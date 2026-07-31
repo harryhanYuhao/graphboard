@@ -1,19 +1,9 @@
 // src/components/graph-editor/VertexPropertyPanel.tsx
 //
-// Floating popover shown when exactly one vertex is selected. Lets the user
-// change the vertex's type (ZXW generator), edit its label, and adjust its
-// rotation without needing to double-click the vertex body.
-//
-// Positioning: docked to the right edge of the screen (top-right, below
-// the toolbar). Docking (rather than anchoring next to the selected
-// vertex) keeps the panel from occluding other vertices in the canvas —
-// the cost is that it now overlaps the right strip of the canvas, but
-// that strip is out of the way of typical vertex placement.
-//
-// Auto-dismiss: when the selection count drops to 0 or grows past 1
-// (multi-select, box-select, deselect, deletion), the component returns
-// `null`. React Flow's own selection handlers (e.g. pane click clears
-// selection, marquee selects many) drive that for free.
+// Popover shown when exactly one vertex is selected — edit type, label, and
+// rotation without double-clicking the body. Docked top-right below the
+// toolbar so it doesn't occlude placed vertices. Auto-dismisses (returns
+// null) when selection count leaves 1.
 
 "use client";
 
@@ -55,22 +45,16 @@ export function VertexPropertyPanel() {
     return selected.length === 1 ? selected[0] : null;
   }, [nodes]);
 
-  // Local drafts so we don't push every keystroke / slider tick into
-  // the store (which would clutter the undo stack). Each draft tracks
-  // the source value + the selected vertex's id, so a switch to a
-  // different vertex — even one with the same label / rotation —
-  // resets the draft.
+  // Local drafts avoid pushing every keystroke/tick into the store (which
+  // would clutter the undo stack). `trackKey` is the selected vertex id, so
+  // switching vertices resets each draft.
   const [labelDraft, setLabelDraft, labelDidReset] = useTrackedDraft({
     source: selectedVertex?.data.label ?? "",
     trackKey: selectedVertex?.id ?? null,
   });
 
-  // True for the duration of a slider drag, so the drift check below
-  // doesn't reset the draft on every tick. The store IS being updated
-  // on every tick (for live preview) — the draft is too — so resetting
-  // it would be a no-op write but it would also force a `return null`
-  // on this render and cause a brief mount/unmount flicker of the
-  // panel. State (not a ref) because the hook reads it during render.
+  // True during a slider drag so the drift check below doesn't reset the
+  // draft on every tick (which would also cause a one-frame panel flicker).
   const [isDraggingRotationSlider, setIsDraggingRotationSlider] =
     useState(false);
 
@@ -80,9 +64,7 @@ export function VertexPropertyPanel() {
     skipDriftCheck: isDraggingRotationSlider,
   });
 
-  // Order is meaningful only for boundary vertices (input / output);
-  // the section below renders for them alone, so this draft is only
-  // interacted with there.
+  // Order is only meaningful for boundary (input/output) vertices.
   const [orderDraft, setOrderDraft, orderDidReset] = useTrackedDraft({
     source: selectedVertex?.data.order ?? 0,
     trackKey: selectedVertex?.id ?? null,
@@ -90,9 +72,8 @@ export function VertexPropertyPanel() {
 
   if (!selectedVertex) return null;
 
-  // Either draft just queued a reset this render — bail so the panel
-  // doesn't flash stale data for one frame before the reset applies
-  // on the next render.
+  // A draft just queued a reset this render — bail to avoid flashing stale
+  // data for one frame before the reset applies.
   if (labelDidReset || rotationDidReset || orderDidReset) return null;
 
   const commitLabel = () => {
@@ -108,11 +89,8 @@ export function VertexPropertyPanel() {
     }
   };
 
-  // Commit an order change. `reorderBoundaryVertex` re-stamps the whole
-  // group sequentially (0..n-1), so the committed value lands exactly on
-  // the clamped target; we mirror it back into the draft so the input
-  // shows the canonical post-reorder value rather than an out-of-range
-  // number the user may have typed.
+  // `updateVertexOrder` re-stamps the whole boundary group sequentially, so
+  // the committed value lands on the clamped target.
   const commitOrder = (value: number) => {
     if (!Number.isFinite(value)) {
       setOrderDraft(selectedVertex.data.order ?? 0);
@@ -124,11 +102,9 @@ export function VertexPropertyPanel() {
     }
   };
 
-  // Commit a rotation value to the store and canonicalize the local
-  // draft to the normalized form (e.g. user typed 720 → input shows 0
-  // after commit, canvas stays at 0°). The value is passed in rather
-  // than read from `rotationDraft` to dodge stale-closure hazards
-  // when this is called from a slider onChange that just set the draft.
+  // Commit rotation and normalize the draft (e.g. 720 → 0). The value is
+  // passed in rather than read from `rotationDraft` to avoid stale-closure
+  // hazards when called from a slider onChange that just set the draft.
   const commitRotation = (value: number) => {
     if (!Number.isFinite(value)) {
       setRotationDraft(selectedVertex.rotation);
@@ -155,12 +131,9 @@ export function VertexPropertyPanel() {
 
   return (
     <div
-      // Docked to the right edge, top-aligned below the toolbar.
-      // `right-4 top-20` lines up roughly with the toolbar's vertical
-      // position and leaves a 16px gap from the screen edge.
+      // Docked top-right below the toolbar (defensive stopPropagation keeps
+      // React Flow from treating panel interaction as pane input).
       className="pointer-events-auto absolute right-4 top-20 z-20"
-      // Stop the panel from being treated as part of the React Flow
-      // surface — it's an absolute-positioned sibling, but defensive.
       onMouseDown={(event) => event.stopPropagation()}
     >
       <div className="w-60 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
@@ -195,11 +168,8 @@ export function VertexPropertyPanel() {
           </div>
         </div>
 
-        {/* Order — shown only for boundary vertices (input / output).
-            0-indexed position within its own type group; determines the
-            final axis order of the contracted tensor. Changing it applies
-            "cut the queue" reorder semantics (the store re-stamps the
-            whole group sequentially). */}
+        {/* Order (boundary vertices only): 0-indexed position within the type
+            group, determining the contracted tensor's final axis order. */}
         {isBoundaryVertex(selectedVertex.data.vertexType) && (
           <div className="mb-3">
             <label className="mb-1 block text-xs text-slate-600">Order</label>
@@ -227,9 +197,7 @@ export function VertexPropertyPanel() {
           </div>
         )}
 
-        {/* Label input — commits on blur / Enter, reverts on Escape.
-            Mirrors the double-click-to-edit behavior already inside
-            VertexNode. */}
+        {/* Label input — commits on blur/Enter, reverts on Escape. */}
         <div>
           <label className="mb-1 block text-xs text-slate-600">Label</label>
           <input
@@ -251,23 +219,18 @@ export function VertexPropertyPanel() {
             className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
           />
 
-          {/* Live preview — shows how the label renders (KaTeX for
-              `$...$` / `$$...$$`, plain text otherwise) and, for spider
-              types where the label is interpreted as a phase
-              expression, the parsed value or error. Driven off the
-              draft so the user sees feedback as they type, before
-              commit. */}
+          {/* Live preview: how the label renders (KaTeX or plain text), and
+              the parsed phase value/error for spider types. Driven off the
+              draft so feedback shows as the user types. */}
           <LabelPreview
             label={labelDraft}
             vertexType={selectedVertex.data.vertexType}
           />
         </div>
 
-        {/* Rotation — number input (precise) + slider (gestural) + reset.
-            Stored in the view slice, not the graph slice (see types.ts).
-            Slider drag is wrapped in a pause/resume so the many
-            intermediate commits during a drag collapse into one undo
-            step — same trick the canvas uses for node dragging. */}
+        {/* Rotation: precise number input + gestural slider + reset. Stored in
+            the view slice (not graph). Slider drag is wrapped in pause/resume
+            so intermediate commits collapse into one undo step. */}
         <div className="mt-3 border-t border-slate-100 pt-3">
           <div className="mb-1 flex items-center justify-between">
             <label className="block text-xs text-slate-600">Rotation</label>
@@ -306,9 +269,8 @@ export function VertexPropertyPanel() {
             max={360}
             step={1}
             value={Number.isFinite(rotationDraft) ? rotationDraft : 0}
-            // Pointer capture keeps pointerup firing on the slider even
-            // if the cursor leaves the bounds mid-drag — without this
-            // a fast drag past the edge would leak a paused temporal.
+            // Pointer capture keeps pointerup firing on the slider even if the
+            // cursor leaves the bounds mid-drag (avoids leaking a paused undo).
             onPointerDown={(event) => {
               event.currentTarget.setPointerCapture(event.pointerId);
               setIsDraggingRotationSlider(true);
@@ -333,22 +295,9 @@ export function VertexPropertyPanel() {
 }
 
 // ---- Live label preview -----------------------------------------------------
-//
-// Two stacked hints below the label input:
-//
-//   - "Renders": what the label will look like inside the vertex body
-//     (KaTeX for `$...$` / `$$...$$`, plain text otherwise). Lets the
-//     user see their LaTeX take shape as they type.
-//
-//   - "Phase" (spider types only): the parsed value of the label as
-//     a phase expression, in radians plus a π multiple. Errors get a
-//     red message — the compute entry point (Phase 4) will silently
-//     fall back to phase 0 in this case, but surfacing the error here
-//     gives the user a chance to fix it before they hit Compute.
-//
-// The preview is hidden when both (a) the label is empty and (b) the
-// vertex type isn't a spider — for empty labels on H / W / AND /
-// empty there's nothing meaningful to show.
+// Two hints below the label input: "Renders" (how the label displays) and
+// "Phase" (spider types only: parsed phase value or error). Hidden when the
+// label is empty and the type isn't a spider.
 
 function LabelPreview({
   label,
@@ -358,8 +307,7 @@ function LabelPreview({
   vertexType: VertexType;
 }) {
   const isSpider = isSpiderType(vertexType);
-  // Re-render once the lazy-loaded KaTeX chunk resolves so a LaTeX
-  // preview that painted as escaped text upgrades to rendered math.
+  // Re-render once KaTeX loads so a LaTeX preview upgrades to rendered math.
   useKatexReady();
   if (label === "" && !isSpider) return null;
 
@@ -374,9 +322,7 @@ function LabelPreview({
         {label === "" ? (
           <span className="italic text-slate-400">empty</span>
         ) : (
-          // `renderLabel` is XSS-safe — plain text path is
-          // HTML-escaped, and the KaTeX path uses `trust: false` so
-          // user LaTeX can't smuggle links into the editor canvas.
+          // `renderLabel` is XSS-safe (escaped text; KaTeX `trust: false`).
           <span
             className="text-slate-900"
             dangerouslySetInnerHTML={{ __html: rendered.html }}
@@ -391,8 +337,7 @@ function LabelPreview({
 function PhaseHint({ label }: { label: string }) {
   const r = parsePhase(label);
   if (r.ok) {
-    // Empty label → parsePhase returns Ok(0). Show "0 rad" so the
-    // user knows an empty spider is identity, not undefined.
+    // Empty label parses as Ok(0); show it so users see identity, not undefined.
     return (
       <div className="mt-1 flex items-baseline gap-2 border-t border-slate-100 pt-1">
         <span className="w-12 shrink-0 text-[10px] uppercase tracking-wide text-slate-400">
@@ -419,12 +364,9 @@ function PhaseHint({ label }: { label: string }) {
   );
 }
 
-// Express `rad` as a multiple of π with up to 4 decimal places.
-// Researchers think in multiples of π; showing both rad and π
-// avoids the mental gymnastics of converting 3.1416 back to π.
+// Express `rad` as a multiple of π (researchers think in π multiples).
 function formatPiMultiple(rad: number): string {
   const ratio = rad / Math.PI;
-  // `toFixed(4)` is enough resolution for typical phase inputs;
-  // a researcher typing `0.123456789` sees it all the way through.
+  // toFixed(4) is enough resolution for typical phase inputs.
   return ratio.toFixed(4);
 }

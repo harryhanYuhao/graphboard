@@ -48,20 +48,11 @@ export async function saveTextFileWithPicker(params: {
   URL.revokeObjectURL(url);
 }
 
-// Open a text file via a native picker and read its contents. Returns the
-// file contents as a string, or `null` if the user cancels.
-//
-// Strategy:
-//   1. Prefer the File System Access API (`showOpenFilePicker`) when
-//      available — gives a real OS file dialog without a transient DOM
-//      element.
-//   2. Fall back to a hidden `<input type="file">` driven by an in-memory
-//      click. Cancel detection on the fallback path is via a short
-//      window-focus listener — when the user dismisses the picker without
-//      selecting, focus returns to the window without a `change` event.
-//
-// Both paths yield the same string-or-null contract; callers don't have
-// to care which API fired.
+// Open a text file via a native picker and return its contents, or
+// `null` if the user cancels. Prefers the File System Access API
+// (`showOpenFilePicker`); falls back to a hidden `<input type="file">`
+// whose cancel is detected via a window-focus listener (focus returns
+// without a `change` event). Both paths share the string-or-null contract.
 export async function openTextFileWithPicker(params: {
   accept?: string;
   description?: string;
@@ -83,22 +74,16 @@ export async function openTextFileWithPicker(params: {
         types: [
           {
             description,
-            // The FSA API wants `Record<MIME, extension[]>`, but our
-            // `accept` param is the freeform comma-separated string the
-            // `<input accept>` fallback consumes (e.g.
-            // `"application/json,.json"` or `"text/csv"`). Parse it the
-            // same way for both paths so a caller passing a non-default
-            // accept doesn't get a hardcoded JSON picker on the native
-            // path and the right one on the fallback.
+            // Parse the freeform `accept` for the FSA shape so a
+            // non-default caller isn't forced onto a hardcoded JSON
+            // picker on the native path.
             accept: parseAcceptForFsa(accept),
           },
         ],
       });
     } catch (err) {
-      // The File System Access API rejects with AbortError when the user
-      // cancels the picker. The fallback path resolves to null in that
-      // case — match it here so callers see a uniform string-or-null
-      // contract regardless of which API fired.
+      // FSA rejects with AbortError on cancel — match the fallback's
+      // null contract.
       if (err instanceof DOMException && err.name === "AbortError") {
         return null;
       }
@@ -135,9 +120,8 @@ export async function openTextFileWithPicker(params: {
       reader.readAsText(file);
     });
 
-    // Cancel detection: when the user dismisses the picker without
-    // selecting, focus returns to the window but no `change` fires.
-    // We give the picker a beat to either fire change or settle on cancel.
+    // Cancel detection: dismissal returns focus without a `change`; give
+    // it a beat, then settle on cancel.
     const onFocus = () => {
       window.removeEventListener("focus", onFocus);
       window.setTimeout(() => settle(null), 300);
@@ -151,27 +135,17 @@ export async function openTextFileWithPicker(params: {
 }
 
 /**
- * Parse the freeform `accept` string (the same format `<input accept>`
- * takes — comma-separated MIME types and/or extensions, e.g.
- * `"application/json,.json"` or `"text/csv"` or `".png,.jpg"`) into the
+ * Parse the freeform `accept` string (comma-separated MIME types and/or
+ * extensions, e.g. `"application/json,.json"`, `".png,.jpg"`) into the
  * `Record<MIME, extension[]>` shape the File System Access API wants.
  *
- * Heuristic: tokens starting with `.` are extensions; others are MIME
- * types. Every extension is associated with every MIME present (so
- * `"application/json,.json"` → `{ "application/json": [".json"] }` and
- * `"text/csv,.json"` → `{ "text/csv": [".json"] }`). When no MIME is
- * present (extension-only input like `".png,.jpg"`), extensions land
- * under the catch-all `application/octet-stream` so the picker still
- * filters on them — matching the permissive behavior of the `<input>`
- * fallback, which treats extensions alone as valid. MIME types with no
- * extension get a `[".*"]` wildcard so the picker accepts the type
- * broadly.
- *
- * Used only by the native `showOpenFilePicker` path; the `<input>` fallback
- * consumes the raw `accept` string directly. This isn't a perfect
- * translation (the FSA API's model is MIME→extensions, the `<input>`
- * model is an OR-list), but it preserves caller intent for the common
- * cases and keeps the two paths from diverging on a hardcoded JSON.
+ * Tokens starting with `.` are extensions, others are MIMEs. Extensions
+ * are associated with every declared MIME; extension-only input lands
+ * under the catch-all `application/octet-stream`; MIMEs with no extension
+ * get `[".*"]`. Used only by the native path; the `<input>` fallback
+ * consumes the raw `accept` string. Not a perfect translation (FSA is
+ * MIME->extensions, `<input>` is an OR-list) but preserves caller intent
+ * for the common cases.
  */
 function parseAcceptForFsa(accept: string): Record<string, string[]> {
   const tokens = accept
@@ -193,10 +167,7 @@ function parseAcceptForFsa(accept: string): Record<string, string[]> {
       : { "application/octet-stream": [".*"] };
   }
 
-  // Associate every extension with every declared MIME (an over-approx,
-  // but the OR semantics of `<input accept>` don't map cleanly to FSA's
-  // MIME→extension model, and this keeps the common single-MIME case
-  // correct).
+  // Associate every extension with every declared MIME.
   const result: Record<string, string[]> = {};
   for (const mime of mimes) {
     result[mime] = extensions.length > 0 ? [...extensions] : [".*"];

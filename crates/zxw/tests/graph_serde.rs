@@ -1,22 +1,15 @@
 // crates/zxw/tests/graph_serde.rs
 //
-// Round-trip test for the `GraphSlice` serde model. The Rust structs
-// in `src/graph.rs` must deserialize the exact JSON payload the
-// frontend's `projectDocument()` emits (see
-// `src/lib/graph/serialization.ts`): nested `data` wrapper,
-// camelCase fields, optional numeric handle indices. A regression in
-// any of those (e.g. dropping `#[serde(rename_all = "camelCase")]`,
-// flattening `data`, or making handles required) fails this test.
-//
-// The payload below mirrors what crosses the WASM boundary in Phase 5:
-// only `doc.graph`, never `doc.view`.
+// Round-trip test for the `GraphSlice` serde model. The Rust structs must
+// deserialize the exact JSON the frontend emits: nested `data` wrapper,
+// camelCase fields, optional handle indices. A regression in any of those
+// (dropping `rename_all`, flattening `data`, making handles required) fails.
 
 use zxw::{FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendGraphSlice, VertexType};
 
-/// Hand-written payload matching `projectDocument()` output exactly.
-/// Includes: nested `data`, every `vertexType` spelling, edges with and
-/// without handle indices (the absent-field case is meaningful —
-/// `None` on the Rust side, not `Some(0)`).
+/// Hand-written payload matching `projectDocument()` output: nested `data`,
+/// every `vertexType` spelling, edges with and without handle indices (the
+/// absent-field case deserializes to `None`, not `Some(0)`).
 const FRONTEND_PAYLOAD: &str = r#"{
   "nodes": [
     { "id": "z1",   "data": { "label": "\\pi/4", "vertexType": "z" } },
@@ -42,8 +35,7 @@ fn deserializes_frontend_payload_with_camel_case_and_nested_data() {
     assert_eq!(slice.nodes[0].data.label, "\\pi/4");
     assert_eq!(slice.nodes[0].data.vertex_type, VertexType::Z);
 
-    // Every vertex-type spelling round-trips through the lowercase
-    // serde rename.
+    // Every vertex-type spelling round-trips through the lowercase rename.
     let types: Vec<VertexType> = slice.nodes.iter().map(|n| n.data.vertex_type).collect();
     assert_eq!(
         types,
@@ -61,7 +53,7 @@ fn deserializes_frontend_payload_with_camel_case_and_nested_data() {
 #[test]
 fn absent_handle_fields_become_none_not_zero() {
     let slice: FrontendGraphSlice = serde_json::from_str(FRONTEND_PAYLOAD).expect("deserialize");
-    // e1 has no handle fields at all → both ends None.
+    // e1 has no handle fields → both ends None.
     let e1 = &slice.edges[0];
     assert_eq!(e1.id, "e1");
     assert_eq!(e1.source_handle, None);
@@ -75,9 +67,8 @@ fn absent_handle_fields_become_none_not_zero() {
 
 #[test]
 fn reserialize_round_trips_through_the_struct() {
-    // Deserialize → re-serialize → deserialize again, and check the
-    // second pass sees the same values. Catches asymmetric serde
-    // attributes (e.g. `serialize_with` without a matching `deserialize_with`).
+    // Deserialize → re-serialize → deserialize, checking the second pass
+    // sees the same values. Catches asymmetric serde attributes.
     let once: FrontendGraphSlice = serde_json::from_str(FRONTEND_PAYLOAD).unwrap();
     let json = serde_json::to_value(&once).unwrap();
     let twice: FrontendGraphSlice = serde_json::from_value(json).unwrap();
@@ -96,10 +87,9 @@ fn reserialize_round_trips_through_the_struct() {
 
 #[test]
 fn empty_edge_handles_omitted_when_none() {
-    // When we *re-serialize* an edge whose handles are None, the JSON
-    // should omit the fields (skip_serializing_if), matching the
-    // frontend's emitted shape. An edge that never had handles shouldn't
-    // sprout `"sourceHandle": null` on the way back out.
+    // Re-serializing an edge with None handles must omit the fields
+    // (skip_serializing_if), matching the frontend's shape — never
+    // `"sourceHandle": null`.
     let edge = FrontendGraphEdgeRecord {
         id: "x".into(),
         source: "s".into(),
@@ -120,8 +110,7 @@ fn empty_edge_handles_omitted_when_none() {
 
 #[test]
 fn struct_can_be_built_and_named_directly() {
-    // Sanity-check the field names compile against the public API —
-    // catches accidental renames a downstream caller would hit.
+    // Sanity-check field names compile against the public API.
     let _node = FrontendGraphNodeRecord {
         id: "n".into(),
         data: zxw::FrontendVertexData {
@@ -133,17 +122,11 @@ fn struct_can_be_built_and_named_directly() {
 }
 
 // ---- Negative cases: malformed input must fail loudly ---------------------
-//
-// These guard the WASM boundary. If serde silently accepts a payload the
-// frontend can't actually emit (or a stale schema from an old deploy),
-// the compute layer will run on garbage and produce nonsense tensors
-// that are very hard to debug. Better to refuse at deserialization.
 
 #[test]
 fn rejects_unknown_vertex_type() {
-    // The eight lowercase spellings are the only valid values. A typo
-    // or a future type ("t") must surface as a deserialization error,
-    // not deserialize to a default variant.
+    // Only the lowercase spellings are valid; an unknown type ("t") must
+    // error, not fall back to a default variant.
     let bad =
         r#"{ "nodes": [{ "id": "x", "data": { "label": "", "vertexType": "t" } }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
@@ -161,11 +144,8 @@ fn rejects_unknown_vertex_type() {
 
 #[test]
 fn rejects_snake_case_vertex_type_field() {
-    // The TS contract uses camelCase (`vertexType`), and serde's
-    // `rename_all` does NOT accept the original snake_case field name
-    // unless explicitly allowed. A payload carrying `vertex_type` must
-    // be rejected — otherwise a stale payload schema slips through and
-    // every node silently deserializes with an empty label.
+    // The wire contract is camelCase; snake_case `vertex_type` must be
+    // rejected (else a stale schema silently gives every node an empty label).
     let bad = r#"{ "nodes": [{ "id": "x", "data": { "label": "hi", "vertex_type": "z" } }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(
@@ -177,10 +157,8 @@ fn rejects_snake_case_vertex_type_field() {
 
 #[test]
 fn rejects_missing_data_wrapper() {
-    // The nested `data: { label, vertexType }` is load-bearing. A flat
-    // node `{ id, label, vertexType }` (the shape an earlier sketch
-    // proposed) must fail — without this check, a refactor that
-    // flattens `data` would silently lose every label.
+    // The nested `data` wrapper is load-bearing. A flat node must fail,
+    // else a refactor flattening `data` silently loses every label.
     let flat = r#"{ "nodes": [{ "id": "x", "label": "hi", "vertexType": "z" }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(flat);
     assert!(result.is_err(), "flat node (no `data`) must be rejected");
@@ -188,9 +166,7 @@ fn rejects_missing_data_wrapper() {
 
 #[test]
 fn rejects_node_missing_id() {
-    // `id` is required — it's the join key the contraction algorithm
-    // walks edges by. Missing it should fail at deserialize, not
-    // surface as a panic deep inside Phase 4's vertex lookup.
+    // `id` is required (the contraction algorithm's edge join key).
     let bad = r#"{ "nodes": [{ "data": { "label": "", "vertexType": "z" } }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(result.is_err(), "node without id must be rejected");
@@ -198,8 +174,7 @@ fn rejects_node_missing_id() {
 
 #[test]
 fn rejects_edge_missing_endpoints() {
-    // Edges must name both `source` and `target`. Missing either is a
-    // structural error the compute layer can't recover from.
+    // Edges must name both `source` and `target`.
     let no_target = r#"{ "nodes": [], "edges": [{ "id": "e", "source": "a" } ]}"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(no_target);
     assert!(result.is_err(), "edge without target must be rejected");
@@ -209,26 +184,23 @@ fn rejects_edge_missing_endpoints() {
 
 #[test]
 fn empty_graph_slice_round_trips() {
-    // The Phase 5 empty-graph path returns scalar 1 (plan §5.6). That
-    // starts here: deserializing `{ nodes: [], edges: [] }` must
-    // succeed and give empty (not null) vectors.
+    // `{ nodes: [], edges: [] }` deserializes to empty (not null) vectors
+    // and re-serializes to canonical compact form.
     let empty = r#"{ "nodes": [], "edges": [] }"#;
     let slice: FrontendGraphSlice =
         serde_json::from_str(empty).expect("empty graph must deserialize");
     assert!(slice.nodes.is_empty());
     assert!(slice.edges.is_empty());
 
-    // Re-serialize: should produce the canonical compact form.
+    // Canonical compact form on re-serialize.
     let back = serde_json::to_string(&slice).unwrap();
     assert_eq!(back, r#"{"nodes":[],"edges":[]}"#);
 }
 
 #[test]
 fn all_ten_vertex_types_round_trip() {
-    // One payload exercising every `VertexType` variant — the eight ZXW
-    // generators plus the two boundary markers (input/output). A
-    // regression in any one variant's rename surfaces here with a clear
-    // name.
+    // Every `VertexType` variant (8 generators + input/output) in one
+    // payload; a rename regression surfaces here with a clear name.
     let json = r#"{
       "nodes": [
         { "id": "n1", "data": { "label": "", "vertexType": "z" } },
@@ -266,9 +238,8 @@ fn all_ten_vertex_types_round_trip() {
 
 #[test]
 fn unicode_label_round_trips_intact() {
-    // Labels can carry LaTeX (which includes backslash, braces, π, ×,
-    // ÷, −, etc.). These must survive the JSON round-trip byte-for-byte
-    // so the compute layer sees the same string the parser does.
+    // LaTeX labels (backslash, braces, π, ×, ÷, −, …) survive the
+    // round-trip byte-for-byte so the parser sees the same string.
     let label = r#"$\pi \times 2 \div 4 - \alpha$"#;
     let json = format!(
         r#"{{"nodes":[{{"id":"x","data":{{"label":{lbl},"vertexType":"z"}}}}],"edges":[]}}"#,
@@ -280,10 +251,8 @@ fn unicode_label_round_trips_intact() {
 
 #[test]
 fn negative_and_large_handle_indices_deserialize() {
-    // Handle indices are `Option<u32>`. The frontend only emits 0/1
-    // today, but `u32` accepts the full unsigned range — and *rejects*
-    // negatives. Verify both sides of that contract: a 0/1 payload
-    // works, and a negative index is rejected (u32 won't parse "-1").
+    // Handles are `Option<u32>`: 0/1 works, negatives are rejected (u32
+    // won't parse "-1") at deserialize time.
     let valid = r#"{
         "nodes": [{"id":"a","data":{"label":"","vertexType":"z"}},{"id":"b","data":{"label":"","vertexType":"z"}}],
         "edges": [{"id":"e","source":"a","target":"b","sourceHandle":0,"targetHandle":1}]
@@ -304,11 +273,8 @@ fn negative_and_large_handle_indices_deserialize() {
 
 #[test]
 fn vertex_order_field_round_trips_and_defaults_to_none() {
-    // `order` is an optional boundary-ordering field. Three contract
-    // points: (a) present values deserialize; (b) absent values default
-    // to `None` (backward compat with pre-`order` documents); (c)
-    // `None` re-serializes with the field omitted entirely, so output
-    // stays byte-compatible with the frontend's payload shape.
+    // `order`: present values deserialize, absent defaults to `None`
+    // (back-compat), and `None` re-serializes with the field omitted.
     let json = r#"{
         "nodes": [
             {"id":"i0","data":{"label":"","vertexType":"input","order":0}},
@@ -320,10 +286,10 @@ fn vertex_order_field_round_trips_and_defaults_to_none() {
     let slice: FrontendGraphSlice = serde_json::from_str(json).unwrap();
     assert_eq!(slice.nodes[0].data.order, Some(0));
     assert_eq!(slice.nodes[1].data.order, Some(1));
-    // Non-boundary (and any node without the field) defaults to None.
+    // Non-boundary / field-less nodes default to None.
     assert_eq!(slice.nodes[2].data.order, None);
 
-    // Re-serializing a `None` order omits the key (skip_serializing_if).
+    // Re-serializing None omits the key (skip_serializing_if).
     let out = serde_json::to_string(&slice).unwrap();
     assert!(
         out.contains(r#""order":0"#),
@@ -334,7 +300,7 @@ fn vertex_order_field_round_trips_and_defaults_to_none() {
         "None order must be omitted, not null: {out}"
     );
 
-    // Absent field deserializes to None — old documents load unchanged.
+    // Absent field → None (old documents load unchanged).
     let legacy = r#"{
         "nodes": [{"id":"i","data":{"label":"","vertexType":"input"}}],
         "edges": []

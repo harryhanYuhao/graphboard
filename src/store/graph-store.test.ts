@@ -1,13 +1,6 @@
-// src/store/graph-store.test.ts
-//
-// Store-action tests. We don't mock the store; we hit it directly via
-// `useGraphStore.setState` / `useGraphStore.getState` and assert on the
-// resulting state shape. A `beforeEach` resets to a known baseline so
-// tests don't leak into each other.
-//
-// `localStorage` is provided by jsdom. The store's `hydrate` action
-// reads from it on first run; we never call `hydrate` in these tests so
-// the baseline is whatever we set explicitly.
+// Store-action tests, hitting the store directly via `setState` / `getState`.
+// `beforeEach` resets a known baseline so tests don't leak. localStorage comes
+// from jsdom; `hydrate` isn't called here, so the baseline is whatever we set.
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { useGraphStore } from "./graph-store";
@@ -28,8 +21,7 @@ function resetStore() {
     isHelpOpen: false,
     clipboard: null,
   });
-  // Clear the temporal (undo/redo) stack so past tests don't pollute
-  // future ones via undo snapshots.
+  // Clear the undo/redo stack so prior tests don't leak via snapshots.
   useGraphStore.temporal.getState().clear();
 }
 
@@ -207,10 +199,8 @@ describe("handleVertexClick (add-edge mode)", () => {
   });
 
   it("clicking the same vertex twice toggles pending sources (no self-loop)", () => {
-    // Plain click on `a` puts it in pending sources. A second plain
-    // click on `a` toggles it off — that's how the user cancels a
-    // single-vertex pending selection. Self-loops are filtered as
-    // duplicates if they ever do get committed via buildFanOut.
+    // Plain click toggles a pending vertex off (the cancel gesture for a
+    // single pending source). Self-loops are also filtered as duplicates.
     useGraphStore.getState().handleVertexClick("a", { modifier: false, shift: false });
     useGraphStore.getState().handleVertexClick("a", { modifier: false, shift: false });
     expect(useGraphStore.getState().pendingEdgeSources).toEqual([]);
@@ -341,8 +331,6 @@ describe("isStateEmpty", () => {
   });
 });
 
-// ---- New coverage: actions added since the original test file ----
-
 describe("setVertexType", () => {
   it.each<[EditorMode]>([["z"], ["x"], ["w"], ["h"]])(
     "updates selectedVertexType to '%s'",
@@ -455,7 +443,7 @@ describe("save / hydrate round-trip via localStorage", () => {
   });
 
   it("hydrate restores nodes, edges, title, and flips hasHydrated", () => {
-    // Seed localStorage directly so we don't depend on save() here.
+    // Seed localStorage directly so this doesn't depend on save().
     localStorage.setItem(
       "graph-board-document",
       JSON.stringify({
@@ -482,10 +470,8 @@ describe("save / hydrate round-trip via localStorage", () => {
   });
 
   it("hydrate into a non-empty graph bumps fitViewNonce so the view frames it", () => {
-    // A reload into a saved graph should auto-frame it exactly once. We
-    // check the store-side nonce (the view layer's fitView() runs in
-    // response to it). See the comment in `hydrate()` for the empty-graph
-    // counterpart and the reason we don't rely on `<ReactFlow fitView>`.
+    // A reload into a saved graph should auto-frame once; the view layer's
+    // fitView() runs in response to this nonce.
     localStorage.setItem(
       "graph-board-document",
       JSON.stringify({
@@ -502,18 +488,15 @@ describe("save / hydrate round-trip via localStorage", () => {
       }),
     );
 
-    // Reset the nonce to its initial value so the assertion isn't
-    // contaminated by a prior test's bump.
+    // Reset the nonce so a prior test's bump doesn't contaminate the assertion.
     useGraphStore.setState({ fitViewNonce: 0 });
     useGraphStore.getState().hydrate();
     expect(useGraphStore.getState().fitViewNonce).toBe(1);
   });
 
   it("hydrate into an empty graph leaves fitViewNonce at 0 (no stale queued fit)", () => {
-    // Regression guard: an empty canvas must NOT queue a fit. Otherwise the
-    // first vertex added later triggers xyflow's stale fitViewQueued and
-    // snaps the camera to it. Empty graph => nonce stays 0 => view stays at
-    // the default viewport (zoom 1).
+    // An empty canvas must NOT queue a fit, or the first vertex added later
+    // snaps the camera to it via xyflow's stale fitViewQueued.
     localStorage.setItem(
       "graph-board-document",
       JSON.stringify({
@@ -533,10 +516,7 @@ describe("save / hydrate round-trip via localStorage", () => {
   });
 
   it("save preserves the document's createdAt across repeated calls", () => {
-    // Regression guard: `save()` used to regenerate `createdAt` on
-    // every call, which clobbered the creation timestamp with "now"
-    // (and the autosave timer fired it on every selection toggle).
-    // The document's creation time must be stable.
+    // createdAt must be stable across autosave ticks, not regenerated each call.
     useGraphStore.setState({
       title: "Stable",
       createdAt: "2020-05-05T05:05:05.000Z",
@@ -548,7 +528,7 @@ describe("save / hydrate round-trip via localStorage", () => {
     const firstRaw = localStorage.getItem("graph-board-document")!;
     expect(JSON.parse(firstRaw).createdAt).toBe("2020-05-05T05:05:05.000Z");
 
-    // A second save (e.g. an autosave tick) must not change it.
+    // A second save must not change it.
     useGraphStore.getState().save();
     const secondRaw = localStorage.getItem("graph-board-document")!;
     expect(JSON.parse(secondRaw).createdAt).toBe("2020-05-05T05:05:05.000Z");
@@ -647,21 +627,18 @@ describe("drag gesture (onNodeDragStart/Stop)", () => {
       ],
       edges: [],
     });
-    // The setState above already pushed one undo entry — capture the
-    // baseline so we can assert the *delta*, not an absolute count.
+    // setState above pushed one undo entry; capture the baseline to assert the delta.
     const baseline = useGraphStore.temporal.getState().pastStates.length;
 
     useGraphStore.getState().onNodeDragStart();
-    // While the drag is active, applying visual changes should not
-    // land on the undo stack — they live in the future until stop.
+    // Visual changes during the drag must not land on the undo stack.
     useGraphStore
       .getState()
       .onNodesChange([{ id: "a", type: "position", position: { x: 100, y: 100 } }]);
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
 
     useGraphStore.getState().onNodeDragStop();
-    // Stop injects the pre-drag snapshot so undo restores the
-    // original positions.
+    // Stop injects the pre-drag snapshot so undo restores original positions.
     const pastAfter = useGraphStore.temporal.getState().pastStates;
     expect(pastAfter.length).toBe(baseline + 1);
     expect(pastAfter[pastAfter.length - 1].nodes.map((n) => n.position)).toEqual([

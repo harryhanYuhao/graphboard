@@ -1,15 +1,8 @@
-// src/lib/hooks/useCompute.ts
-//
-// Owns the full "compute tensor" lifecycle: kicking off the contraction
-// in the WASM worker, surfacing progress, and exposing the state the
-// result dialog consumes. Both the toolbar button and the Cmd/Ctrl+Enter
-// keyboard shortcut call `requestCompute`, so compute orchestration has
-// exactly one home — it lives outside the Zustand store on purpose,
-// because the store is reserved for graph state and a one-shot async
-// computation (plus its promise/progress state) doesn't belong there.
-//
-// The returned state feeds `<ComputeResultDialog>`, which is rendered by
-// `GraphEditor` alongside the other top-level dialogs.
+// Owns the "compute tensor" lifecycle: kicks off the contraction in the
+// WASM worker, surfaces progress, and exposes state for the result dialog.
+// Both the toolbar button and Cmd/Ctrl+Enter call `requestCompute`, so
+// orchestration lives here (not the Zustand store, which holds only graph
+// state).
 
 "use client";
 
@@ -27,11 +20,7 @@ export interface ComputeState {
   computePromise: Promise<TensorResult> | null;
   /** Progress updates from the contraction loop, or null while idle. */
   progress: { contracted: number; total: number } | null;
-  /**
-   * Monotonic counter bumped on each `requestCompute`. Used as the
-   * dialog's `key` so it remounts per run, resetting its internal
-   * ok/error state cleanly.
-   */
+  /** Bumped per `requestCompute`; used as the dialog `key` to reset its state per run. */
   computeSeq: number;
   /** Kick off a contraction and open the dialog. */
   requestCompute: () => void;
@@ -49,16 +38,12 @@ export function useCompute(): ComputeState {
     total: number;
   } | null>(null);
   const [computeSeq, setComputeSeq] = useState(0);
-  // Keep the AbortController in a ref so `closeCompute` can cancel via a
-  // callback that closes over the *current* controller, not a stale
-  // state capture.
+  // Ref so `closeCompute` aborts the current controller, not a stale capture.
   const abortRef = useRef<AbortController | null>(null);
 
   const requestCompute = useCallback(() => {
-    // Read a snapshot of the current graph from the store and project
-    // to the persisted `GraphSlice` shape the compute layer expects. We
-    // use `useGraphStore.getState()` rather than reactive reads because
-    // we want the state *at request time*, not on every change.
+    // Snapshot the graph at request time (getState, not reactive) and
+    // project to the `GraphSlice` shape the compute layer expects.
     const state = useGraphStore.getState();
     const doc = projectDocument({
       id: PERSISTED_IDS.localDocument,
@@ -84,7 +69,6 @@ export function useCompute(): ComputeState {
   }, []);
 
   const closeCompute = useCallback(() => {
-    // Soft-cancel any in-flight computation when the dialog closes.
     abortRef.current?.abort();
     abortRef.current = null;
     setComputeOpen(false);

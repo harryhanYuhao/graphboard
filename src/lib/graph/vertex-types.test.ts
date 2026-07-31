@@ -1,13 +1,6 @@
-// src/lib/graph/vertex-types.test.ts
-//
-// Vertex-types is the registry that both the renderer (`VertexNode`)
-// and the side menu (`VertexTypeMenu`) read from. Bugs here surface
-// in two places at once, so the invariants below guard the shape
-// the rest of the app relies on.
-//
-// The test asserts properties rather than literal snapshots so adding
-// a new vertex type doesn't require touching this file — only the
-// invariants need to keep holding.
+// The vertex-types registry is read by both the renderer and the side
+// menu, so bugs surface in two places. Properties (not snapshots) are
+// asserted so adding a type doesn't require touching this file.
 
 import { describe, expect, it } from "vitest";
 import {
@@ -21,10 +14,7 @@ import type { VertexType } from "./types";
 
 describe("VERTEX_TYPES registry", () => {
   it("covers every VertexType at least once", () => {
-    // If a new vertex type is added to the union in `types.ts` but
-    // forgotten in `VERTEX_TYPES`, the lookup map below will silently
-    // fall through to `undefined` and the renderer will draw a
-    // missing-glyph box. Fail loud instead.
+    // A union member missing from the registry would render a missing-glyph box.
     const allTypes: VertexType[] = [
       "z",
       "empty",
@@ -58,9 +48,8 @@ describe("VERTEX_TYPES registry", () => {
   });
 
   it("every entry has a derived radiusClass and isTriangle matching its shape", () => {
-    // These are derived in `enrich()` — if a shape is added without
-    // a corresponding case in `shapeRadiusClass`, the runtime will
-    // silently fall through and render a non-rounded vertex body.
+    // Derived in `enrich()`; a missing shape case would silently render a
+    // non-rounded body.
     for (const meta of VERTEX_TYPES) {
       expect(typeof meta.radiusClass).toBe("string");
       expect(meta.isTriangle).toBe(meta.shape === "triangle");
@@ -71,8 +60,7 @@ describe("VERTEX_TYPES registry", () => {
         expect(meta.radiusClass).toBe("rounded-sm");
       }
       if (meta.shape === "triangle") {
-        // The body is clipped to a polygon, so a CSS radius would be
-        // a no-op; the contract is the empty string.
+        // The body is clipped to a polygon, so a CSS radius is a no-op.
         expect(meta.radiusClass).toBe("");
       }
     }
@@ -80,8 +68,6 @@ describe("VERTEX_TYPES registry", () => {
 
   it("only the W node and And gate are directional", () => {
     // `directional` drives whether the renderer places a top handle.
-    // If a new symmetric type accidentally flips this flag, edges
-    // would route to a dot that doesn't exist on that vertex.
     const directionalTypes = VERTEX_TYPES.filter((m) => m.directional).map(
       (m) => m.type,
     );
@@ -110,11 +96,8 @@ describe("DEFAULT_VERTEX_TYPE", () => {
 });
 
 describe("isSpiderType", () => {
-  // The label-as-phase convention (see AGENTS.md) applies only to
-  // the four spider / box types. Adding a new vertex type without
-  // updating this predicate would silently mis-classify its label
-  // — the property panel would either show a phase hint where
-  // none makes sense, or hide it where it should appear.
+  // The label-as-phase convention applies only to spider/box types; a
+  // mis-classification would show or hide the phase hint wrongly.
 
   it.each<VertexType>(["z", "x", "zbox", "xbox"])(
     "is true for spider / box type '%s'",

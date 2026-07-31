@@ -1,25 +1,13 @@
-// src/lib/compute/worker.ts
-//
-// Web Worker that owns the WASM compute module. Runs in a dedicated
-// thread (off the main UI thread), lazy-loads the wasm on first
-// message, and services compute / cancel / version-check requests
-// from the main thread.
-//
-// A worker keeps the UI responsive during contraction and makes progress /
-// cancellation natural. See `doc/plans.md` §6.2.
-//
-// This file runs in a Worker context — no DOM, no React, no store. It
-// only talks to the main thread via `postMessage` / `onmessage`.
+// Web Worker owning the WASM compute module. Lazy-loads the wasm on
+// first message, services compute / cancel / version-check requests.
+// No DOM, React, or store here — only `postMessage` / `onmessage`.
 
 import type { WorkerRequest, WorkerResponse } from "./types";
 import { classifyComputeError } from "./errors";
 
-// `self` in a Web Worker is a `WorkerGlobalScope`, not `Window`. The
-// default DOM lib types `self` as `Window & typeof globalThis`, which
-// doesn't have `onmessage`/`postMessage` with the worker signature.
-// Cast to the worker-typed shape we actually use. (Adding `"WebWorker"`
-// to tsconfig `lib` would fix this globally but would also change the
-// type of `self` everywhere — too invasive for one file.)
+// `self` in a Worker is `WorkerGlobalScope`, but DOM lib types it as
+// `Window`. Cast to the worker shape we use (adding `"WebWorker"` to
+// tsconfig `lib` would be global, too invasive for one file).
 const ctx = self as unknown as {
   onmessage: ((e: MessageEvent<WorkerRequest>) => void) | null;
   postMessage: (msg: WorkerResponse) => void;
@@ -33,11 +21,8 @@ async function loadWasm(): Promise<WasmModule> {
   if (!wasmPromise) {
     wasmPromise = (async () => {
       const mod = await import("../../../public/wasm/zxw/zxw.js");
-      // `mod.default()` is the async init function wasm-bindgen
-      // generates; calling it once fetches + instantiates the .wasm.
-      // The `start` attribute on `init_panic_hook` makes it auto-run
-      // during instantiation, so panics surface as console.error from
-      // here on.
+      // wasm-bindgen init: fetches + instantiates the .wasm and wires
+      // the panic hook so panics surface as console.error.
       await mod.default();
       return mod;
     })();
@@ -56,9 +41,6 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           version: w.compute_api_version(),
         } satisfies WorkerResponse);
       } catch (err) {
-        // Load failure — surface as an error reply (the main thread
-        // treats any non-version-ok response during the handshake as
-        // a worker-init failure).
         const error = err instanceof Error ? err.message : String(err);
         ctx.postMessage({
           type: "error",
@@ -75,12 +57,8 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       try {
         const w = await loadWasm();
 
-        // Wrap postMessage in a plain function we hand to Rust as the
-        // `onProgress` callback. The Rust side calls it with
-        // `(current, total)`; we relay both to the main thread tagged
-        // with the requestId so the UI can update the right progress
-        // bar (only one in-flight in v1, but the requestId keeps the
-        // protocol future-proof).
+        // Progress callback handed to Rust; relayed to the main thread
+        // tagged with requestId so the UI updates the right run.
         const onProgress = (contracted: number, total: number) => {
           ctx.postMessage({
             type: "progress",
@@ -90,10 +68,9 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           } satisfies WorkerResponse);
         };
 
-        // `compute_tensor` throws synchronously on a structural error
-        // (ComputeError), so the try/catch around it surfaces those as
-        // `error` replies. Per-spider parse failures are NOT thrown —
-        // they end up on `result.warnings`.
+        // `compute_tensor` throws synchronously on structural errors
+        // (surfaced as `error` replies); per-spider parse failures go
+        // on `result.warnings` instead.
         const result = w.compute_tensor(msg.graph, onProgress);
         ctx.postMessage({
           type: "result",
@@ -113,12 +90,8 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     }
 
     case "cancel": {
-      // v1 soft cancel: the main-thread client discards the result of
-      // the cancelled requestId and the worker runs to completion.
-      // Full cooperative cancellation (the Rust progress callback
-      // returning a `Result` that unwinds the contraction) is a
-      // Phase 6 enhancement — see `doc/plans.md` §6.2 "Cooperative
-      // cancellation (future enhancement)".
+      // Soft cancel: the main thread discards this requestId's result;
+      // the worker runs to completion.
       break;
     }
   }

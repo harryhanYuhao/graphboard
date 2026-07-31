@@ -1,28 +1,22 @@
 // crates/zxw/src/graph.rs
 //
-// `GraphSlice` data model — the contract between the frontend (TS) and
-// the Rust compute layer. The compute layer consumes `doc.graph` straight
-// off the WASM boundary, so this is the *only* shape that crosses it.
-// Source of truth for the TS side: `src/lib/graph/types.ts`.
+// `GraphSlice` — the only shape that crosses the WASM boundary. Source of
+// truth for the TS side: `src/lib/graph/types.ts`.
 //
-// The persisted field names are camelCase, matching the TS
-// `GraphNodeRecord { id, data: { label, vertexType } }`. The
-// `#[serde(rename_all = "camelCase")]` attributes below are load-bearing
-// — without them the wasm boundary fails to deserialize. See
-// `doc/plans.md` §4.0 and `tests/graph_serde.rs`.
+// `#[serde(rename_all = "camelCase")]` is load-bearing: the persisted
+// field names must match the TS `GraphNodeRecord { id, data: { label,
+// vertexType } }` or the wasm boundary fails to deserialize.
 //
-// Handle indices on edges are `Option<u32>`: absent in JSON means "use
-// the role default" (see `src/lib/graph/serialization.ts`), and the
-// numeric meaning is 0 = top, 1 = bottom. The compute layer treats all
-// legs of a symmetric tensor as equivalent and ignores the index in v1;
-// it must still deserialize cleanly, hence `Option`.
+// Edge handles are `Option<u32>`: absent in JSON means "use the role
+// default" (0 = top, 1 = bottom). The compute layer ignores the numeric
+// value for symmetric tensors; for the directional W node it uses edge
+// *direction* (W as source → output leg, W as target → input leg) to pick
+// the axis. `Option` still deserializes cleanly even though unused.
 
 use serde::{Deserialize, Serialize};
 
-/// The compute contract: a list of vertex records + a list of edge
-/// records. Carries nothing visual (no positions, no rotations, no React
-/// Flow plumbing) — those live in the `view` slice the compute layer
-/// never sees.
+/// The compute contract: vertex records + edge records. Carries nothing
+/// visual — those live in the `view` slice the compute layer never sees.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontendGraphSlice {
@@ -30,9 +24,8 @@ pub struct FrontendGraphSlice {
     pub edges: Vec<FrontendGraphEdgeRecord>,
 }
 
-/// A persisted vertex: id + the data the compute layer consumes (label +
-/// type). The nesting (`data: { label, vertexType }`) matches the TS
-/// contract exactly.
+/// A persisted vertex: id + the data the compute layer consumes. The
+/// `data: { label, vertexType }` nesting matches the TS contract exactly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrontendGraphNodeRecord {
     pub id: String,
@@ -44,24 +37,20 @@ pub struct FrontendGraphNodeRecord {
 pub struct FrontendVertexData {
     pub label: String,
     pub vertex_type: VertexType,
-    /// 0-indexed ordering of `Input` / `Output` boundary vertices. Inputs
-    /// and outputs are ordered independently within their own group, and
-    /// this drives the final axis order of the contracted tensor (§5.4).
-    /// Ignored for non-boundary types. `None` (absent in JSON) means
-    /// "fall back to array position", so pre-`order` documents hydrate
-    /// and compute identically to today. `skip_serializing_if` keeps
-    /// re-serialized output byte-compatible with the frontend (mirrors
-    /// `source_handle`).
+    /// 0-indexed ordering of `Input` / `Output` boundary vertices within
+    /// their own group; drives the final axis order of the contracted
+    /// tensor (§5.4). Ignored for non-boundary types. `None` (absent in
+    /// JSON) falls back to array position. `skip_serializing_if` keeps
+    /// output byte-compatible with the frontend.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub order: Option<u32>,
 }
 
 /// The ten vertex types: eight ZXW generators plus two boundary markers
-/// (`Input`, `Output`). Boundary types are NOT tensors — they declare
-/// open legs of the resulting tensor (each leg dimension 2), so n inputs
-/// + m outputs → 2^m × 2^n matrix after contraction; no boundaries →
-/// scalar. Serialized lowercase to match the TS `VertexType` string
-/// union. `Copy` so dispatch on the type is cheap and borrow-free.
+/// (`Input`, `Output`). Boundary types aren't tensors — they declare open
+/// legs (each dimension 2), so n inputs + m outputs → 2^m × 2^n matrix;
+/// no boundaries → scalar. Serialized lowercase to match the TS union.
+/// `Copy` so dispatch is borrow-free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VertexType {
@@ -77,14 +66,10 @@ pub enum VertexType {
     Output,
 }
 
-/// A persisted edge: endpoints plus the optional numeric connection
-/// indices. `source_handle` / `target_handle` are `None` when the JSON
-/// omits the field (meaning "use the role default" on the TS side); the
-/// compute layer ignores the specific value for symmetric tensors in v1.
-///
+/// A persisted edge: endpoints plus optional handle indices. Handles are
+/// `None` when JSON omits the field (meaning "use the role default");
 /// `skip_serializing_if` keeps re-serialized output byte-compatible with
-/// what the frontend emits — an edge that never had handles shouldn't
-/// sprout `"sourceHandle": null` on the way back out.
+/// the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontendGraphEdgeRecord {

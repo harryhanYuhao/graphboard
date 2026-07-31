@@ -1,13 +1,7 @@
-// src/lib/compute/types.ts
-//
-// Message protocol between the main thread (`src/lib/compute/index.ts`)
-// and the Web Worker (`src/lib/compute/worker.ts`). Every message
-// carries a `requestId` (except `version-check` / `version-ok`, which
-// are a one-shot handshake at worker init) so the main-thread client
-// can multiplex concurrent calls — though v1 only allows one in-flight
-// compute (the Compute button is disabled while pending).
-//
-// See `doc/plans.md` §6.2 for the full design rationale.
+// Message protocol between the main thread (`index.ts`) and the Web
+// Worker (`worker.ts`). Compute messages carry a `requestId` so the
+// client can multiplex calls; `version-check` / `version-ok` are a
+// one-shot init handshake.
 
 import type { GraphSlice } from "@/lib/graph/types";
 import type { ComputeErrorKind, TensorResult } from "./result-types";

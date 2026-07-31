@@ -1,17 +1,8 @@
-// src/lib/label/renderLabel.test.ts
-//
-// Behavioural coverage for the LaTeX label renderer. KaTeX output is
-// HTML, so we assert on:
-//   - `isLatexLabel` truthiness (the routing predicate);
-//   - `renderLabel`'s `isLatex` flag (so callers can style math vs.
-//     plain text differently);
-//   - the escape contract for the plain-text path;
-//   - the presence of KaTeX-generated spans in the math path.
-//
-// We deliberately do *not* snapshot full KaTeX HTML — KaTeX's output
-// is stable across patch versions but its internals are not part of
-// our contract, and snapshotting would make the test brittle to
-// upstream changes we don't care about.
+// LaTeX label renderer coverage. KaTeX output is HTML, so we assert on
+// `isLatexLabel` (the routing predicate), `renderLabel`'s `isLatex` flag
+// (so callers style math vs. plain text differently), the escape contract,
+// and KaTeX-generated spans in the math path. Full KaTeX HTML is not
+// snapshotted — its internals aren't our contract.
 
 import { describe, expect, it } from "vitest";
 import { isLatexLabel, renderLabel } from "./renderLabel";
@@ -50,10 +41,8 @@ describe("isLatexLabel", () => {
   });
 
   it("math embedded in surrounding text is NOT treated as a math block", () => {
-    // v1 only supports a *whole-label* math expression (`$...$` or
-    // `$$...$$` matching the entire trimmed label). Embedded math in
-    // prose falls through to plain text. Phase 6 can revisit if a
-    // researcher actually wants this.
+    // Only whole-label `$...$` / `$$...$$` counts; embedded math in prose
+    // falls through to plain text.
     expect(isLatexLabel("when $a = 0$ the value is")).toBe(false);
     expect(isLatexLabel("price: $5")).toBe(false);
   });
@@ -71,9 +60,7 @@ describe("renderLabel — plain text", () => {
   });
 
   it("special characters are escaped", () => {
-    // The order matters: `&` must be escaped first or the others
-    // would be re-escaped. We test the resulting entity sequences
-    // rather than parsing them back.
+    // `&` must be escaped first or the others get re-escaped.
     const r = renderLabel("<script>&\"'</script>");
     expect(r.isLatex).toBe(false);
     expect(r.html).toContain("&lt;script&gt;");
@@ -90,9 +77,8 @@ describe("renderLabel — plain text", () => {
 });
 
 describe("renderLabel — KaTeX", () => {
-  // KaTeX is lazy-loaded as a separate chunk. Wait for it to resolve
-  // before asserting on the LaTeX path so the test doesn't race the
-  // load. Plain-text cases above don't need KaTeX and stay synchronous.
+  // KaTeX is a lazy-loaded chunk; wait for it so the LaTeX tests don't
+  // race the load. Plain-text cases above stay synchronous.
   it("inline math renders with katex wrapper span", async () => {
     await whenKatexReady();
     const r = renderLabel("$\\alpha$");
@@ -109,9 +95,8 @@ describe("renderLabel — KaTeX", () => {
 
   it("unparseable math falls back to escaped plain text", async () => {
     await whenKatexReady();
-    // KaTeX with default options rejects `\foo` because `foo` is
-    // not a known command; we wrap the call so a user typo doesn't
-    // produce a red `katex-error` span inside a vertex body.
+    // KaTeX rejects `\notacommand`; we wrap it so a typo doesn't render a
+    // red `katex-error` span inside a vertex body.
     const r = renderLabel("$\\notacommand$");
     expect(r.isLatex).toBe(false);
     expect(r.html).toContain("\\notacommand");

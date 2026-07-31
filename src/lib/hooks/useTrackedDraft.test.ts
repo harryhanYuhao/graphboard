@@ -1,13 +1,8 @@
-// src/lib/hooks/useTrackedDraft.test.ts
-//
-// The hook's contract is small but easy to break — it tracks an
-// external source of truth and resets a local draft only when the
-// source drifts (or when an explicit `trackKey` flips). The
-// `didReset` flag is only observable on the intermediate render
-// that React discards ("set state during render" pattern), so the
-// tests below focus on the observable outcome: does the draft
-// converge to the new source after a re-render, or does it stay
-// at the user's edit?
+// `useTrackedDraft` tracks an external source and resets the local draft only
+// when the source drifts (or `trackKey` flips). The `didReset` flag is only
+// observable on the render React discards ("set state during render"), so
+// tests assert the outcome: does the draft converge to the new source or
+// keep the user's edit?
 
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -48,16 +43,14 @@ describe("useTrackedDraft", () => {
 
     rerender({ source: "b" });
 
-    // React's "set state during render" pattern retries the render
-    // with the queued setStates applied, so the final draft is the
-    // new source (the intermediate render is discarded).
+    // React's retry render applies the queued setState, so the draft
+    // converges to the new source.
     expect(result.current[0]).toBe("b");
   });
 
   it("preserves a same-reference source update (no reset)", () => {
-    // React props/state that didn't change should not trigger a
-    // reset; otherwise continuous reads (e.g. an unchanged selector
-    // subscription) would constantly blow away the user's draft.
+    // An unchanged reference must not reset, or continuous selector
+    // reads would blow away the draft.
     const shared = "stable";
     const { result, rerender } = renderHook(
       ({ source }: { source: string }) => useTrackedDraft({ source }),
@@ -69,11 +62,8 @@ describe("useTrackedDraft", () => {
   });
 
   it("does not reset when skipDriftCheck is true even if source drifted", () => {
-    // Slider drag: the source updates *because* of the edit, so
-    // resetting would force a re-render and reset the user's draft
-    // to whatever the source became (which is what the user just
-    // typed — so it would be a no-op write, but we want to verify
-    // the draft isn't blown away).
+    // Slider drag: the source updates because of the edit, so resetting would
+    // blow away the draft mid-gesture.
     const { result, rerender } = renderHook(
       ({ source }: { source: number }) =>
         useTrackedDraft({ source, skipDriftCheck: true }),
@@ -85,9 +75,8 @@ describe("useTrackedDraft", () => {
   });
 
   it("resets when trackKey changes even if source value is unchanged", () => {
-    // Two vertices could carry the same label but represent
-    // different entities. The id-as-trackKey makes the reset fire on
-    // selection change so the draft doesn't bleed across vertices.
+    // Two vertices can share a label but be different entities; id-as-trackKey
+    // resets on selection change so the draft doesn't bleed across vertices.
     const { result, rerender } = renderHook(
       ({ trackKey }: { trackKey: string }) =>
         useTrackedDraft({ source: "same", trackKey }),
@@ -95,7 +84,7 @@ describe("useTrackedDraft", () => {
     );
     act(() => result.current[1]("draft for a"));
     rerender({ trackKey: "vertex-b" });
-    // After the React retry, the draft has been reset to the source.
+    // After the retry, the draft has reset to the source.
     expect(result.current[0]).toBe("same");
   });
 
@@ -110,15 +99,11 @@ describe("useTrackedDraft", () => {
     expect(result.current[0]).toBe("edited");
   });
 
-  // Documented limitation: the drift check is a reference comparison
-  // (`trackedSource !== source`), so an object source with the same
-  // contents but a new instance every render triggers a reset on
-  // every render. The hook is designed for primitive sources (label,
-  // rotation). Pinned so a future switch to deep equality (or a
-  // documented break here) is a deliberate change.
+  // Documented limitation: the drift check is a reference comparison, so a
+  // structurally-equal object passed as a new instance every render triggers a
+  // reset each time. The hook targets primitives (label, rotation). Pinned so a
+  // switch to deep equality is a deliberate change.
   it("an object source with a new instance every render resets the draft each time", () => {
-    // The FIRST render is fine: the initial useState values match the
-    // first prop, so no drift fires.
     const { result, rerender } = renderHook(
       ({ source }: { source: { x: number } }) =>
         useTrackedDraft({ source }),
@@ -126,21 +111,17 @@ describe("useTrackedDraft", () => {
     );
     expect(result.current[0]).toEqual({ x: 1 });
 
-    // User edits the draft.
     act(() => result.current[1]({ x: 999 }));
 
-    // Parent re-renders with a structurally-equal but new-instance
-    // object. Reference inequality triggers a reset.
+    // A new-instance but structurally-equal object: reference inequality resets.
     rerender({ source: { x: 1 } });
 
-    // The draft has been reset to the new source — the user's edit is
-    // gone. This is the documented limitation; pin it.
+    // The draft reset to the source; the user's edit is gone.
     expect(result.current[0]).toEqual({ x: 1 });
   });
 
-  // Companion: passing the SAME object reference across renders is
-  // fine (no reset). Documents that the workaround for the object
-  // limitation is "memoize the object in the parent".
+  // Companion: the same reference across renders is fine (no reset). The
+  // workaround for the limitation above is "memoize the object in the parent".
   it("an object source that is the SAME reference across renders does not reset", () => {
     const shared = { x: 1 };
     const { result, rerender } = renderHook(
@@ -153,9 +134,7 @@ describe("useTrackedDraft", () => {
     expect(result.current[0]).toEqual({ x: 999 });
   });
 
-  // Numeric source: the hook is designed for primitives, and a number
-  // re-rendered with the same value (NaN excluded — see below) is a
-  // no-op via ===. Pin it.
+  // Numeric source: a number re-rendered with the same value is a no-op via ===.
   it("a numeric source with the same value is a no-op", () => {
     const { result, rerender } = renderHook(
       ({ source }: { source: number }) => useTrackedDraft({ source }),
@@ -166,22 +145,19 @@ describe("useTrackedDraft", () => {
     expect(result.current[0]).toBe(100);
   });
 
-  // NaN: `Object.is(NaN, NaN)` is `true`, so a NaN source compares
-  // equal to itself and the drift check does NOT fire on re-renders.
-  // This avoids the "Too many re-renders" loop that would happen
-  // with a `!==` check (where `NaN !== NaN` is `true`). The user's
-  // edit is preserved across re-renders.
+  // `Object.is(NaN, NaN)` is true, so a NaN source compares equal to itself
+  // and the drift check does NOT fire (avoiding the "Too many re-renders" loop
+  // a `!==` check would cause). The user's edit is preserved.
   it("a NaN source: drift check does NOT fire (Object.is handles NaN correctly)", () => {
     const { result, rerender } = renderHook(
       ({ source }: { source: number }) => useTrackedDraft({ source }),
       { initialProps: { source: NaN } },
     );
-    // The initial render is fine: trackedSource === source (both NaN).
+    // Initial render: trackedSource === source (both NaN).
     expect(Number.isNaN(result.current[0])).toBe(true);
 
     act(() => result.current[1](42));
-    // Re-render with the same NaN: Object.is(NaN, NaN) is true, so no
-    // drift. The user's edit (42) is preserved.
+    // Re-render with the same NaN: Object.is is true → no drift, edit preserved.
     rerender({ source: NaN });
     expect(result.current[0]).toBe(42);
   });

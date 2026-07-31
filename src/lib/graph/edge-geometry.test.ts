@@ -1,9 +1,5 @@
-// src/lib/graph/edge-geometry.test.ts
-//
-// Geometry coverage for `StraightCenterEdge`'s endpoint math. The
-// renderer itself has a thin test surface (per AGENTS.md) — the part
-// worth pinning is where an edge endpoint lands for a given vertex
-// shape / rotation, because that's the bug-prone math.
+// Endpoint math for `StraightCenterEdge`. Where an edge endpoint lands for a
+// given shape/rotation is the bug-prone part worth pinning.
 
 import { describe, expect, it } from "vitest";
 import { getEdgeEndpoint } from "./edge-geometry";
@@ -21,9 +17,8 @@ function node(overrides: Partial<EndpointInput> = {}): EndpointInput {
   };
 }
 
-// Assert a point matches, coordinate-by-coordinate with approximate
-// equality. Rotation math is matrix-multiplied floats, so exact
-// equality is flaky (e.g. 20 becomes 20.000000000000004 at 180°).
+// Assert a point matches with approximate equality. Rotation is matrix-
+// multiplied floats, so exact equality is flaky (e.g. 20 → 20.000000000000004).
 function expectPoint(
   actual: { x: number; y: number },
   expected: { x: number; y: number },
@@ -38,10 +33,8 @@ describe("getEdgeEndpoint — source side", () => {
   });
 
   it("anchors a directional source one-third down the body (W / And)", () => {
-    // Directional source endpoints sit at +height/3 below center — a
-    // visual offset so the fan-out of outgoing edges doesn't pile on
-    // top of incoming edges at the center. With height 40, that's
-    // 20 + 40/3 ≈ 33.333.
+    // Outgoing edges sit +height/3 below center so they don't pile on
+    // incoming edges. height 40 → 20 + 40/3 ≈ 33.333.
     expectPoint(getEdgeEndpoint(node({ vertexType: "w" }), "source"), {
       x: 20,
       y: 20 + 40 / 3,
@@ -53,8 +46,7 @@ describe("getEdgeEndpoint — source side", () => {
   });
 
   it("is rotation-invariant for symmetric vertices (zero local offset)", () => {
-    // A symmetric source has zero local offset, so it stays at the
-    // rotation pivot (the center) for any angle.
+    // Zero local offset → stays at the rotation pivot (center) for any angle.
     expectPoint(getEdgeEndpoint(node({ rotation: 137 }), "source"), {
       x: 20,
       y: 20,
@@ -86,9 +78,9 @@ describe("getEdgeEndpoint — directional target (W / And gate)", () => {
     });
   });
 
-  it("follows the rotation around the node center (regression: edges used to ignore rotation)", () => {
-    // 180° flips the top dot to the bottom edge — local offset
-    // (0, -20) rotated 180° around (20,20) lands at (20, 40).
+  it("follows the rotation around the node center", () => {
+    // 180° flips the top dot to the bottom edge: local (0, -20) rotated
+    // 180° around (20,20) lands at (20, 40).
     expectPoint(
       getEdgeEndpoint(node({ vertexType: "w", rotation: 180 }), "target"),
       { x: 20, y: 40 },
@@ -96,10 +88,7 @@ describe("getEdgeEndpoint — directional target (W / And gate)", () => {
   });
 
   it("rotates clockwise to the right edge at 90°", () => {
-    // Top dot (0, -20) rotated 90° clockwise around (20,20):
-    //   localX' = 0*cos90 - (-20)*sin90 = 20
-    //   localY' = 0*sin90 + (-20)*cos90 = 0
-    // → endpoint (40, 20), i.e. the right edge center.
+    // Top dot (0, -20) rotated 90° CW around (20,20) → (40, 20).
     expectPoint(
       getEdgeEndpoint(node({ vertexType: "w", rotation: 90 }), "target"),
       { x: 40, y: 20 },
@@ -123,8 +112,7 @@ describe("getEdgeEndpoint — directional target (W / And gate)", () => {
 
 describe("getEdgeEndpoint — node position offset", () => {
   it("adds the absolute position to the rotated endpoint", () => {
-    // Same center math as above, but the node is translated to
-    // (100, 50): center becomes (120, 70), top dot at 180° → (120, 90).
+    // Node at (100, 50): center (120, 70), top dot at 180° → (120, 90).
     expectPoint(
       getEdgeEndpoint(
         node({

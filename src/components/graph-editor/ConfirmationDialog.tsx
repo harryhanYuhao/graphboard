@@ -1,9 +1,7 @@
 // src/components/graph-editor/ConfirmationDialog.tsx
 //
-// The store owns the dialogue state
-// (`confirmDialogue: ConfirmDialogueState | null`); this component
-// is purely presentational. 
-// Must be a client component because it uses React hooks 
+// Pure presentational modal. The store owns the dialogue state
+// (`confirmDialogue`); must be a client component because it uses hooks.
 
 "use client";
 
@@ -34,24 +32,21 @@ export function ConfirmationDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
-  // Focus management
   useEffect(() => {
     if (isOpen && dialogRef.current) {
-      // Focus cancel button by default
+      // Focus cancel by default.
       cancelRef.current?.focus();
     }
   }, [isOpen]);
 
-  // Handle keyboard events. Enter is left to the browser so the focused
-  // button's native click handler fires exactly once — intercepting Enter
-  // here too would double-fire onConfirm / onCancel.
+  // Enter is left to the browser so the focused button's native click fires
+  // once — intercepting it here too would double-fire onConfirm/onCancel.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       onCancel();
     }
   };
 
-  // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onCancel();

@@ -1,13 +1,10 @@
 // src/lib/keyboard/shortcuts.ts
 //
-// Display-only registry of every keyboard shortcut the editor responds
-// to. The actual key→action dispatch lives in
-// src/components/graph-editor/useKeyboardShortcuts.ts and must be kept in
-// sync with the entries below — this list exists for discoverability, not
-// as the dispatch table. If you add a shortcut, add it here too.
-//
-// Platform: we render `⌘` on macOS and `Ctrl` elsewhere. Detection is
-// deferred to first render so SSR doesn't trip on a missing window.
+// Display-only registry of every editor shortcut. The actual dispatch
+// lives in src/components/graph-editor/useKeyboardShortcuts.ts and must
+// be kept in sync — this list is for discoverability, not dispatch.
+// Render `⌘` on macOS, `Ctrl` elsewhere; detection is deferred to first
+// render so SSR doesn't hit a missing `window`.
 
 "use client";
 
@@ -21,14 +18,13 @@ export type ShortcutGroup = {
   entries: ShortcutEntry[];
 };
 
-// "Cmd" on macOS, "Ctrl" elsewhere. Called from render code, never at
-// module top level, so SSR (where `window` is undefined) doesn't crash.
+// "⌘" on macOS, "Ctrl" elsewhere. Called from render code (never at
+// module top level) so SSR doesn't crash on a missing `window`.
 export function modifierSymbol(): string {
   if (typeof window === "undefined") return "Ctrl";
 
-  // navigator.platform is deprecated but still the most reliable signal
-  // for Mac vs not-Mac at the platform level across browsers. Fall back
-  // to userAgent for older browsers.
+  // navigator.platform is deprecated but still the most reliable Mac
+  // signal; fall back to userAgent for older browsers.
   const platform =
     window.navigator.platform ||
     (window.navigator as Navigator & { userAgent?: string }).userAgent ||

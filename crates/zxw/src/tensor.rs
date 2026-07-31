@@ -1,29 +1,14 @@
 // crates/zxw/src/tensor.rs
 //
-// Dense complex tensor, the workhorse of the compute layer. Wraps an
-// `ndarray::ArrayD<Complex<f64>>` and provides the small surface the
-// contraction algorithm (Phase 4) and the per-vertex builders (Phase 3)
-// need: construction, element access, two-axis contraction, and a
-// builder-friendly `apply_2x2_to_axis` for basis changes (used to derive
-// `x_spider` from `z_spider`, etc.).
+// Dense complex tensor (`ndarray::ArrayD<Complex<f64>>`) for the compute
+// layer: construction, element access, contraction, trace, outer product,
+// and `apply_2x2_to_axis` basis changes. Wrapped in a named opaque type so
+// the contraction loop and the WASM boundary share one shape-checked
+// interface rather than leaking ndarray's dimensionality generics.
 //
-// Why a wrapper and not raw `ArrayD<Complex<f64>>`? Two reasons:
-//   1. The contraction and basis-change routines are non-trivial and
-//      benefit from being methods on a named type, with the shape
-//      invariants checked in one place.
-//   2. The Phase 4 contraction loop and the Phase 5 WASM boundary both
-//      want a single, opaque type rather than exposing ndarray's
-//      dimensionality generics everywhere.
-//
-// `contract(a, b, (i, j))` removes axis `i` of `a` and axis `j` of `b`,
-// summing their product — the single primitive Phase 4's edge-walk needs.
-//
-// We hand-roll the contraction inner loop rather than calling
-// `ndarray::linalg::dot` because `Complex<f64>` does not implement
-// `ndarray::LinalgScalar`, and pulling in `ndarray-linalg` would add a
-// BLAS dependency that's hostile to the WASM build target. The
-// straightforward triple loop is O(M·N·K) and is more than fast enough
-// for the graphs v1 targets (≤ ~30 legs; see plan §5.2).
+// The contraction inner loop is hand-rolled instead of `ndarray::linalg::dot`:
+// `Complex<f64>` is not `LinalgScalar`, and `ndarray-linalg` would pull in a
+// WASM-hostile BLAS dependency.
 
 use ndarray::{ArrayD, IxDyn};
 use num_complex::Complex;
@@ -37,8 +22,7 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    /// Build from an already-shaped array. The argument's element type
-    /// must be `Complex<f64>`; the wrapper just owns it.
+    /// Build from an already-shaped array; the wrapper just owns it.
     pub fn from_array(data: ArrayD<Cplx>) -> Self {
         Self { data }
     }
@@ -66,7 +50,7 @@ impl Tensor {
     }
 
     /// Immutable element access by multi-index. Panics on out-of-range
-    /// (caller's invariant; we never construct from external indices).
+    /// (indices are always internally constructed, never external).
     pub fn get(&self, idx: &[usize]) -> Cplx {
         self.data[IxDyn(idx)]
     }
@@ -76,15 +60,11 @@ impl Tensor {
         &mut self.data[IxDyn(idx)]
     }
 
-    /// Contract `self` (axis `axis_a`) with `other` (axis `axis_b`),
-    /// returning a new tensor whose axes are `[self's other axes...,
-    /// other's other axes...]`. Consumes both inputs.
-    ///
-    /// Mathematically: `result[i..., j...] = Σ_k self[i..., k] * other[j..., k]`
-    /// (after moving `axis_a`/`axis_b` to the last position of each).
-    ///
-    /// Panics on mismatched contracted-axis lengths — that's a programmer
-    /// bug in the builder / contraction code, not a runtime input error.
+    /// Contract `self` (axis `axis_a`) with `other` (axis `axis_b`); result
+    /// axes are `[self's free..., other's free...]`. Consumes both inputs.
+    /// `result[i..., j...] = Σ_k self[i..., k] * other[j..., k]` after moving
+    /// the contracted axes to the last position of each. Panics on mismatched
+    /// contracted-axis lengths.
     pub fn contract(self, other: Self, axis_a: usize, axis_b: usize) -> Tensor {
         let a = self.data;
         let b = other.data;
@@ -98,10 +78,8 @@ impl Tensor {
             b.shape()[axis_b]
         );
 
-        // Move the contracted axis to the *last* position of each tensor
-        // (via permutation), so the data lays out as [free axes...,
-        // contracted]. Then we can flatten to (M, K) and (N, K) and do a
-        // straight GEMM-shaped triple loop.
+        // Move the contracted axis to the last position of each, so data is
+        // [free axes..., contracted], flattenable to (M,K) and (N,K).
         let a_perm = move_axis_to_last(a.ndim(), axis_a);
         let b_perm = move_axis_to_last(b.ndim(), axis_b);
         let a = a.permuted_axes(a_perm);
@@ -113,8 +91,7 @@ impl Tensor {
         let n: usize = b_shape[..b_shape.len() - 1].iter().product();
         let k = contracted_len;
 
-        // Flatten to 2D for the matmul. `to_shape` is a reshaping view
-        // that reuses the same buffer; we clone into owned at the end.
+        // Flatten to 2D for the triple loop.
         let a_mat = a
             .to_shape((m, k))
             .expect("contract: reshape a to (M,K)")
@@ -144,14 +121,10 @@ impl Tensor {
         Tensor { data: out_arr }
     }
 
-    /// Trace over two axes of `self`: contract `axis_a` with `axis_b`,
-    /// returning a new tensor over the remaining axes. Consumes `self`.
-    ///
-    /// Mathematically: `result[i...] = Σ_k self[i..., k, k]`
-    /// (after moving `axis_a`/`axis_b` to the last two positions).
-    ///
-    /// Panics on mismatched contracted-axis lengths — that's a programmer
-    /// bug in the builder / contraction code, not a runtime input error.
+    /// Trace over two axes: contract `axis_a` with `axis_b`, returning a
+    /// tensor over the remaining axes. Consumes `self`.
+    /// `result[i...] = Σ_k self[i..., k, k]` after moving the axes to the
+    /// last two positions. Panics on mismatched contracted-axis lengths.
     pub fn trace(self, axis_a: usize, axis_b: usize) -> Tensor {
         let a = self.data;
 
@@ -164,8 +137,7 @@ impl Tensor {
             a.shape()[axis_b]
         );
 
-        // Move the contracted axes to the *last* two positions so the data
-        // lays out as [free axes..., axis_a, axis_b] for the diagonal sum.
+        // Move the contracted axes to the last two positions for the diagonal sum.
         let mut a_perm: Vec<usize> = (0..a.ndim())
             .filter(|&i| i != axis_a && i != axis_b)
             .collect();
@@ -177,8 +149,7 @@ impl Tensor {
         let m: usize = a_shape[..a_shape.len() - 2].iter().product();
         let k = contracted_len;
 
-        // Flatten to 2D for the matmul. `to_shape` is a reshaping view
-        // that reuses the same buffer; we clone into owned at the end.
+        // Flatten to 3D for the diagonal sum.
         let a_mat = a
             .to_shape((m, k, k))
             .expect("trace: reshape a to (M,K,K)")
@@ -201,26 +172,18 @@ impl Tensor {
         Tensor { data: out_arr }
     }
 
-    /// Outer product: `out[i..., j...] = self[i...] * other[j...]`. The
-    /// result shape is `self.shape() ++ other.shape()` — no axes are
-    /// contracted. Consumes both inputs.
-    ///
-    /// Used by the contraction layer to combine disconnected components
-    /// (plan §5.6) into one result tensor. Mathematically the identity
-    /// element is the scalar `1` (a rank-0 tensor), so reducing an empty
-    /// list of components returns `Tensor::scalar(1)`.
+    /// Outer product: `out[i..., j...] = self[i...] * other[j...]`, shape
+    /// `self.shape() ++ other.shape()`, no axes contracted. Consumes both
+    /// inputs. Identity element is `Tensor::scalar(1)` (rank-0), so the
+    /// empty-graph reduction multiplies by 1.
     pub fn outer_product(self, other: Self) -> Tensor {
         let a = self.data;
         let b = other.data;
         let a_shape: Vec<usize> = a.shape().to_vec();
         let b_shape: Vec<usize> = b.shape().to_vec();
 
-        // ndarray doesn't have a direct outer-product op, but the result
-        // is just every entry of `a` times every entry of `b`. The
-        // simplest correct impl: flatten both, allocate the concatenated
-        // flat buffer, fill entry-by-entry, then reshape back. Output
-        // sizes in v1 are tiny (small graphs, few open legs), so O(M·N)
-        // is fine.
+        // Flatten, fill pairwise products, reshape. Output sizes are tiny
+        // in v1, so O(M·N) is fine.
         let a_total: usize = a_shape.iter().product::<usize>();
         let b_total: usize = b_shape.iter().product::<usize>();
         let a_flat = a
@@ -248,30 +211,18 @@ impl Tensor {
         Tensor { data: out_arr }
     }
 
-    /// Permute the axes of `self` by `perm`. `perm[k]` is the old axis
-    /// that becomes axis `k` in the result. Thin named wrapper around
-    /// ndarray's `permuted_axes` so callers in `contraction.rs` don't
-    /// pull ndarray into scope directly.
-    ///
-    /// Used by the contraction layer for the §5.4 final partition: the
-    /// inputs→outputs→neutral axis reorder is a permutation applied
-    /// after the edge-walk finishes.
+    /// Permute axes: `perm[k]` is the old axis that becomes axis `k`. Thin
+    /// wrapper so callers in `contraction.rs` avoid pulling ndarray into scope.
     pub fn permuted_axes(self, perm: &[usize]) -> Tensor {
-        // ndarray's `permuted_axes` takes a slice of axis indices; we
-        // adapt our `&[usize]` to the `IxDyn`-shaped argument it wants.
         let perm_dyn = IxDyn(perm);
         Tensor { data: self.data.permuted_axes(perm_dyn) }
     }
 
-    /// Apply a 2×2 matrix `m` to one axis of `self`, in place along that
-    /// axis. Used by the per-vertex builders to derive X-basis tensors
-    /// (X spider = H applied to each leg of the Z spider) and to conjugate
-    /// box builders. The axis must have length 2 — the only arity our
-    /// binary-valued ZXW generators produce per leg.
-    ///
-    /// Convention: `result[..., j', ...] = Σ_j m[j', j] * self[..., j, ...]`,
-    /// i.e. `m`'s rows are the new basis vectors expressed in the old
-    /// basis. This matches the standard "matrix acts on a leg" rule.
+    /// Apply a 2×2 matrix `m` in place to one length-2 axis. Used by
+    /// per-vertex builders for basis changes (e.g. X spider = H on each
+    /// Z-spider leg) and box conjugation. Convention:
+    /// `result[..., j', ...] = Σ_j m[j', j] * self[..., j, ...]` — `m`'s
+    /// rows are the new basis vectors in the old basis.
     pub fn apply_2x2_to_axis(&mut self, axis: usize, m: [[Cplx; 2]; 2]) {
         assert!(
             self.data.shape()[axis] == 2,
@@ -282,21 +233,16 @@ impl Tensor {
 
         let shape = self.data.shape().to_vec();
         let total: usize = shape.iter().product();
-        // Row-major layout (ndarray default): the LAST axis varies
-        // fastest. The stride of `axis` is the product of all axis
-        // lengths *after* it — i.e. the number of flat-buffer elements
-        // between "the same position on the next page of `axis`".
+        // Row-major: the LAST axis varies fastest. The stride of `axis` is
+        // the product of all axis lengths after it.
         let axis_stride: usize = shape[axis + 1..].iter().product();
         let suffix_len = axis_stride;
         let prefix_len = total / (2 * axis_stride);
 
-        // Flatten to a 1D buffer we can rewrite in place. For each
-        // (prefix, suffix) position, the two old entries at offsets
-        // (base, base + axis_stride) are combined into two new entries
-        // via m. Missing any (prefix, suffix) pair silently leaves old
-        // data in place — the kind of bug that breaks `H·z·H = z`
-        // round-trips but passes rank-1 unit tests, so the round-trip
-        // test in tests/tensor_correctness.rs is the real guard.
+        // For each (prefix, suffix) position, the two old entries at
+        // (base, base + axis_stride) combine into two new entries via m.
+        // Missing any pair silently leaves stale data (breaks H·z·H but
+        // passes rank-1 tests), so tensor_correctness.rs guards it.
         let mut buf = self
             .data
             .clone()
@@ -317,8 +263,8 @@ impl Tensor {
     }
 }
 
-/// Permutation that moves `axis` to the last position, preserving the
-/// relative order of the others. E.g. for ndim=4, axis=1 → `[0, 2, 3, 1]`.
+    /// Permutation moving `axis` to last, preserving relative order of the
+    /// others. E.g. ndim=4, axis=1 → `[0, 2, 3, 1]`.
 fn move_axis_to_last(ndim: usize, axis: usize) -> Vec<usize> {
     assert!(axis < ndim);
     let mut perm: Vec<usize> = (0..ndim).filter(|&i| i != axis).collect();
@@ -352,7 +298,7 @@ mod tests {
 
     #[test]
     fn outer_product_entries_are_pairwise_products() {
-        // (2,) ⊗ (2,) with distinguishable values. out[i, j] = a[i] * b[j].
+        // out[i, j] = a[i] * b[j].
         let a = Tensor::from_array(
             ndarray::arr1(&[c(1.0, 0.0), c(2.0, 0.0)]).into_dyn(),
         );
@@ -369,9 +315,8 @@ mod tests {
 
     #[test]
     fn outer_product_scalar_identity() {
-        // A scalar (rank-0) outer-product anything = the other operand
-        // scaled by the scalar. This is the identity the empty-graph
-        // reduction relies on (no components → scalar 1 → multiply by 1).
+        // Scalar (rank-0) outer-product = scaling; the empty-graph
+        // reduction relies on multiply-by-1.
         let scalar_one = Tensor::scalar(c(1.0, 0.0));
         let v = Tensor::from_array(ndarray::arr1(&[c(5.0, 0.0), c(7.0, 0.0)]).into_dyn());
         let r = scalar_one.outer_product(v);
@@ -423,8 +368,7 @@ mod tests {
 
     #[test]
     fn contract_collapses_one_axis_pair() {
-        // a is 2×2 identity, b is a vector [5, 7]. Contract a's axis 1
-        // with b's axis 0 → result [5, 7] (identity passes b through).
+        // Identity passes vector through: contract 2×2 I axis 1 with [5,7] → [5,7].
         let a_arr = ndarray::arr2(&[[c(1., 0.), c(0., 0.)], [c(0., 0.), c(1., 0.)]]);
         let a = Tensor::from_array(a_arr.into_dyn());
         let b_arr = ndarray::arr1(&[c(5., 0.), c(7., 0.)]);
@@ -455,10 +399,7 @@ mod tests {
 
     #[test]
     fn apply_2x2_to_axis_handles_rank_2_both_columns() {
-        // Apply the swap matrix to axis 0 of a 2×2 identity. Every column
-        // should have its two entries swapped — axis 0 is the row axis.
-        // Regression guard: an earlier impl missed (prefix, suffix)
-        // pairs and only rewrote the first suffix position.
+        // Swap applied to axis 0 of a 2×2 swaps every column's two rows.
         let mut t = Tensor::from_array(
             ndarray::arr2(&[[c(1., 0.), c(2., 0.)], [c(3., 0.), c(4., 0.)]]).into_dyn(),
         );
@@ -472,14 +413,8 @@ mod tests {
 
     #[test]
     fn apply_2x2_to_axis_rank_3_axis_in_middle() {
-        // Rank-3 shape (2,2,2), apply swap to axis 1 (the *middle* axis).
-        // This is the axis-stride layout that the original buggy impl
-        // got wrong: axis 1's stride is 1, and the (prefix, suffix)
-        // iteration has to cover prefix ∈ [0,2) × suffix ∈ [0,1).
-        //
-        // Distinguishable values: entry [i,j,k] = 10i + j + k. After
-        // swapping axis 1, each [i,*,k] pair flips, so [i,j,k] holds
-        // what was at [i,1-j,k].
+        // (2,2,2), swap on axis 1 (stride 1). Entry [i,j,k] = 10i+j+k;
+        // after swap, [i,j,k] holds old [i,1-j,k].
         let mut values = vec![c(0., 0.); 8];
         for i in 0..2 {
             for j in 0..2 {
@@ -508,9 +443,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "need 2")]
     fn apply_2x2_to_axis_rejects_non_binary_axis() {
-        // apply_2x2 is only defined for length-2 axes (binary ZXW
-        // generators). Applying to a (3,) axis should panic clearly
-        // rather than mis-index.
+        // Only length-2 axes are valid; (3,) must panic, not mis-index.
         let mut t = Tensor::zeros(&[3]);
         let id = [[c(1., 0.), c(0., 0.)], [c(0., 0.), c(1., 0.)]];
         t.apply_2x2_to_axis(0, id);
@@ -518,11 +451,8 @@ mod tests {
 
     #[test]
     fn contract_against_matrix_multiplication() {
-        // contract(a, b, 1, 0) on two rank-2 tensors is exactly matrix
-        // multiplication a·b when both are interpreted as 2×2 matrices.
-        // Builds an explicit 2×2 product and compares to a hand-derived
-        // matrix; catches transpose bugs in the permute→flatten→reshape
-        // pipeline that the identity-vector test above wouldn't notice.
+        // contract(a, b, 1, 0) on two rank-2 tensors equals a·b. Catches
+        // transpose bugs in the permute→flatten→reshape pipeline.
         let a = Tensor::from_array(
             ndarray::arr2(&[[c(1., 0.), c(2., 0.)], [c(3., 0.), c(4., 0.)]]).into_dyn(),
         );
@@ -540,15 +470,9 @@ mod tests {
 
     #[test]
     fn contract_along_inner_axis_not_just_last() {
-        // contract(a, b, 0, 1): contract axis 0 of a (a non-last axis)
-        // with axis 1 of b. The permuted_axes path must move the
-        // contracted axis to the end of each before flattening — getting
-        // that permutation wrong silently transposes the result. Catch
-        // it with distinguishable values.
-        //
-        // a = [[1, 2], [3, 4]] — contract axis 0 (the rows).
-        // b = [[5, 6], [7, 8]] — contract axis 1 (the cols).
-        // result[i, j] = Σ_k a[k, i] * b[j, k].
+        // Contract axis 0 of a (non-last) with axis 1 of b. A wrong
+        // permute silently transposes the result.
+        // a = [[1,2],[3,4]], b = [[5,6],[7,8]], result[i,j] = Σ_k a[k,i]·b[j,k].
         //   [0,0] = a[0,0]·b[0,0] + a[1,0]·b[0,1] = 1·5 + 3·6 = 23
         //   [0,1] = a[0,0]·b[1,0] + a[1,0]·b[1,1] = 1·7 + 3·8 = 31
         //   [1,0] = a[0,1]·b[0,0] + a[1,1]·b[0,1] = 2·5 + 4·6 = 34
@@ -569,12 +493,8 @@ mod tests {
 
     #[test]
     fn contract_with_rank1_operand() {
-        // (2,2) · (2,) → (2,): contract a rank-2 identity with a length-2
-        // vector. The identity passes the vector through unchanged, which
-        // is the simplest non-trivial contraction that exercises the
-        // rank-reduction path (rank-2 + rank-1 → rank-1). Catches a
-        // regression where contracting with a rank-1 operand mishandles
-        // the "no free axes on one side" reshape.
+        // (2,2)·(2,)→(2,): identity passes the vector through; exercises
+        // the rank-2 + rank-1 → rank-1 reshape path.
         let id = Tensor::from_array(
             ndarray::arr2(&[[c(1., 0.), c(0., 0.)], [c(0., 0.), c(1., 0.)]]).into_dyn(),
         );
@@ -590,8 +510,7 @@ mod tests {
 
     #[test]
     fn move_axis_to_last_preserves_relative_order_of_others() {
-        // Direct test of the permutation helper. The contracted axis
-        // moves to the end; the others keep their original order.
+        // Contracted axis moves to the end; others keep order.
         assert_eq!(move_axis_to_last(4, 0), vec![1, 2, 3, 0]);
         assert_eq!(move_axis_to_last(4, 1), vec![0, 2, 3, 1]);
         assert_eq!(move_axis_to_last(4, 3), vec![0, 1, 2, 3]);
@@ -603,14 +522,8 @@ mod tests {
 
     #[test]
     fn trace_reduces_rank_by_two() {
-        // trace of a rank-3 tensor over axes 0 and 2 → rank-1 result.
-        // The contracted axes are "non-adjacent" so this exercises the
-        // `move the two axes to the end` permutation beyond the trivial
-        // adjacent case covered by `trace_simple_matrices`.
-        //
-        // Build a (2, 3, 2) tensor with distinguishable values:
-        //   T[i, j, k] = (i + 1) * 100 + (j + 1) * 10 + (k + 1)
-        // Trace over axes 0 and 2 (both length 2): result[j] = T[0,j,0] + T[1,j,1].
+        // Rank-3 (2,3,2) traced over non-adjacent axes 0 and 2 → rank-1.
+        // T[i,j,k] = (i+1)*100 + (j+1)*10 + (k+1); result[j] = T[0,j,0]+T[1,j,1].
         //   result[0] = 111 + 212 = 323    (100+10+1) + (200+10+2)
         //   result[1] = 121 + 222 = 343    (100+20+1) + (200+20+2)
         //   result[2] = 131 + 232 = 363    (100+30+1) + (200+30+2)
@@ -645,9 +558,7 @@ mod tests {
 
     #[test]
     fn outer_product_rank_2_times_rank_2_yields_rank_4() {
-        // (2,2) ⊗ (2,2) → (2,2,2,2). Check a few entries by hand.
-        // a = [[1, 2], [3, 4]], b = [[10, 20], [30, 40]] (all real).
-        // out[i, j, k, l] = a[i, j] * b[k, l].
+        // (2,2) ⊗ (2,2) → (2,2,2,2). out[i,j,k,l] = a[i,j]·b[k,l].
         let a = Tensor::from_array(
             ndarray::arr2(&[[c(1., 0.), c(2., 0.)], [c(3., 0.), c(4., 0.)]]).into_dyn(),
         );
@@ -666,12 +577,8 @@ mod tests {
 
     #[test]
     fn permuted_axes_on_rank_3_cycles_axes() {
-        // (2, 3, 4) with perm [2, 0, 1] → shape (4, 2, 3). Entry at
-        // original [i, j, k] moves to new [k, i, j]. We can't easily
-        // distinguish values without setting them, so this test just
-        // confirms the shape contract — values are covered by the
-        // contraction loop's end-to-end tests where permuted_axes is
-        // actually used for the §5.4 partition.
+        // (2,3,4) with perm [2,0,1] → shape (4,2,3). Shape-only check;
+        // values are covered end-to-end by the contraction tests.
         let t = Tensor::from_array(
             ndarray::ArrayD::from_elem(IxDyn(&[2, 3, 4]), c(0., 0.)),
         );
@@ -683,11 +590,7 @@ mod tests {
 
     #[test]
     fn contract_is_anticommutative_in_axis_order_for_vectors() {
-        // For two rank-1 vectors, contracting axis 0 of a with axis 0 of
-        // b is just the dot product: a·b == b·a. Confirms the contract
-        // primitive is symmetric for rank-1 inputs (a property the
-        // contraction loop's `free_axes` bookkeeping implicitly relies
-        // on when edges arrive in arbitrary source/target order).
+        // For rank-1 vectors, contract(a,0,b,0) is the dot product: a·b == b·a.
         let a = Tensor::from_array(ndarray::arr1(&[c(1., 0.), c(2., 0.), c(3., 0.)]).into_dyn());
         let b = Tensor::from_array(ndarray::arr1(&[c(4., 0.), c(5., 0.), c(6., 0.)]).into_dyn());
         let ab = a.clone().contract(b.clone(), 0, 0);

@@ -1,15 +1,9 @@
 // src/components/graph-editor/KeyboardShortcutsDialog.tsx
 //
-// Centered modal that lists every keyboard shortcut the editor responds
-// to. Mirrors the visual + a11y shape of `ConfirmationDialog` so the two
-// feel like siblings:
-//   - backdrop click closes
-//   - Escape closes
-//   - first focusable (the close button) is auto-focused on open
-//   - dialog body scrolls if the content overflows
-//
-// The shortcut list comes from `getShortcutGroups()` (deferred to render
-// time so the modifier symbol resolves at first paint).
+// Modal listing every editor shortcut. Sibling shape to `ConfirmationDialog`
+// (backdrop/Escape close, close button auto-focused, scrollable body). The
+// shortcut list comes from `getShortcutGroups()` (deferred to render time so
+// the modifier symbol resolves at first paint).
 
 "use client";
 
@@ -20,9 +14,7 @@ import { getShortcutGroups } from "@/lib/keyboard/shortcuts";
 interface KeyboardShortcutsDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  // Opens the first-run intro guide. The Help dialog closes itself first so
-  // the intro isn't stacked behind a modal. Optional so the component stays
-  // usable in isolation (e.g. tests).
+  /** Opens the intro guide; this dialog closes first so they don't stack. */
   onShowIntro?: () => void;
 }
 
@@ -33,8 +25,7 @@ export function KeyboardShortcutsDialog({
 }: KeyboardShortcutsDialogProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
-  // Focus the close button on open so screen readers land somewhere
-  // sensible and Esc-to-close is one keypress away.
+  // Focus the close button on open so Esc-to-close is one keypress away.
   useEffect(() => {
     if (isOpen) {
       closeRef.current?.focus();
@@ -54,9 +45,7 @@ export function KeyboardShortcutsDialog({
     }
   };
 
-  // Close this dialog before opening the intro so it isn't stacked behind a
-  // modal. The orchestration (which actions to call) lives in the parent;
-  // this stays a pure/presentational component.
+  // Close before opening the intro so they don't stack. Stays presentational.
   const handleShowIntro = () => {
     onClose();
     onShowIntro?.();

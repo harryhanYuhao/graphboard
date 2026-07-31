@@ -1,18 +1,8 @@
-// src/lib/compute/matrix-format_edge_cases.test.ts
-//
-// Edge-case coverage for the compute-wrapper layer's pure helpers and
-// error-classification surface. The existing test files
-// (`matrix.test.ts`, `errors.test.ts`, `index.test.ts`) cover the happy
-// paths; this file fills the gaps — especially `formatComplex`, which
-// had ZERO coverage before.
-//
-// Conventions (matched to the sibling test files):
-//   - One behaviour per `it`.
-//   - Expected strings are derived from the source, not guessed.
-//   - Surprising/ugly output that the source actually produces is
-//     pinned with a "formatting quirk" comment and asserted exactly —
-//     so a future fix shows up as a failing test rather than a silent
-//     change. Only cases that emit "NaN" or throw are `it.skip`d.
+// Edge-case coverage for the compute layer's pure helpers and error
+// classification. The sibling suites cover the happy paths; this file fills
+// the gaps — especially `formatComplex`. Surprising-but-actual output is
+// pinned with a "formatting quirk" comment and asserted exactly, so a fix
+// surfaces as a failing test. Only NaN/throw cases are `it.skip`d.
 
 import { describe, expect, it } from "vitest";
 
@@ -20,15 +10,14 @@ import { bitsToLabel, formatComplex, matrixEntry } from "./matrix-format";
 import { classifyComputeError, ComputeError } from "./errors";
 import type { ComputeErrorKind, TensorResult } from "./result-types";
 
-// The negative-imaginary branch in `formatComplex` uses the Unicode
-// minus sign U+2212 (−), not the ASCII hyphen-minus (-). Asserting the
-// exact code point keeps a refactor from silently swapping them.
+// The negative-imaginary branch uses Unicode minus U+2212 (−), not ASCII '-'.
+// Asserting the exact code point keeps a refactor from swapping them.
 const MINUS = "\u2212";
 
 // ============================================================================
-// formatComplex — the PRIME FOCUS (zero prior coverage).
+// formatComplex — the prime focus.
 //
-// Source contract (matrix-format.ts:28-39):
+// Contract (matrix-format.ts):
 //   reStr = |re| < eps ? "0" : re.toFixed(decimals)
 //   imStr = |im| < eps ? "" : (im>=0 ? "+" : MINUS) + |im|.toFixed(decimals) + "i"
 //   return reStr + imStr
@@ -41,8 +30,8 @@ describe("formatComplex — pure real", () => {
   });
 
   it("negative real → keeps the ASCII minus sign on the real part", () => {
-    // The real branch uses re.toFixed(), which emits ASCII '-' for
-    // negatives. Only the imaginary branch swaps in U+2212.
+    // The real branch uses toFixed (ASCII '-'); only the imaginary branch
+    // swaps in U+2212.
     expect(formatComplex([-2.5, 0])).toBe("-2.500");
   });
 
@@ -67,9 +56,8 @@ describe("formatComplex — pure real", () => {
 
 describe("formatComplex — imaginary", () => {
   it("positive imaginary only → real renders '0', then '+1.000i'", () => {
-    // Not bare 'i' or '1i' — the real zero is always emitted when im is
-    // the only non-zero part, and the imaginary magnitude is fixed to
-    // 3 decimals with a leading '+'.
+    // Not bare 'i'/'1i': real zero is always emitted, and the magnitude is
+    // fixed to 3 decimals with a leading '+'.
     expect(formatComplex([0, 1])).toBe("0+1.000i");
   });
 
@@ -96,28 +84,22 @@ describe("formatComplex — eps threshold", () => {
   });
 
   it("real just above eps (1e-9) → renders '0.000', NOT '0' (formatting quirk)", () => {
-    // formatting quirk: |1e-9| > eps so it takes the toFixed branch,
-    // which rounds 0.000000001 to "0.000". This differs from the
-    // sub-eps case ("0") and from the exactly-zero case ("0").
+    // |1e-9| > eps → toFixed rounds it to "0.000", unlike the sub-eps "0".
     expect(formatComplex([1e-9, 0])).toBe("0.000");
   });
 
   it("negative real just above eps (-1e-9) → renders '-0.000' (formatting quirk)", () => {
-    // formatting quirk / suspected bug: a tiny negative real above eps
-    // keeps its sign through toFixed, producing the ugly "-0.000".
-    // Pinned so a fix shows up as a failing test.
+    // A tiny negative keeps its sign through toFixed, giving the ugly "-0.000".
     expect(formatComplex([-1e-9, 0])).toBe("-0.000");
   });
 
   it("0.0001 (above eps, rounds to zero visually) → '0.000' (formatting quirk)", () => {
-    // formatting quirk: 0.0001 is well above eps but rounds to "0.000"
-    // at 3 decimals — visually indistinguishable from the sub-eps case.
+    // Above eps but rounds to "0.000" at 3 decimals.
     expect(formatComplex([0.0001, 0])).toBe("0.000");
   });
 
   it("custom eps suppresses a real that the default eps would render", () => {
-    // 0.005 > 1e-10, so default eps would render "0.005" (→ "0.005" at
-    // 3 decimals). With eps=0.01 the threshold swallows it → "0".
+    // 0.005 > default eps; eps=0.01 swallows it → "0".
     expect(formatComplex([0.005, 0], { eps: 0.01 })).toBe("0");
   });
 
@@ -138,16 +120,11 @@ describe("formatComplex — custom decimals", () => {
 
 describe("formatComplex — non-finite", () => {
   it("Infinity real → propagates as the literal string 'Infinity'", () => {
-    // formatting quirk: |Infinity| < eps is false, so it takes the
-    // toFixed branch, and (Infinity).toFixed(3) === "Infinity".
+    // |Infinity| < eps is false → toFixed, and (Infinity).toFixed(3) === "Infinity".
     expect(formatComplex([Infinity, 0])).toBe("Infinity");
   });
 
-  // NaN handling is genuinely broken-looking (the string "NaN" leaks
-  // into the output, and the imaginary branch flips to the minus sign
-  // because NaN >= 0 is false). Skip rather than pin: the task brief
-  // says only to assert exact output for finite inputs; NaN output is
-  // not a contract anyone should rely on.
+  // NaN output is broken-looking and not a contract; skipped, not pinned.
   it.skip("NaN real → currently emits 'NaN' (skipped: non-finite, not a contract)", () => {
     expect(formatComplex([NaN, 0])).toBe("NaN");
   });
@@ -158,8 +135,7 @@ describe("formatComplex — non-finite", () => {
 });
 
 // ============================================================================
-// bitsToLabel — extend the existing matrix.test.ts coverage with
-// out-of-range / boundary cases.
+// bitsToLabel — out-of-range / boundary cases.
 // ============================================================================
 
 describe("bitsToLabel — boundary & overflow", () => {
@@ -185,21 +161,18 @@ describe("bitsToLabel — boundary & overflow", () => {
   });
 
   it("out-of-range index silently masks overflow bits (no error, no ellipsis)", () => {
-    // bitsToLabel(4, 1): index 4 = 0b100, but only 1 bit is read, so
-    // the low bit (0) is returned → "|0⟩". The overflow is silently
-    // dropped — pinned so a future bounds check surfaces as a failure.
+    // Only the low `qubits` bits are read; overflow is silently dropped.
     expect(bitsToLabel(4, 1)).toBe("|0⟩");
-    // bitsToLabel(99, 1): 99 = 0b1100011, low bit is 1 → "|1⟩".
     expect(bitsToLabel(99, 1)).toBe("|1⟩");
   });
 });
 
 // ============================================================================
-// matrixEntry — extend coverage with out-of-bounds behaviour.
+// matrixEntry — out-of-bounds behaviour.
 // ============================================================================
 
 describe("matrixEntry — out of bounds", () => {
-  // 2×2 identity, data row-major over [in, out].
+  // 2×2 identity, row-major over [in, out].
   const id2x2: [number, number][] = [
     [1, 0],
     [0, 0],
@@ -215,17 +188,14 @@ describe("matrixEntry — out of bounds", () => {
   });
 
   it("out-of-bounds (row=99, col=99) → undefined (silent, no throw)", () => {
-    // The function indexes data[col*(1<<outputCount)+row] with no
-    // bounds check; an OOB access returns undefined rather than
-    // throwing. Pinned so a future guard surfaces as a test change.
+    // No bounds check; an OOB access returns undefined rather than throwing.
     expect(matrixEntry(id2x2, 99, 99, 1)).toBeUndefined();
   });
 });
 
 describe("matrixEntry — 4×4 big-endian flat-index formula", () => {
-  // 2 inputs + 2 outputs → 4×4 matrix, 16 entries. Put a distinct
-  // sentinel value in every slot so we can verify the exact
-  // row/col → flat-index mapping (col * (1<<outputCount) + row).
+  // 2 inputs + 2 outputs → 4×4. A distinct sentinel per slot verifies the
+  // exact row/col → flat-index mapping: col * (1<<outputCount) + row.
   const data: [number, number][] = Array.from({ length: 16 }, (_, i) => [
     i,
     0,
@@ -253,8 +223,7 @@ describe("matrixEntry — 4×4 big-endian flat-index formula", () => {
 });
 
 // ============================================================================
-// classifyComputeError — boundary cases beyond the per-kind happy paths
-// already covered in errors.test.ts.
+// classifyComputeError — boundary cases beyond errors.test.ts's happy paths.
 // ============================================================================
 
 describe("classifyComputeError — boundary cases", () => {
@@ -267,12 +236,9 @@ describe("classifyComputeError — boundary cases", () => {
   });
 
   it("is case-sensitive: 'VERTEX NOT FOUND' (uppercase) → 'unknown'", () => {
-    // The classifier lowercases the *input* but matches against the
-    // exact lowercase tokens of the Rust messages. "VERTEX NOT FOUND"
-    // lowercases to "vertex not found", which does NOT contain the
-    // required token "not found (referenced by edge" → unknown.
-    // Pinned: a Rust reword to bare "vertex not found" would NOT be
-    // classified, and this test documents that.
+    // The input is lowercased then matched against exact tokens. "VERTEX NOT
+    // FOUND" → "vertex not found", which lacks the required
+    // "not found (referenced by edge" token.
     expect(classifyComputeError("VERTEX NOT FOUND")).toBe("unknown");
   });
 
@@ -286,9 +252,8 @@ describe("classifyComputeError — boundary cases", () => {
 });
 
 describe("classifyComputeError — every ComputeErrorKind is reachable", () => {
-  // Exhaustiveness guard: each variant of the ComputeErrorKind union
-  // must be produced by SOME input. If a new variant is added to the
-  // union without a classifier branch, this table is where it shows up.
+  // Exhaustiveness guard: a new union variant without a classifier branch
+  // shows up here.
   const cases: Array<[string, ComputeErrorKind]> = [
     ["WASM version mismatch: expected 0.3.0, got 0.2.1", "version-mismatch"],
     ["Failed to fetch wasm asset", "load-failed"],
@@ -313,9 +278,8 @@ describe("classifyComputeError — every ComputeErrorKind is reachable", () => {
 });
 
 describe("ComputeError — constructable for every kind", () => {
-  // The task brief passes args as ("msg", "VertexNotFound"); the actual
-  // source signature is (kind, message, options?). These tests follow
-  // the source signature and assert the four observable properties.
+  // Source signature is (kind, message, options?); assert the four
+  // observable properties.
   const kinds: ComputeErrorKind[] = [
     "version-mismatch",
     "load-failed",
@@ -340,7 +304,7 @@ describe("ComputeError — constructable for every kind", () => {
 });
 
 // ============================================================================
-// result-types — TensorResult shape & union exhaustiveness.
+// result-types — TensorResult shape.
 // ============================================================================
 
 describe("TensorResult", () => {

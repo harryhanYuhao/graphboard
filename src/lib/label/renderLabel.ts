@@ -1,47 +1,33 @@
 // src/lib/label/renderLabel.ts
 //
-// Render a vertex `label` as HTML, with optional KaTeX support.
-// The convention is:
+// Render a vertex label as HTML. A label whose trimmed form is exactly
+// `$...$` (inline) or `$$...$$` (display) is rendered with KaTeX;
+// everything else is HTML-escaped plain text. Embedded inline math is
+// not supported in v1.
 //
-//   - A label that *is* a single math expression — i.e. its trimmed
-//     form is exactly `$...$` (inline) or `$$...$$` (display) — is
-//     rendered with KaTeX
-//   - All other labels are rendered as plain text (HTML-escaped).
+// Decoration only — whether the parsed value is a compute input (e.g.
+// a spider phase) is handled in `src/lib/phase/parser.ts`.
 //
-// Mixed inline math embedded in prose (e.g. `when $a = 0$ the value
-// is`) is intentionally *not* supported in v1 — a vertex body is
-// small enough that one math expression per label
-//
-// Applies to every vertex type as decoration. Whether the *parsed
-// value* is meaningful for the vertex's compute role (e.g. as a
-// phase on a Z/X spider) is a separate concern — see
-// `src/lib/phase/parser.ts`.
-//
-// KaTeX is lazy-loaded (see `katex-loader.ts`) so it stays off the
-// route's critical-path import graph. `renderLabel` itself stays
-// synchronous: it reads the cached KaTeX module directly. If a LaTeX
-// label is rendered in the brief window before the chunk loads, it
-// falls back to escaped plain text for that single paint; React
-// components that consume this re-render once KaTeX is ready (see
-// `useKatexReady`).
+// KaTeX is lazy-loaded (see `katex-loader.ts`); `renderLabel` reads the
+// cached module synchronously. A LaTeX label painted before the chunk
+// loads falls back to escaped text for one frame, then re-renders once
+// KaTeX is ready (see `useKatexReady`).
 
 import { getKatex } from "./katex-loader";
 
 /**
- * True if `label` is a single math expression — i.e. the entire
- * trimmed label is `$...$` or `$$...$$`. Anything else is plain text.
- *
- * Note: this intentionally does not match embedded `$...$` substrings.
- * A label like `$5` is *not* LaTeX.
+ * True if the entire trimmed label is a single `$...$` / `$$...$$`
+ * math expression. Embedded `$...$` substrings (e.g. `$5`) are not
+ * LaTeX.
  */
 export function isLatexLabel(label: string): boolean {
   return extractMathBlock(label) !== null;
 }
 
 type MathBlock = {
-  /** The math expression body, with `$` / `$$` delimiters stripped. */
+  /** Math body with `$` / `$$` delimiters stripped. */
   math: string;
-  /** `true` ⇒ render as a centered display block; `false` ⇒ inline. */
+  /** `true` ⇒ centered display block; `false` ⇒ inline. */
   displayMode: boolean;
 };
 
@@ -56,9 +42,8 @@ function extractMathBlock(label: string): MathBlock | null {
   return null;
 }
 
-// HTML-escape for the plain-text path. We don't reach for a library
-// because the four entities we care about (amp/lt/gt/quote) cover every
-// realistic label and keep the dep surface tiny.
+// HTML-escape for the plain-text path. The five entities below cover
+// every realistic label without pulling in a dependency.
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -71,18 +56,14 @@ function escapeHtml(s: string): string {
 export type RenderedLabel = {
   /** Safe-to-inject HTML string. */
   html: string;
-  /** True if `html` came from KaTeX; false if it's escaped plain text. */
+  /** True if `html` came from KaTeX; false if escaped plain text. */
   isLatex: boolean;
 };
 
 /**
  * Render a vertex label as HTML. Returns `{ html, isLatex }` so callers
- * can show a different style / hint for math vs. text.
- *
- * KaTeX is called with `throwOnError: true`. On any parse error we
- * fall back to escaped plain text 
- *
- * `trust: false`, which blocks `\href`, `\url`, `\includegraphics`
+ * can style math vs. text differently. KaTeX parse errors fall back to
+ * escaped plain text; `trust: false` blocks `\href`, `\url`, etc.
  */
 export function renderLabel(label: string): RenderedLabel {
   if (!label) return { html: "", isLatex: false };
@@ -92,10 +73,8 @@ export function renderLabel(label: string): RenderedLabel {
     return { html: escapeHtml(label), isLatex: false };
   }
 
-  // KaTeX is lazy-loaded. If a LaTeX label is painted before the chunk
-  // has resolved, fall back to escaped text for this one render — the
-  // consuming component re-renders once KaTeX is ready (see
-  // `useKatexReady`), so the correct math HTML appears shortly after.
+  // KaTeX chunk not yet loaded — fall back to escaped text for this
+  // one paint; the consumer re-renders once it's ready.
   const katex = getKatex();
   if (!katex) {
     return { html: escapeHtml(label), isLatex: false };
@@ -105,11 +84,9 @@ export function renderLabel(label: string): RenderedLabel {
     const html = katex.renderToString(block.math, {
       throwOnError: true,
       displayMode: block.displayMode,
-      // Strict mode: refuses \href, \url, etc. so a user-typed LaTeX
-      // can't smuggle links into the canvas.
+      // Refuse \href, \url, etc. so user-typed LaTeX can't add links.
       trust: false,
-      // Keep the output compact — we render inside small vertex bodies
-      // (≈ 32px) and the default KaTeX sizing is too tall.
+      // Compact output for small (~32px) vertex bodies.
       output: "html",
     });
     return { html, isLatex: true };

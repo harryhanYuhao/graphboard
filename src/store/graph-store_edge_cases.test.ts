@@ -1,25 +1,15 @@
-// src/store/graph-store_edge_cases.test.ts
-//
-// Edge-case probing for the Zustand graph store. Each test pins ONE
-// behavior of an action or the undo/redo (zundo temporal) machinery.
-// Suspected-bug tests are written asserting the CORRECT contract and
-// then `it.skip(...)` with a comment citing the violated contract —
-// they are NOT fixed here (parent agent owns the diff).
-//
-// Conventions mirror `graph-store.test.ts` exactly: hit the store
-// directly via `useGraphStore.setState` / `getState`, reset to a known
-// baseline in `beforeEach`, and clear the temporal stack so undo
-// snapshots from a prior test can't leak in.
+// Edge-case probing for the Zustand graph store. Each test pins ONE behavior
+// of an action or the undo/redo (zundo temporal) machinery. Conventions mirror
+// graph-store.test.ts: hit the store directly, reset a baseline in beforeEach,
+// and clear the temporal stack between tests.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useGraphStore } from "./graph-store";
 import { makeVertexWith as makeVertex, makeEdge } from "@/test-utils/factories";
 
-// `importJson` reaches into `@/lib/download`'s `openTextFileWithPicker`.
-// We mock the whole module so the test can hand it a canned JSON string
-// without touching the real File System Access API (jsdom doesn't
-// implement it anyway). The mock is hoisted by vitest; `vi.mocked`
-// lets each test program the return value.
+// `importJson` reaches into `@/lib/download`'s openTextFileWithPicker. Mock the
+// whole module to feed it a canned JSON string (jsdom lacks the FSA API anyway).
+// `vi.mocked` lets each test program the return value.
 vi.mock("@/lib/download", () => ({
   openTextFileWithPicker: vi.fn(),
   saveTextFileWithPicker: vi.fn(),
@@ -42,17 +32,15 @@ function resetStore() {
     clipboard: null,
     fitViewNonce: 0,
   });
-  // Clear the temporal (undo/redo) stack so prior tests don't pollute
-  // future ones via undo snapshots.
+  // Clear the undo/redo stack so prior tests don't leak via snapshots.
   useGraphStore.temporal.getState().clear();
-  // Reset the picker mock's call history between tests.
+  // Reset the picker mock between tests.
   vi.mocked(openTextFileWithPicker).mockReset();
 }
 
 beforeEach(resetStore);
 
-// Helper: a minimal valid v1 document JSON string the import path will
-// accept (passes `parseDocument` in serialization.ts).
+// Minimal valid v1 document JSON the import path accepts.
 function validDocJson(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     schemaVersion: 1,
@@ -70,17 +58,12 @@ function validDocJson(overrides: Record<string, unknown> = {}): string {
 }
 
 // ---------------------------------------------------------------------------
-// BUG #1 (CONFIRMED): importJson does not clear the undo stack.
-// AGENTS.md §"Architecture rules" (lines 84-86) says: "`hydrate`,
-// `importGraphJson`, and `clear` call temporal.getState().clear() so a
-// new document doesn't carry the old undo history." `hydrate` and
-// `reset` honor this; `importJson`'s `applyImport` (graph-store.ts
-// :532-549) does NOT.
+// Undo history lifecycle on document replacement. reset/hydrate/importJson
+// all clear the temporal stack so a new document doesn't carry old history.
 // ---------------------------------------------------------------------------
 
 describe("undo history lifecycle on document replacement", () => {
   it("reset() clears the undo stack (positive control)", () => {
-    // Build up some undo history.
     useGraphStore.getState().addVertexAt({ x: 0, y: 0 });
     useGraphStore.getState().addVertexAt({ x: 10, y: 10 });
     expect(useGraphStore.temporal.getState().pastStates.length).toBeGreaterThan(0);
@@ -91,7 +74,6 @@ describe("undo history lifecycle on document replacement", () => {
 
   it("hydrate() clears the undo stack (positive control)", () => {
     localStorage.clear();
-    // Seed some undo history first.
     useGraphStore.getState().addVertexAt({ x: 0, y: 0 });
     expect(useGraphStore.temporal.getState().pastStates.length).toBeGreaterThan(0);
 
@@ -101,14 +83,8 @@ describe("undo history lifecycle on document replacement", () => {
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
   });
 
-  // BUG: importJson doesn't clear temporal — AGENTS.md contract violation.
-  // AGENTS.md §"Architecture rules" promises that importGraphJson (alongside
-  // hydrate and clear) calls temporal.getState().clear() so a new document
-  // doesn't carry the old undo history. `applyImport` now does this
-  // (graph-store.ts), matching hydrate/reset. Pin the contract.
   it("importJson clears the undo stack after a successful import", async () => {
-    // Seed some undo history on the current doc so there's something
-    // that should be cleared.
+    // Seed undo history so there's something to clear.
     useGraphStore.getState().addVertexAt({ x: 0, y: 0 });
     useGraphStore.getState().addVertexAt({ x: 10, y: 10 });
     expect(useGraphStore.temporal.getState().pastStates.length).toBeGreaterThan(0);
@@ -116,9 +92,8 @@ describe("undo history lifecycle on document replacement", () => {
     vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
     await useGraphStore.getState().importJson();
 
-    // The canvas was non-empty, so importJson opened the confirm dialog
-    // rather than applying directly. Simulate the user clicking "Import"
-    // — that's the production path that actually runs applyImport.
+    // The canvas was non-empty, so importJson opened the confirm dialog.
+    // Simulate the user clicking "Import" — the path that runs applyImport.
     const dialogue = useGraphStore.getState().confirmDialogue;
     expect(dialogue).not.toBeNull();
     dialogue!.onConfirm();
@@ -128,11 +103,9 @@ describe("undo history lifecycle on document replacement", () => {
 });
 
 // ---------------------------------------------------------------------------
-// updateVertexRotation normalization.
-// `normalizeRotation` (serialization.ts:44-50) wraps to [0,360) and rounds
-// float drift. The store action now applies it at the boundary so every
-// caller gets the canonical value — previously only VertexPropertyPanel
-// normalized, leaving direct store callers writing un-normalized values.
+// updateVertexRotation normalization. The store action applies
+// normalizeRotation (wrap to [0,360), round float drift) at the boundary so
+// every caller gets the canonical value.
 // ---------------------------------------------------------------------------
 
 describe("updateVertexRotation normalization", () => {
@@ -171,7 +144,7 @@ describe("drag gesture snapshot counting", () => {
     useGraphStore.getState().onNodesChange([
       { id: "a", type: "position", position: { x: 100, y: 100 } },
     ]);
-    // While the drag is active, nothing should have landed on the stack.
+    // While active, nothing lands on the stack.
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
 
     useGraphStore.getState().onNodeDragStop();
@@ -179,13 +152,13 @@ describe("drag gesture snapshot counting", () => {
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(
       baseline + 1,
     );
-    // The snapshot should reflect the PRE-drag positions.
+    // The snapshot reflects the pre-drag positions.
     const last =
       useGraphStore.temporal.getState().pastStates[
         useGraphStore.temporal.getState().pastStates.length - 1
       ]!;
     expect(last.nodes![0].position).toEqual({ x: 0, y: 0 });
-    // And the live node reflects the final drag position.
+    // The live node reflects the final drag position.
     expect(useGraphStore.getState().nodes[0].position).toEqual({
       x: 100,
       y: 100,
@@ -193,10 +166,8 @@ describe("drag gesture snapshot counting", () => {
   });
 
   it("nested onNodeDragStart without an intervening onNodeDragStop does not double-push", () => {
-    // The module-level `dragGesture` only stashes one snapshot; calling
-    // begin twice overwrites the snapshot but does not resume+re-pause
-    // (begin is idempotent on the paused flag). Pin the current
-    // invariant: two begins + one stop = exactly one pastState delta.
+    // begin is idempotent on the paused flag; two begins + one stop = one
+    // pastState delta. The second begin's snapshot wins.
     useGraphStore.setState({
       nodes: [makeVertex("a", { position: { x: 0, y: 0 } })],
     });
@@ -206,8 +177,7 @@ describe("drag gesture snapshot counting", () => {
     useGraphStore.getState().onNodesChange([
       { id: "a", type: "position", position: { x: 10, y: 10 } },
     ]);
-    // Second begin WITHOUT a stop — the snapshot captured here is the
-    // state AFTER the first begin's paused change (position 10,10).
+    // Second begin without a stop — captures the current (10,10) state.
     useGraphStore.getState().onNodeDragStart();
     useGraphStore.getState().onNodesChange([
       { id: "a", type: "position", position: { x: 20, y: 20 } },
@@ -222,8 +192,7 @@ describe("drag gesture snapshot counting", () => {
       useGraphStore.temporal.getState().pastStates[
         useGraphStore.temporal.getState().pastStates.length - 1
       ]!;
-    // The captured snapshot is the second begin's pre-state (10,10),
-    // NOT the original (0,0) — this pins the "second begin wins" behavior.
+    // The snapshot is the second begin's pre-state (10,10), not the original.
     expect(last.nodes![0].position).toEqual({ x: 10, y: 10 });
   });
 });
@@ -252,7 +221,7 @@ describe("property-edit gesture snapshot counting", () => {
       useGraphStore.temporal.getState().pastStates[
         useGraphStore.temporal.getState().pastStates.length - 1
       ]!;
-    // Snapshot reflects the PRE-edit rotation.
+    // Snapshot reflects the pre-edit rotation.
     expect(last.nodes![0].rotation).toBe(0);
     // Live node has the final edit value.
     expect(useGraphStore.getState().nodes[0].rotation).toBe(90);
@@ -261,22 +230,12 @@ describe("property-edit gesture snapshot counting", () => {
 
 describe("overlapping drag + property-edit gestures", () => {
   it("each gesture pushes its own snapshot even when overlapping (no pause refcount)", () => {
-    // `dragGesture` and `vertexPropertyEditGesture` are SEPARATE
-    // module-level controllers — each owns its own `snapshot` closure.
-    // They share the SAME underlying temporal store, but pause/resume is
-    // a single boolean on that store, NOT a refcount. So:
-    //   - drag begin pauses + captures snapshot A (pre-drag nodes)
-    //   - property-edit begin (idempotent pause) captures snapshot B
-    //     (current live nodes, post-drag-tick)
-    //   - property-edit end RESUMES the store and pushes snapshot B
-    //   - drag end resumes again (already resumed, no-op) and pushes
-    //     snapshot A
-    // Net result: BOTH snapshots land on pastStates. Pin this so a
-    // future refactor that ref-counts pauses (and would drop one) is
-    // caught. It also surfaces a subtle issue: between the property-edit
-    // end and the drag end, the store is UN-paused, so any visual
-    // change in that window WOULD be tracked — there's no test for that
-    // window here, but the double-push is the observable symptom.
+    // drag and property-edit are separate controllers but share one temporal
+    // store; pause/resume is a single boolean, not a refcount. So ending the
+    // property edit resumes the shared store and pushes its snapshot, and
+    // ending the drag pushes its own independent snapshot too. Both land on
+    // pastStates — pinned so a refcounting refactor (which would drop one) is
+    // caught.
     useGraphStore.setState({
       nodes: [makeVertex("a", { position: { x: 0, y: 0 }, rotation: 0 })],
     });
@@ -291,15 +250,13 @@ describe("overlapping drag + property-edit gestures", () => {
     useGraphStore.getState().onVertexPropertyEditStart();
     useGraphStore.getState().updateVertexRotation("a", 45);
 
-    // End the property edit first — this RESUMES the (shared) temporal
-    // store and pushes the property-edit snapshot.
+    // End the property edit first — resumes the shared store, pushes its snapshot.
     useGraphStore.getState().onVertexPropertyEditEnd();
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(
       baseline + 1,
     );
 
-    // Now end the drag — the drag's snapshot is INDEPENDENT of the
-    // property-edit's, so it ALSO pushes.
+    // End the drag — its snapshot is independent, so it pushes too.
     useGraphStore.getState().onNodeDragStop();
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(
       baseline + 2,
@@ -308,17 +265,12 @@ describe("overlapping drag + property-edit gestures", () => {
 });
 
 // ---------------------------------------------------------------------------
-// selectAll / clearSelection: no-op calls should NOT push a pastState
-// (fixed via helper optimization + zundo `equality` function).
+// selectAll / clearSelection: no-op calls must NOT push a pastState
+// (helpers return the same references, and the zundo equality compares by
+// reference). The undo stack stays reserved for real structural changes.
 // ---------------------------------------------------------------------------
 
 describe("selectAll / clearSelection undo-stack side effects", () => {
-  // The helpers (`selectAllElements` / `clearAllSelections`) detect the
-  // "nothing changed" case and return the original array references
-  // unchanged. Combined with the zundo `equality` function (which
-  // compares the partialized slices by reference), no pastState is
-  // pushed when the call is a no-op. The undo stack stays reserved
-  // for real graph-structure changes.
 
   it("selectAll on a graph with all nodes already selected does NOT push a pastState", () => {
     useGraphStore.setState({
@@ -331,8 +283,7 @@ describe("selectAll / clearSelection undo-stack side effects", () => {
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
 
     useGraphStore.getState().selectAll();
-    // No-op call — the helper returns the same array references, the
-    // zundo equality short-circuits the pastState push.
+    // No-op call — no pastState pushed.
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
     // The state is the same (all already selected).
     expect(useGraphStore.getState().nodes.every((n) => n.selected)).toBe(true);
@@ -373,8 +324,7 @@ describe("selectAll / clearSelection undo-stack side effects", () => {
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
 
     useGraphStore.getState().selectAll();
-    // b changed from selected:false → selected:true, so a pastState
-    // is pushed (the call was a real change).
+    // b flipped to selected → a real change pushes a pastState.
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(1);
     expect(useGraphStore.getState().nodes.every((n) => n.selected)).toBe(true);
   });
@@ -390,18 +340,16 @@ describe("selectAll / clearSelection undo-stack side effects", () => {
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
 
     useGraphStore.getState().clearSelection();
-    // b changed from selected:true → selected:false, so a pastState
-    // is pushed.
+    // b flipped to unselected → a real change pushes a pastState.
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(1);
     expect(useGraphStore.getState().nodes.every((n) => !n.selected)).toBe(true);
   });
 });
 
 describe("UI-only actions do not push a pastState (nodes/edges unchanged)", () => {
-  // The zundo `equality` function short-circuits the pastState push
-  // when the partialized slices (nodes / edges) are reference-equal.
-  // UI-only actions (mode, help dialog, confirm dialog) only touch
-  // non-partialized fields, so they should not pollute the undo stack.
+  // The zundo equality short-circuits when the partialized slices are
+  // reference-equal. UI-only actions (mode, help/confirm dialogs) touch
+  // non-partialized fields, so they don't pollute the undo stack.
 
   it("setMode does not push a pastState (mode is not in the partialized slice)", () => {
     useGraphStore.setState({ nodes: [makeVertex("a")] });
@@ -452,6 +400,7 @@ describe("UI-only actions do not push a pastState (nodes/edges unchanged)", () =
     useGraphStore.getState().addSelectedToPendingSources();
     // No pastState — the partialized slice is unchanged.
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+
     expect(useGraphStore.getState().pendingEdgeSources).toEqual(["a"]);
   });
 });
@@ -471,10 +420,8 @@ describe("setMode from add-edge to add-edge", () => {
   });
 
   it("merges the current selection into pending sources on every add-edge switch", () => {
-    // Even when already in add-edge, setMode("add-edge") re-merges the
-    // current selection. This means a newly-selected node immediately
-    // joins the pending list (no need to call addSelectedToPendingSources
-    // explicitly).
+    // Even already in add-edge, setMode("add-edge") re-merges the selection,
+    // so a newly-selected node immediately joins pending.
     useGraphStore.setState({
       mode: "add-edge",
       pendingEdgeSources: ["a"],
@@ -501,7 +448,7 @@ describe("setMode from add-edge to add-edge", () => {
       ],
     });
     useGraphStore.getState().setMode("add-edge");
-    // The selection is a subset of pending — re-merging is a no-op.
+    // Selection is a subset of pending — re-merging is a no-op.
     expect(useGraphStore.getState().pendingEdgeSources.sort()).toEqual([
       "a",
       "b",
@@ -514,13 +461,9 @@ describe("setMode from add-edge to add-edge", () => {
 // ---------------------------------------------------------------------------
 
 describe("structural changes during an active drag", () => {
-  // The drag pauses the temporal store so intermediate position ticks
-  // don't land on the undo stack. The structural-apply path in
-  // `applyReactiveFlowChanges` does NOT resume for its own set(), so
-  // a remove during a drag is applied but NOT recorded — it cannot be
-  // undone. This is a known limitation; pin the current behavior so a
-  // future refactor that ref-counts pauses (and would change the
-  // recording semantics) is a deliberate change.
+  // The drag pauses the temporal store; the structural-apply path doesn't
+  // resume for its own set(), so a remove during a drag is applied but NOT
+  // recorded (it can't be undone). Known limitation, pinned.
   it("a remove during an active drag is applied but NOT recorded on the undo stack", () => {
     useGraphStore.setState({
       nodes: [makeVertex("a"), makeVertex("b")],
@@ -533,13 +476,13 @@ describe("structural changes during an active drag", () => {
       .getState()
       .onNodesChange([{ id: "a", type: "remove" }]);
 
-    // The remove IS applied (the store reflects it).
+    // The remove IS applied (the store reflects it)...
     expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["b"]);
-    // ...but it is NOT recorded (temporal store is paused).
+    // ...but NOT recorded (temporal store is paused).
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
 
-    // After the drag ends, only the drag's own snapshot lands on the
-    // stack — the remove is gone for good from the user's perspective.
+    // After the drag ends, only the drag's snapshot lands on the stack —
+    // the remove is gone for good.
     useGraphStore.getState().onNodeDragStop();
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(
       baseline + 1,
@@ -576,13 +519,10 @@ describe("updateVertexRotation with degenerate inputs", () => {
 // ---------------------------------------------------------------------------
 
 describe("updateVertex* on a non-existent node id", () => {
-  // The .map-based actions always return a new array reference, even
-  // when no node matches. The zundo `equality` function compares
-  // references, so the partialized slice IS different and a pastState
-  // IS pushed. This is a no-op the user can "undo" to a visually-
-  // identical state. Pinned as current behavior — fixing it would
-  // require every action to short-circuit on no-change, which is more
-  // invasive than the value.
+  // The .map-based actions return a new array reference even when no node
+  // matches; zundo compares references, so a pastState IS pushed — a no-op
+  // the user can "undo" to a visually-identical state. Pinned; fixing would
+  // require every action to short-circuit on no-change.
 
   it("updateVertexLabel on a missing id is a silent no-op on node contents", () => {
     useGraphStore.setState({ nodes: [makeVertex("a")] });
@@ -618,8 +558,7 @@ describe("updateVertexLabel / updateVertexType input boundaries", () => {
   });
 
   it("updateVertexType accepts a boundary type ('input') without validation", () => {
-    // The action does not validate — it writes whatever VertexType is
-    // passed. Pin current behavior: 'input' lands in state untouched.
+    // The action writes whatever VertexType is passed (no validation).
     useGraphStore.setState({ nodes: [makeVertex("a")] });
     useGraphStore.getState().updateVertexType("a", "input");
     expect(useGraphStore.getState().nodes[0].data.vertexType).toBe("input");
@@ -702,8 +641,8 @@ describe("paste id and offset behavior", () => {
       .nodes.filter((n) => n.selected)
       .map((n) => n.id);
 
-    // Clear selection on the first paste batch so the second paste
-    // re-selects only the new batch (paste deselects prior nodes).
+    // Clear selection on the first batch so the second paste re-selects
+    // only the new batch (paste deselects prior nodes).
     useGraphStore.getState().paste();
     const secondBatchIds = useGraphStore
       .getState()
@@ -712,7 +651,7 @@ describe("paste id and offset behavior", () => {
 
     expect(firstBatchIds).toHaveLength(1);
     expect(secondBatchIds).toHaveLength(1);
-    // No id collision between the two batches, and neither is "a".
+    // No collision between batches, and neither is "a".
     expect(secondBatchIds[0]).not.toBe(firstBatchIds[0]);
     expect(firstBatchIds[0]).not.toBe("a");
     expect(secondBatchIds[0]).not.toBe("a");
@@ -751,7 +690,7 @@ describe("paste id and offset behavior", () => {
       .getState()
       .nodes.filter((n) => n.selected)[0].position;
 
-    // PASTE_OFFSET_STEP is 24; first paste offsets by 24, second by 48.
+    // PASTE_OFFSET_STEP is 24; first paste offsets 24, second 48.
     expect(secondPos.x).toBeGreaterThan(firstPos.x);
     expect(secondPos.y).toBeGreaterThan(firstPos.y);
   });
@@ -792,7 +731,7 @@ describe("cutSelected semantics", () => {
     expect(useGraphStore.getState().nodes).toHaveLength(1);
 
     useGraphStore.temporal.getState().undo();
-    // Undo rewinds the structural delete; nodes/edges come back.
+    // Undo rewinds the delete; nodes/edges come back.
     expect(useGraphStore.getState().nodes.map((n) => n.id).sort()).toEqual([
       "a",
       "b",
@@ -828,8 +767,7 @@ describe("setMode pendingEdgeSources behavior", () => {
   });
 
   it("setMode to the SAME non-add-edge mode still clears pendingEdgeSources", () => {
-    // Pin: the clear is unconditional on every switch away from add-edge,
-    // even if `mode` is already the target.
+    // The clear is unconditional on every switch away from add-edge.
     useGraphStore.setState({ pendingEdgeSources: ["a"], mode: "select" });
     useGraphStore.getState().setMode("select");
     expect(useGraphStore.getState().pendingEdgeSources).toEqual([]);
@@ -1007,7 +945,7 @@ describe("undo after reset", () => {
     const nodesAfterReset = useGraphStore.getState().nodes.length;
 
     useGraphStore.temporal.getState().undo();
-    // State stays empty — there's nothing to undo back to.
+    // State stays empty — nothing to undo back to.
     expect(useGraphStore.getState().nodes.length).toBe(nodesAfterReset);
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
   });
@@ -1019,8 +957,7 @@ describe("undo after reset", () => {
 
 describe("temporal history limit", () => {
   it("caps pastStates at the configured limit (50)", () => {
-    // Push well past the limit. Each addVertexAt is a tracked
-    // structural change, so it lands one entry on pastStates.
+    // Each addVertexAt is a tracked change; push past the limit.
     for (let i = 0; i < 60; i++) {
       useGraphStore.getState().addVertexAt({ x: i, y: i });
     }

@@ -1,19 +1,10 @@
 // src/components/graph-editor/ComputeResultDialog.tsx
 //
-// Modal that shows the result of the computation.
-// The parent (`GraphEditor`, via the `useCompute` hook) owns the
-// `computePromise` + `progress` state; this dialog awaits the promise
-// and renders:
-//   - while pending: a determinate progress bar fed by `progress`
-//     (contracted / total edges),
-//   - on success: a shape summary using `inputCount`/`outputCount`,
-//     a value grid (rows = inputs, cols = outputs when both > 0), and
-//     a collapsible warnings block,
-//   - on error: an inline error card with the error message
-//
-// Mirrors the visual + a11y shape of `KeyboardShortcutsDialog` /
-// `ConfirmationDialog` so the modals feel like siblings: backdrop click
-// closes, Escape closes, first focusable auto-focused on open.
+// Modal showing the computation result. The parent (`GraphEditor` via
+// `useCompute`) owns `computePromise` + `progress`; this dialog awaits the
+// promise and renders a progress bar (pending), shape summary + value grid +
+// warnings (ok), or an error card (error). Sibling modal shape: backdrop/Escape
+// close, first focusable auto-focused.
 
 "use client";
 
@@ -50,11 +41,9 @@ export function ComputeResultDialog({
   const [errorKind, setErrorKind] = useState<ComputeErrorKind>("unknown");
   const [warningsOpen, setWarningsOpen] = useState(false);
 
-  // Await the parent-supplied promise. The state-reset that would
-  // normally live at the top of an effect is done by the parent
-  // remounting this component via a `key` — see GraphEditor — so the
-  // effect body itself only runs the async work and updates state from
-  // inside the promise callbacks.
+  // Await the parent-supplied promise. State reset is handled by the parent
+  // remounting this component via a `key` (see GraphEditor), so this effect
+  // only runs the async work and updates state from the callbacks.
   useEffect(() => {
     if (!isOpen || !computePromise) return;
 
@@ -160,8 +149,7 @@ function LoadingView({
   progress: { contracted: number; total: number } | null;
 }) {
   // Determinate bar when the worker has reported progress; indeterminate
-  // spinner otherwise (e.g. during the initial wasm fetch before the
-  // first edge is contracted).
+  // spinner otherwise (e.g. during the initial wasm fetch).
   const hasProgress = progress !== null && progress.total > 0;
   const pct = hasProgress
     ? Math.round(((progress!.contracted / progress!.total) * 100))
@@ -245,8 +233,8 @@ function ShapeSummary({
   }
 
   // With boundaries: 2^m × 2^n matrix (rows = outputs, cols = inputs).
-  // Matrix convention: M(out_bits, in_bits) = T(in_bits | out_bits),
-  // both in big-endian bit order. See ValueTable for the basis labels.
+  // Convention M(out_bits, in_bits) = T(in_bits | out_bits), big-endian. See
+  // ValueTable for the basis labels.
   if (inputCount + outputCount > 0) {
     const nRows = 2 ** outputCount;
     const nCols = 2 ** inputCount;
@@ -294,20 +282,14 @@ function ValueTable({
   // `fmt` / `bitsToLabel` live in `matrix-format.ts` (shared with tests).
   const fmt = formatComplex;
 
-  // The compute layer emits the result with shape
-  //   [in_1, ..., in_n, out_1, ..., out_m]
-  // in row-major order. Flattening: data[col * 2^m + row] where
-  //   col = big-endian input bits,  row = big-endian output bits.
-  // So the matrix view M(row, col) is a reshape of `data` into
-  // (2^outputCount) rows × (2^inputCount) cols. This matches the
-  // requested convention M(2*c+d, 2*a+b) = T(ab | cd).
+  // The compute layer emits shape [in_1..in_n, out_1..out_m] in row-major
+  // order: data[col * nRows + row], where col = big-endian input bits and
+  // row = big-endian output bits. This matches M(2*c+d, 2*a+b) = T(ab | cd).
   const nRows = 2 ** outputCount;
   const nCols = 2 ** inputCount;
 
-  // The result tensor's shape length should equal nRows+nCols dims.
-  // If there are leftover non-boundary legs (shape.length > inputCount
-  // + outputCount), the clean 2D matrix doesn't apply — render a flat
-  // list with explicit indices so the user still sees every value.
+  // Leftover non-boundary legs break the clean 2D matrix — render a flat list
+  // with explicit indices so the user still sees every value.
   if (shape.length !== inputCount + outputCount) {
     const tooLarge = data.length > 64;
     const display = tooLarge ? data.slice(0, 32) : data;
@@ -328,8 +310,8 @@ function ValueTable({
     );
   }
 
-  // Build a row-major reshape. `data[col * nRows + row]` gives M(row, col).
-  // Truncate if absurdly large (would blow up the DOM).
+  // Row-major reshape: data[col * nRows + row] = M(row, col). Truncate when
+  // too large to blow up the DOM.
   const tooLarge = nRows * nCols > 64;
   const rowsToShow = tooLarge ? Math.min(nRows, 8) : nRows;
   const colsToShow = tooLarge ? Math.min(nCols, 8) : nCols;
@@ -421,9 +403,7 @@ function ErrorView({
   kind: ComputeErrorKind;
 }) {
   // Remediation hint per error kind. `kind` comes from the structured
-  // `ComputeError` thrown by the compute wrapper (see
-  // `src/lib/compute/errors.ts`) — no more substring sniffing of the
-  // human-readable message.
+  // `ComputeError` (see `src/lib/compute/errors.ts`) — no message sniffing.
   const hint = (() => {
     switch (kind) {
       case "version-mismatch":

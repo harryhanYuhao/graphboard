@@ -1,12 +1,8 @@
 // crates/zxw/tests/tensor_edge_cases.rs
 //
-// Edge-case probing for the `Tensor` primitive and the per-vertex
-// builders. Each test pins ONE behavior with a hand-derived expected
-// value. Suspected-bug tests are `#[ignore]`d with a comment, or
-// `#[should_panic]` where the panic IS the contract.
-//
-// Conventions mirror tests/tensor_correctness.rs: `c(re, im)` helper,
-// `assert_eq_cplx!` for complex equality.
+// Edge-case probes for the `Tensor` primitive and per-vertex builders.
+// Each pins ONE behavior with a hand-derived value. Panics that ARE the
+// contract use `#[should_panic`. Conventions mirror tensor_correctness.rs.
 
 use ndarray::{ArrayD, IxDyn};
 use num_complex::Complex;
@@ -48,9 +44,7 @@ fn identity_matrix() -> [[Cplx; 2]; 2] {
 #[test]
 #[should_panic]
 fn contract_on_rank0_scalar_panics_axis_out_of_range() {
-    // Rank-0 tensors have no axis 0; `a.shape()[0]` indexes an empty
-    // slice. The contract is "panic on axis out of range" (the
-    // mismatched-length assert never even runs).
+    // Rank-0 has no axes; indexing `shape()[0]` panics.
     let a = Tensor::scalar(c(3.0, 0.0));
     let b = Tensor::scalar(c(4.0, 0.0));
     let _ = a.contract(b, 0, 0);
@@ -59,7 +53,7 @@ fn contract_on_rank0_scalar_panics_axis_out_of_range() {
 #[test]
 #[should_panic]
 fn trace_on_rank0_scalar_panics_axis_out_of_range() {
-    // Same shape-indexing path as contract; rank-0 has no axes to trace.
+    // Rank-0 has no axes to trace.
     let t = Tensor::scalar(c(3.0, 0.0));
     let _ = t.trace(0, 0);
 }
@@ -71,8 +65,7 @@ fn trace_on_rank0_scalar_panics_axis_out_of_range() {
 #[test]
 fn outer_product_of_two_scalars_is_their_product() {
     // scalar(c) ⊗ scalar(d) → scalar(c·d). The empty-graph reduction
-    // identity relies on this; the rank-0 path through `to_shape((1,))`
-    // and the empty-product axis math is the tricky part.
+    // identity relies on this rank-0 path.
     let a = Tensor::scalar(c(3.0, 0.0));
     let b = Tensor::scalar(c(4.0, 0.0));
     let r = a.outer_product(b);
@@ -83,7 +76,7 @@ fn outer_product_of_two_scalars_is_their_product() {
 
 #[test]
 fn outer_product_left_scalar_one_is_identity() {
-    // scalar(1) ⊗ t == t for a rank-2 operand. Pins the left-identity.
+    // scalar(1) ⊗ t == t (left identity).
     let one = Tensor::scalar(c(1.0, 0.0));
     let t = Tensor::from_array(
         ndarray::arr2(&[[c(1.0, 0.0), c(2.0, 0.0)], [c(3.0, 0.0), c(4.0, 0.0)]]).into_dyn(),
@@ -98,7 +91,7 @@ fn outer_product_left_scalar_one_is_identity() {
 
 #[test]
 fn outer_product_right_scalar_one_is_identity() {
-    // t ⊗ scalar(1) == t. Pins the right-identity.
+    // t ⊗ scalar(1) == t (right identity).
     let t = Tensor::from_array(
         ndarray::arr2(&[[c(1.0, 0.0), c(2.0, 0.0)], [c(3.0, 0.0), c(4.0, 0.0)]]).into_dyn(),
     );
@@ -117,8 +110,8 @@ fn outer_product_right_scalar_one_is_identity() {
 
 #[test]
 fn trace_of_non_symmetric_rank2_is_diagonal_sum() {
-    // trace of [[1,2],[3,4]] over (0,1) = a[0,0] + a[1,1] = 1 + 4 = 5.
-    // Non-symmetric values catch an off-diagonal-leak bug.
+    // trace([[1,2],[3,4]]) over (0,1) = 1+4 = 5. Non-symmetric values
+    // catch an off-diagonal-leak bug.
     let t = Tensor::from_array(
         ndarray::arr2(&[[c(1.0, 0.0), c(2.0, 0.0)], [c(3.0, 0.0), c(4.0, 0.0)]]).into_dyn(),
     );
@@ -131,23 +124,19 @@ fn trace_of_non_symmetric_rank2_is_diagonal_sum() {
 #[test]
 #[should_panic]
 fn trace_of_rank1_with_same_axis_twice_panics() {
-    // trace(t, 0, 0) on a length-2 vector: the perm construction yields
-    // `[0, 0]` (a non-permutation of length 2 for an ndim-1 array), so
-    // ndarray's `permuted_axes` rejects it. Tracing one axis against
-    // itself is undefined; pin the panic.
+    // trace(t, 0, 0) on a length-2 vector: perm `[0,0]` isn't a valid
+    // permutation, so `permuted_axes` rejects it. Tracing an axis against
+    // itself is undefined.
     let t = Tensor::from_array(ndarray::arr1(&[c(5.0, 0.0), c(7.0, 0.0)]).into_dyn());
     let _ = t.trace(0, 0);
 }
 
 #[test]
 fn trace_adjacent_and_non_adjacent_axes_give_same_result() {
-    // For a rank-4 "all-equal diagonal" tensor T[i,j,k,l] = v if all four
-    // indices equal else 0:
-    //   trace over adjacent (0,1): result[k,l] = Σ_i T[i,i,k,l] = v if k==l.
-    //   trace over non-adjacent (0,3): result[j,k] = Σ_i T[i,j,k,i] = v if j==k.
-    // Both reduce to v·I_2 (distinguished only by which free axes
-    // remain). This confirms the permute-to-last-two path handles
-    // adjacent and non-adjacent axis pairs identically.
+    // Rank-4 "all-equal diagonal" tensor T[i,j,k,l] = v iff all four
+    // indices match. Tracing adjacent (0,1) and non-adjacent (0,3) both
+    // reduce to v·I_2 — confirms the permute-to-last-two path handles
+    // both axis-pair shapes identically.
     let v = c(2.0, 0.0);
     let mut buf = vec![c(0.0, 0.0); 16];
     for i in 0..2 {
@@ -187,8 +176,7 @@ fn trace_adjacent_and_non_adjacent_axes_give_same_result() {
 
 #[test]
 fn permuted_axes_identity_perm_is_noop() {
-    // perm [0,1,2] on a rank-3 tensor with distinguishable values must
-    // return identical data.
+    // Identity perm on a rank-3 tensor with distinguishable values is a no-op.
     let mut values = vec![c(0.0, 0.0); 24];
     for idx in 0..24 {
         values[idx] = c(idx as f64, 0.0);
@@ -208,8 +196,7 @@ fn permuted_axes_identity_perm_is_noop() {
 #[test]
 #[should_panic]
 fn permuted_axes_non_permutation_panics() {
-    // perm [0, 0] is not a valid permutation (axis 0 used twice).
-    // ndarray's `permuted_axes` rejects it. Pin the panic.
+    // perm [0,0] isn't a permutation (axis 0 reused) → ndarray rejects it.
     let t = Tensor::zeros(&[2, 2]);
     let _ = t.permuted_axes(&[0, 0]);
 }
@@ -217,7 +204,7 @@ fn permuted_axes_non_permutation_panics() {
 #[test]
 #[should_panic]
 fn permuted_axes_wrong_length_panics() {
-    // perm of length 3 for a rank-2 tensor — wrong arity. ndarray panics.
+    // perm of length 3 for a rank-2 tensor — wrong arity → panic.
     let t = Tensor::zeros(&[2, 2]);
     let _ = t.permuted_axes(&[0, 1, 2]);
 }
@@ -228,7 +215,7 @@ fn permuted_axes_wrong_length_panics() {
 
 #[test]
 fn apply_2x2_identity_matrix_is_noop_on_rank2() {
-    // I applied to axis 0 of a rank-2 tensor leaves it unchanged.
+    // I applied to an axis leaves the tensor unchanged.
     let mut t = Tensor::from_array(
         ndarray::arr2(&[[c(1.0, 0.0), c(2.0, 0.0)], [c(3.0, 0.0), c(4.0, 0.0)]]).into_dyn(),
     );
@@ -245,9 +232,8 @@ fn apply_2x2_identity_matrix_is_noop_on_rank2() {
 
 #[test]
 fn apply_2x2_hadamard_twice_recovers_original_on_rank3() {
-    // H·H = I per leg. Applying H to axis 1 of an arbitrary rank-3
-    // tensor twice must recover the original. Distinguishable values
-    // make any indexing bug visible.
+    // H·H = I per leg: applying H to axis 1 twice recovers the original.
+    // Distinguishable values expose any indexing bug.
     let mut values = vec![c(0.0, 0.0); 8];
     for idx in 0..8 {
         values[idx] = c((idx as f64) + 1.0, (idx as f64) * 0.5);
@@ -274,8 +260,7 @@ fn apply_2x2_hadamard_twice_recovers_original_on_rank3() {
 
 #[test]
 fn apply_2x2_on_last_axis_of_rank3() {
-    // (2,2,2) with T[i,j,k] = i*4 + j*2 + k + 1 (values 1..8).
-    // Swap on axis 2 (last): T'[i,j,k] = T[i,j,1-k].
+    // (2,2,2) with T[i,j,k] = i*4+j*2+k+1. Swap on axis 2: T'[i,j,k]=T[i,j,1-k].
     let mut values = vec![c(0.0, 0.0); 8];
     for i in 0..2 {
         for j in 0..2 {
@@ -298,7 +283,7 @@ fn apply_2x2_on_last_axis_of_rank3() {
 
 #[test]
 fn apply_2x2_on_axis0_of_rank1_length2() {
-    // Basic case: a length-2 vector, swap on axis 0 flips the entries.
+    // Length-2 vector: swap on axis 0 flips the entries.
     let mut t = Tensor::from_array(ndarray::arr1(&[c(5.0, 0.0), c(7.0, 0.0)]).into_dyn());
     t.apply_2x2_to_axis(0, swap_matrix());
     assert_eq_cplx!(c(7.0, 0.0), t.get(&[0]));
@@ -311,27 +296,25 @@ fn apply_2x2_on_axis0_of_rank1_length2() {
 
 #[test]
 fn get_mut_round_trips_through_get() {
-    // Set a value via get_mut, read it back via get, including a complex
-    // imaginary part.
+    // Set via get_mut, read back via get (including imaginary part).
     let mut t = Tensor::zeros(&[2, 3]);
     *t.get_mut(&[1, 2]) = c(4.0, 5.0);
     assert_eq_cplx!(c(4.0, 5.0), t.get(&[1, 2]));
-    // Other entries remain 0.
+    // Other entries stay 0.
     assert_eq_cplx!(c(0.0, 0.0), t.get(&[0, 0]));
 }
 
 #[test]
 #[should_panic]
 fn get_out_of_bounds_panics() {
-    // t.get(&[5]) on a length-2 vector: ndarray indexing panics.
+    // t.get(&[5]) on a length-2 vector → ndarray indexing panics.
     let t = Tensor::zeros(&[2]);
     let _ = t.get(&[5]);
 }
 
 #[test]
 fn display_produces_nonempty_string_with_shape() {
-    // Smoke test: Display forwards to ndarray's Display. The output for
-    // a 2x2 tensor must be non-empty and contain bracket / value markup.
+    // Smoke test: Display (forwarded to ndarray) emits non-empty array markup.
     let t = Tensor::from_array(
         ndarray::arr2(&[[c(1.0, 0.0), c(2.0, 0.0)], [c(3.0, 0.0), c(4.0, 0.0)]]).into_dyn(),
     );
@@ -372,8 +355,8 @@ fn z_spider_arity0_phase_pi_half_is_one_plus_i() {
 
 #[test]
 fn z_box_arity0_is_raw_phase_not_one_plus_phase() {
-    // z_box(0, φ) = scalar φ (the corners collapse to one entry carrying
-    // the phase value). Distinct from z_spider(0, φ) = 1 + e^{iφ}.
+    // z_box(0, φ) = scalar φ (corners collapse to one entry). Distinct
+    // from z_spider(0, φ) = 1 + e^{iφ}.
     let t_pi = z_box(0, PI);
     assert_eq_cplx!(c(PI, 0.0), t_pi.get(&[]));
 
@@ -389,12 +372,15 @@ fn z_box_arity0_is_raw_phase_not_one_plus_phase() {
 // =====================================================================
 
 #[test]
-fn w_node_arity0_is_zero_scalar() {
-    // No legs → no single-hot index exists → the single entry is 0.
+fn w_node_zero_outputs_is_input_qubit() {
+    // w_node(0 outputs): rank-1 [2]. T[0]=1 (|0⟩ vacuously maps to empty
+    // output), T[1]=0. A degenerate W the contraction layer rejects
+    // (≥2 outputs) but the builder constructs cleanly.
     let t = w_node(0);
-    assert_eq!(t.rank(), 0);
-    assert_eq!(t.shape(), &[] as &[usize]);
-    assert_eq_cplx!(c(0.0, 0.0), t.get(&[]));
+    assert_eq!(t.rank(), 1);
+    assert_eq!(t.shape(), &[2]);
+    assert_eq_cplx!(c(1.0, 0.0), t.get(&[0]));
+    assert_eq_cplx!(c(0.0, 0.0), t.get(&[1]));
 }
 
 #[test]
@@ -432,8 +418,7 @@ fn build_vertex_tensor_returns_none_for_boundaries() {
 
 #[test]
 fn build_vertex_tensor_returns_some_for_every_generator() {
-    // Pin the dispatch table at integration level: every generator
-    // variant produces a tensor.
+    // Pin the dispatch table: every generator variant produces a tensor.
     let cases = [
         VertexType::Z,
         VertexType::X,
@@ -458,7 +443,7 @@ fn build_vertex_tensor_returns_some_for_every_generator() {
 
 #[test]
 fn x_spider_arity0_equals_z_spider_arity0() {
-    // The `for axis in 0..arity` loop doesn't execute at arity 0, so
+    // The per-leg Hadamard loop is empty at arity 0, so
     // x_spider(0, φ) == z_spider(0, φ) == 1 + e^{iφ}.
     let t = x_spider(0, FRAC_PI_2);
     assert_eq!(t.rank(), 0);
@@ -482,7 +467,7 @@ fn x_box_arity0_equals_z_box_arity0() {
 
 #[test]
 fn z_spider_arity4_has_exactly_two_nonzero_entries() {
-    // Shape [2,2,2,2]; only (0,0,0,0)=1 and (1,1,1,1)=e^{iφ} are non-zero.
+    // Shape [2,2,2,2]; only (0,0,0,0)=1 and (1,1,1,1)=e^{iφ} non-zero.
     let phi = FRAC_PI_3;
     let z = z_spider(4, phi);
     assert_eq!(z.shape(), &[2, 2, 2, 2]);
@@ -503,9 +488,8 @@ fn z_spider_arity4_has_exactly_two_nonzero_entries() {
 
 #[test]
 fn x_spider_arity3_is_not_sparse_like_z_spider() {
-    // After the Hadamard basis change on each of 3 legs, x_spider is a
-    // dense-ish tensor — strictly more than 2 non-zero entries (unlike
-    // z_spider which has exactly 2).
+    // After Hadamard on each leg, x_spider is dense — more than 2 non-zero
+    // entries (unlike z_spider's exactly 2).
     let x = x_spider(3, FRAC_PI_3);
     assert_eq!(x.shape(), &[2, 2, 2]);
     let mut non_zero = 0;
@@ -536,19 +520,25 @@ fn and_gate_arity4_is_one_only_at_all_ones() {
 }
 
 #[test]
-fn w_node_arity4_has_exactly_four_single_hot_entries() {
-    // 4 single-bit indices, each = 1.
+fn w_node_4_outputs_has_five_nonzero_entries() {
+    // Directional W(4 outputs): shape [2;5]. Non-zero: T[0,…,0]=1 plus
+    // T[1, single-hot at one output axis]=1 for each of 4 outputs → 5 total.
     let w = w_node(4);
-    assert_eq!(w.shape(), &[2, 2, 2, 2]);
+    assert_eq!(w.shape(), &[2, 2, 2, 2, 2]);
     let mut ones = 0;
-    for bits in 0..16u32 {
-        let idx: Vec<usize> = (0..4).map(|i| ((bits >> i) & 1) as usize).collect();
+    for bits in 0..32u32 {
+        let idx: Vec<usize> = (0..5).map(|i| ((bits >> i) & 1) as usize).collect();
         let v = w.get(&idx);
-        let bitcount = bits.count_ones() as usize;
-        if bitcount == 1 {
+        // Valid non-zero patterns: all-zeros, or {input=1, exactly one
+        // output axis (1..4) hot}.
+        let input_bit = (bits >> 0) & 1;
+        let output_bits: u32 = (bits >> 1) & 0b1111; // outputs are bits 1..4
+        let is_valid = bits == 0
+            || (input_bit == 1 && output_bits.count_ones() == 1);
+        if is_valid {
             assert!(
                 (v - c(1.0, 0.0)).norm() < 1e-9,
-                "single-bit index {:?} should be 1, got {:?}",
+                "valid index {:?} should be 1, got {:?}",
                 idx,
                 v
             );
@@ -556,13 +546,13 @@ fn w_node_arity4_has_exactly_four_single_hot_entries() {
         } else {
             assert!(
                 v.norm() < 1e-9,
-                "non-single-bit {:?} should be 0, got {:?}",
+                "invalid index {:?} should be 0, got {:?}",
                 idx,
                 v
             );
         }
     }
-    assert_eq!(ones, 4, "w_node(4) should have exactly 4 non-zero entries");
+    assert_eq!(ones, 5, "w_node(4 outputs) should have 5 non-zero entries");
 }
 
 // =====================================================================
@@ -571,9 +561,7 @@ fn w_node_arity4_has_exactly_four_single_hot_entries() {
 
 #[test]
 fn z_spider_arity4_fully_traced_is_two() {
-    // z_spider(4, 0): T[i,j,k,l] = 1 iff all indices equal.
-    // trace(0,1) → result[k,l] = Σ_i T[i,i,k,l] = 1 iff k==l → I_2.
-    // trace(0,1) again → 1 + 1 = 2. (Pins the all-pairs reduction.)
+    // z_spider(4, 0) double-traced → 2. Pins the all-pairs reduction.
     let r = z_spider(4, 0.0).trace(0, 1).trace(0, 1);
     assert_eq!(r.rank(), 0);
     assert_eq_cplx!(c(2.0, 0.0), r.get(&[]));
@@ -585,7 +573,7 @@ fn z_spider_arity4_fully_traced_is_two() {
 
 #[test]
 fn zeros_of_empty_shape_is_rank0_zero() {
-    // Tensor::zeros(&[]) → rank-0 tensor with a single entry 0.
+    // Tensor::zeros(&[]) → rank-0 tensor with a single 0 entry.
     let t = Tensor::zeros(&[]);
     assert_eq!(t.rank(), 0);
     assert_eq!(t.shape(), &[] as &[usize]);

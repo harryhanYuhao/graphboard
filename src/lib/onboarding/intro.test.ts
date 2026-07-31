@@ -1,11 +1,6 @@
-// src/lib/onboarding/intro.test.ts
-//
-// The intro gate is a pure localStorage module — every entry point either
-// reads or writes a single flag. The tests pin the read/write contract and,
-// importantly, the SSR guard: `shouldShowIntro()` must return false when
-// `window` is undefined so SSR and first client paint agree (otherwise the
-// server renders closed and the client pops the modal open → hydration
-// mismatch).
+// The intro gate is a localStorage flag. Beyond the read/write contract,
+// the SSR guard matters: `shouldShowIntro()` must return false when
+// `window` is undefined, or SSR (dialog closed) and first paint disagree.
 
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -16,8 +11,7 @@ import {
 } from "./intro";
 
 describe("intro gate", () => {
-  // jsdom gives us a real localStorage; clear the flag between cases so
-  // ordering doesn't matter.
+  // jsdom gives a real localStorage; clear the flag between cases.
   afterEach(() => {
     localStorage.removeItem(INTRO_LOCAL_STORAGE_KEY);
   });
@@ -40,7 +34,7 @@ describe("intro gate", () => {
 });
 
 describe("intro gate SSR safety", () => {
-  // `window` is stripped to simulate SSR. The module checks `typeof window`
+  // `window` is stripped to simulate SSR; the module checks `typeof window`
   // first, so these paths are independent of localStorage state.
   const originalWindow = globalThis.window;
 
@@ -63,7 +57,7 @@ describe("intro gate SSR safety", () => {
   it("shouldShowIntro returns false on SSR (never auto-open during render)", () => {
     // @ts-expect-error - intentionally stripping window for SSR sim
     delete (globalThis as { window?: unknown }).window;
-    // Must be false so SSR markup (dialog closed) matches first paint.
+    // Must be false so SSR markup matches first paint.
     expect(shouldShowIntro()).toBe(false);
   });
 });

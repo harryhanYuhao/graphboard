@@ -1,10 +1,6 @@
-// src/lib/compute/matrix.test.ts
-//
-// Pure-function tests for the matrix-presentation math used in
-// ComputeResultDialog.tsx. See `matrix-format.ts` for the axis-ordering
-// contract (data is row-major over [in_1, …, in_n, out_1, …, out_m],
-// all dims = 2; the frontend reshapes it via
-//   M(row, col) = data[col * (1 << outputCount) + row]).
+// Matrix-presentation math for ComputeResultDialog.tsx. Data is row-major
+// over [in_1,…,in_n,out_1,…,out_m] (all dims 2); the reshape is
+// `M(row, col) = data[col * (1 << outputCount) + row]`.
 
 import { describe, expect, it } from "vitest";
 
@@ -28,8 +24,7 @@ describe("bitsToLabel", () => {
   });
 
   it("2 qubits big-endian: 2 (0b10) → |10⟩ (high bit first)", () => {
-    // With 2 qubits, bit 0 is the leftmost (high-order). Index 2 =
-    // binary 10, so the leftmost bit is 1, rightmost is 0 → |10⟩.
+    // Bit 0 is the leftmost (high-order): index 2 = 0b10 → |10⟩.
     expect(bitsToLabel(2, 2)).toBe("|10⟩");
   });
 
@@ -43,12 +38,7 @@ describe("bitsToLabel", () => {
 });
 
 describe("matrix reshape — M(row, col) = data[col * nRows + row]", () => {
-  // 1 input + 1 output → 2×2 identity matrix.
-  // Data layout row-major over [in, out]:
-  //   data[0] = (in=0, out=0) = M(0,0)
-  //   data[1] = (in=0, out=1) = M(1,0)
-  //   data[2] = (in=1, out=0) = M(0,1)
-  //   data[3] = (in=1, out=1) = M(1,1)
+  // 2×2 identity, row-major over [in, out].
   const id2x2: [number, number][] = [[1, 0], [0, 0], [0, 0], [1, 0]];
 
   it("M(0,0) → 1 in a 2×2 identity", () => {
@@ -75,11 +65,9 @@ describe("matrix reshape — M(row, col) = data[col * nRows + row]", () => {
     expect(im).toBeCloseTo(0, 10);
   });
 
-  // 2 inputs + 2 outputs → 4×4 matrix.
-  // Data layout over [in1, in2, out1, out2], all dim=2.
-  // Identity-like: only the all-0 corner (data[0]) and all-1 corner
-  // (data[15]) are 1; everything else 0.
-  // This matches the Rust test `two_inputs_two_outputs_basis_order_is_big_endian`.
+  // 4×4 over [in1, in2, out1, out2]; only the all-0 (data[0]) and all-1
+  // (data[15]) corners are 1. Matches the Rust test
+  // `two_inputs_two_outputs_basis_order_is_big_endian`.
   const bigEndianId4x4: [number, number][] = Array.from(
     { length: 16 },
     (_, i) =>
@@ -95,15 +83,14 @@ describe("matrix reshape — M(row, col) = data[col * nRows + row]", () => {
   });
 
   it("4×4 matrix: all-1 corner (row=3, col=3) → 1", () => {
-    // row=3 = binary 11, col=3 = binary 11. index = 3*4 + 3 = 15.
+    // index = 3*4 + 3 = 15.
     const [re, im] = matrixEntry(bigEndianId4x4, 3, 3, 2);
     expect(re).toBeCloseTo(1, 10);
     expect(im).toBeCloseTo(0, 10);
   });
 
   it("4×4 matrix: (row=2, col=2) with mixed bits → 0", () => {
-    // row=2 = out bits (1,0), col=2 = in bits (1,0).
-    // index = 2*4 + 2 = 10. All 4 bits = {1,0,1,0} — mixed, should be 0.
+    // index = 2*4 + 2 = 10; bits {1,0,1,0} are mixed → 0.
     const [re, im] = matrixEntry(bigEndianId4x4, 2, 2, 2);
     expect(re).toBeCloseTo(0, 10);
     expect(im).toBeCloseTo(0, 10);

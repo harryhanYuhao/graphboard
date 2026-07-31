@@ -28,15 +28,8 @@ export function VertexNode({
     (state) => state.pendingEdgeSources,
   );
   const updateVertexLabel = useGraphStore((state) => state.updateVertexLabel);
-  // `rotation` lives on the runtime node (not in `data` — it's a view
-  // field), so we read it through the store with a per-id selector.
-  // Returning a primitive keeps re-renders cheap: this component only
-  // re-renders when *its* rotation actually changes.
-  //
-  // The selector body uses the memoized `nodesById` map (O(1) lookup)
-  // rather than `nodes.find(...)` — the latter made every drag O(n²)
-  // because the selector runs on every store update for every mounted
-  // vertex.
+  // `rotation` is a view field on the runtime node, read via the memoized
+  // `nodesById` map so the primitive return only re-renders on change.
   const rotation = useGraphStore(
     (state) => nodesById(state.nodes).get(id)?.rotation ?? 0,
   );
@@ -46,9 +39,8 @@ export function VertexNode({
   const meta = VERTEX_TYPE_MAP[data.vertexType] ?? VERTEX_TYPE_MAP[DEFAULT_VERTEX_TYPE];
   const isDirectional = isDirectionalVertex(data.vertexType);
 
-  // A CSS border/ring does not follow a clip-path silhouette, so we use a
-  // drop-shadow (which respects the clipped alpha shape) to convey the
-  // selected / pending-edge-source state uniformly across all shapes.
+  // CSS borders don't follow a clip-path silhouette; a drop-shadow respects
+  // the clipped alpha shape, so it works uniformly across all shapes.
   const highlightFilter = isPendingEdgeSource
     ? "drop-shadow(0 0 4px rgb(245 158 11))"
     : selected
@@ -63,46 +55,30 @@ export function VertexNode({
     .filter(Boolean)
     .join(" ");
 
-  // Size is applied via inline style. A vertex "has content" if it
-  // has a non-empty user label *or* a type-level default glyph
-  // (e.g. the And gate's SVG Λ). Without content, the body shrinks
-  // to the small size; with content, it grows to give the label /
-  // glyph room.
+  // A vertex "has content" if it has a user label or a type default glyph;
+  // the body grows when it does to give the label/glyph room.
   const hasContent = data.label !== "" || meta.glyph != null;
   const dimension = hasContent
     ? `${meta.size * 0.35}rem`
     : `${meta.size * 0.25}rem`;
 
-  // Ref into the label editor so the outer-div double-click handler
-  // (below) can request editing on its behalf. The inner <span>'s
-  // own onDoubleClick only fires when the click lands directly on
-  // the span/glyph — that misses all the cases where the user
-  // double-clicks the body background (which is most of the visible
-  // body for empty-label vertices like W / Z / X / H, where there's
-  // no glyph to fill the box). The outer-div handler catches every
-  // double-click that bubbles up from anywhere inside the vertex.
+  // Ref into the label editor so the outer-div onDoubleClick can trigger
+  // editing; the inner span's own handler only catches clicks that land
+  // directly on the label/glyph, not the body background.
   const labelEditorRef = useRef<VertexLabelEditorHandle>(null);
 
   return (
     <div
       className="relative"
       onDoubleClick={(event) => {
-        // Stop React Flow's pane-level double-click from also firing
-        // (it would otherwise reset the viewport).
+        // Stop React Flow's pane-level double-click (resets the viewport).
         event.stopPropagation();
         labelEditorRef.current?.startEditing();
       }}
     >
-      {/* Order badge for boundary vertices (input / output). Placed in
-          the OUTER non-rotated wrapper (not the inner rotated one) so it
-          stays screen-upright at any rotation — a number that spins with
-          the vertex would be unreadable. Rendered only when `order` is a
-          finite number; legacy docs with unset `order` still show the
-          node itself, just without a (potentially misleading) number.
-          `pointer-events-none` keeps clicks/drags routed to the body and
-          React Flow. Input pins top-left (it clusters at the left canvas
-          edge), output pins top-right — mirrors the blue/green palette
-          already used for these types. */}
+      {/* Boundary vertex (input/output) order badge. Placed in the outer
+          non-rotated wrapper so the number stays screen-upright at any
+          rotation. Input pins top-left, output pins top-right. */}
       {isBoundaryVertex(data.vertexType) &&
         typeof data.order === "number" &&
         Number.isFinite(data.order) && (

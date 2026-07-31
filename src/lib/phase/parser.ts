@@ -10,19 +10,13 @@
 //   unary   := '-' factor | '+' factor
 //   number  := [0-9]+ ('.' [0-9]+)?
 //
-// Whitespace is ignored everywhere. The Unicode minus (`−`, U+2212)
-// and the multiplication sign (`×`, U+00D7) and division sign
-// (`÷`, U+00F7) are accepted as synonyms for `-`, `*`, `/` so a user
-// pasting from a typeset source doesn't have to retype.
+// Whitespace is ignored. `−` (U+2212), `×` (U+00D7), `÷` (U+00F7) are
+// accepted as synonyms for `-`, `*`, `/` for pasted typeset input.
 //
-// A leading and/or trailing `$...$` or `$$...$$` pair is stripped
-// before parsing, so the *same* string can be both rendered with
-// KaTeX and parsed here — labels and phase values stay in sync.
-//
-// Returns a discriminated `{ ok: true, value } | { ok: false, error }`
-// so callers (the property panel live preview, the Rust compute
-// entry point) can surface a user-readable message instead of
-// throwing.
+// Surrounding `$...$` / `$$...$$` is stripped first, so one string can
+// be both KaTeX-rendered and parsed here. Returns a discriminated
+// `{ ok, value } | { ok: false, error }` so callers surface a readable
+// message rather than throwing.
 
 const PI_VARIANTS = ["\\pi", "π"] as const;
 const PI_WORD_VARIANTS = ["pi", "PI"] as const;
@@ -32,9 +26,8 @@ export type PhaseResult =
   | { ok: false; error: string };
 
 /**
- * Parse a phase expression into radians. Empty / whitespace-only input
- * returns `Ok(0)` — the identity phase — so blank labels on a spider
- * mean "no rotation", which is the convention users expect.
+ * Parse a phase expression into radians. Empty input returns `Ok(0)` —
+ * the identity phase, so a blank spider label means "no rotation".
  */
 export function parsePhase(input: string): PhaseResult {
   const stripped = stripMathDelimiters(input);
@@ -62,10 +55,8 @@ export function parsePhase(input: string): PhaseResult {
 }
 
 /**
- * Surface a clean error for whatever's left in the input after a
- * successful parse. If it's a bare identifier, name it — the user
- * typed `hello` and wants to be told `hello` is the problem, not
- * just `h`.
+ * Build an error for leftover input after a successful parse. Names a
+ * bare identifier wholesale (`hello`, not just `h`).
  */
 function trailingJunkError(input: string, pos: number): ParseError {
   if (input[pos] === "\\") {
@@ -104,9 +95,8 @@ function skipWs(input: string, c: Cursor): void {
 }
 
 /**
- * Strip a leading / trailing `$...$` or `$$...$$` pair so the parser
- * sees the raw expression. Only acts when *both* delimiters are
- * present at the matching positions, so a label like `price: $5` is
+ * Strip a surrounding `$...$` / `$$...$$` pair. Only acts when both
+ * delimiters are present at the matching ends, so `price: $5` is
  * left alone.
  */
 function stripMathDelimiters(input: string): string {
@@ -164,7 +154,7 @@ function parseTerm(input: string, c: Cursor): { value: number; pos: number } {
 function parseFactor(input: string, c: Cursor): { value: number; pos: number } {
   skipWs(input, c);
 
-  // Unary prefix — both ASCII and Unicode forms.
+  // Unary prefix (ASCII and Unicode).
   const ch = input[c.pos];
   if (ch === "-" || isUnicodeMinus(ch)) {
     c.pos++;
@@ -188,7 +178,7 @@ function parseFactor(input: string, c: Cursor): { value: number; pos: number } {
     return inner;
   }
 
-  // π variants — `\\pi`, the unicode character, and the bare ASCII words.
+  // π variants: `\\pi`, the Unicode character, and the bare ASCII words.
   for (const variant of PI_VARIANTS) {
     if (tryConsumeLiteral(input, c, variant)) {
       return { value: Math.PI, pos: c.pos };
@@ -200,19 +190,16 @@ function parseFactor(input: string, c: Cursor): { value: number; pos: number } {
     }
   }
 
-  // Numeric literal. The trailing `\.?\d*` allows both `3.5` and `3.`
-  // (the latter parses to 3 via `parseFloat`). Bare `.5` (no leading
-  // digit) is *not* supported in v1 — we can revisit if it matters.
+  // Numeric literal: `\d+\.?\d*` matches `3.5` and `3.` (→ 3 via
+  // parseFloat). Bare `.5` is not supported in v1.
   const numMatch = input.slice(c.pos).match(/^\d+\.?\d*/);
   if (numMatch) {
     c.pos += numMatch[0].length;
     return { value: parseFloat(numMatch[0]), pos: c.pos };
   }
 
-  // `\<word>` — only `\pi` is supported; anything else is a clear error.
-  // Identifiers may contain digits (e.g. `\alpha2`) so we report the
-  // whole token, not just the leading letters — otherwise a user
-  // typing `\alpha2` gets the confusing "Unknown variable '\alpha'".
+  // `\<word>`: only `\pi` is supported. Report the whole token (incl.
+  // trailing digits, e.g. `\alpha2`) so the error names the full input.
   if (ch === "\\") {
     const m = input.slice(c.pos).match(/^\\[A-Za-z][A-Za-z0-9]*/);
     if (m) {
@@ -222,9 +209,8 @@ function parseFactor(input: string, c: Cursor): { value: number; pos: number } {
     }
   }
 
-  // Bare identifier — treat as a free variable name. In v1 we error
-  // here; Phase 6 introduces symbolic arithmetic for these. Same
-  // "include trailing digits" rule as the backslash branch.
+  // Bare identifier: unknown variable in v1. Same trailing-digits rule
+  // as the backslash branch.
   if (ch !== undefined && /[A-Za-z]/.test(ch)) {
     const m = input.slice(c.pos).match(/^[A-Za-z][A-Za-z0-9]*/);
     if (m) {
@@ -234,8 +220,8 @@ function parseFactor(input: string, c: Cursor): { value: number; pos: number } {
     }
   }
 
-  // End of input or stray character — caller's outer check catches
-  // end-of-input, so reaching here means an unexpected character.
+  // End of input is normally caught by the outer check, so reaching
+  // here means an unexpected character.
   if (c.pos >= input.length) {
     throw new ParseError("Unexpected end of input");
   }
@@ -252,12 +238,9 @@ function tryConsumeLiteral(input: string, c: Cursor, literal: string): boolean {
 }
 
 /**
- * Consume an ASCII word *only* when not followed by any ASCII
- * alphanumeric. So `pi` matches in `pi/2` and `pi+1`, but `pi2`
- * doesn't consume `pi` and leave `2` dangling — instead we fall
- * through to the unknown-variable branch and produce a useful error
- * ("Unknown variable 'pi2'") rather than silently parsing `pi`
- * followed by an orphan `2`.
+ * Consume an ASCII word only when not followed by another ASCII
+ * alphanumeric: `pi` matches in `pi/2` but not in `pi2` (which falls
+ * through to a clear "Unknown variable 'pi2'" error).
  */
 function tryConsumeWord(input: string, c: Cursor, word: string): boolean {
   skipWs(input, c);

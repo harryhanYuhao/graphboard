@@ -1,16 +1,10 @@
 // crates/zxw/tests/phase_grammar.rs
 //
-// Fixture-driven cross-language parser tests. The same JSON at
-// `tests/fixtures/phase_grammar.json` is loaded here and by
-// `src/lib/phase/parser.test.ts`, so a change to either parser without
-// the other fails CI. Adding a case is a one-file edit.
-//
-// Each Ok case carries exactly one of:
-//   - `value`      → the expected literal number
-//   - `valuePi: true` → expected value is π
-//   - `valuePiMul` → expected value is π × the given multiplier
-// (No second expression evaluator — keeps the fixture self-describing
-// and the test logic trivial.)
+// Fixture-driven cross-language parser tests. The same JSON
+// (`tests/fixtures/phase_grammar.json`) is loaded here and by
+// `src/lib/phase/parser.test.ts`, so a change to one parser without the
+// other fails CI. Each Ok case carries exactly one of: `value` (literal
+// number), `valuePi: true` (π), or `valuePiMul` (π × multiplier).
 
 use approx::assert_relative_eq;
 use serde::Deserialize;
@@ -76,8 +70,7 @@ fn fixture_cases_pass() {
             match result {
                 Ok(v) => {
                     let expected = case.expected();
-                    // Tolerate f64 rounding: phase values like π/7 have no
-                    // exact representation, so relative-equality is right.
+                    // Relative equality: phase values like π/7 have no exact f64 rep.
                     let abs_diff = (v - expected).abs();
                     let rel_diff = abs_diff / expected.abs().max(1.0);
                     if rel_diff > 1e-10 && abs_diff > 1e-12 {
@@ -104,7 +97,7 @@ fn fixture_cases_pass() {
                             ));
                         }
                     }
-                    // No fragment = just assert that parsing failed.
+                    // No fragment → just assert parsing failed.
                 }
             }
         }
@@ -118,9 +111,8 @@ fn fixture_cases_pass() {
     );
 }
 
-/// Direct sanity check for the most-checked identity (π in every
-/// spelling), so a fixture-load regression is caught with a clear name
-/// rather than buried in the table.
+/// Direct sanity check for π in every spelling, so a fixture-load
+/// regression is caught with a clear name rather than buried in the table.
 #[test]
 fn pi_spellings_all_equal_math_pi() {
     assert_relative_eq!(parse_phase("\\pi").unwrap(), PI);

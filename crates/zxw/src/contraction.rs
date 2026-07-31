@@ -1,28 +1,15 @@
 // crates/zxw/src/contraction.rs
 //
-// Naive sequential contraction (plan §5). The algorithm walks `graph.edges`
-// in input order, maintaining one `Group` per connected component via a
-// union-find. Each group owns a `Tensor` (the running contraction of its
-// members) plus a `free_axes` Vec that maps each axis of that tensor back
-// to a specific leg of a specific member vertex — this is the invariant
-// that makes non-symmetric tensors (H-box, future directional nodes)
-// contract along the correct axis (§5.1).
+// Naive sequential contraction (plan §5). Walks `graph.edges` in input
+// order, keeping one `Group` per connected component (union-find). Each
+// group holds a `Tensor` plus `free_axes`, which maps each axis back to a
+// specific leg of a specific vertex — the invariant that lets
+// non-symmetric tensors (H-box, directional W) contract along the right
+// axis.
 //
-// Boundary vertices (`input` / `output`) have no tensor; they declare
-// open legs of the result. Their handling splits two ways:
-//   - An edge from a boundary `b` to a tensor-vertex `v`: tag `v`'s
-//     corresponding free axis with `b`'s role. No contraction happens.
-//   - A boundary with no edges (degree 0): contributes an open axis of
-//     value `[1, 0]` (a dangling basis state) — modelled by outer-
-//     producting a length-2 identity tensor into the final result.
-//
-// Self-loops (edge from `v` to `v`) are supported via `Tensor::trace`
-// (the user's locked decision, supersedes the earlier reject-policy).
-//
-// Disconnected components fall out of the union-find for free: vertices
-// in separate components never union, so after the edge-walk each
-// component's surviving group is one tensor. They're combined via
-// `Tensor::outer_product` (§5.6).
+// `compute_tensor` is a thin orchestrator calling one function per phase
+// (A–F). The edge walk's three branches live in the private `edge`
+// submodule at the bottom.
 
 use std::collections::HashMap;
 
@@ -36,10 +23,8 @@ use crate::tensor::Tensor;
 
 // ---- Types ------------------------------------------------------------------
 
-/// Role of a free leg in the final result. Drives the §5.4 output
-/// ordering: Input axes first, then Output axes, then Neutral (any
-/// non-boundary leftover). Input/output counts also surface on
-/// `TensorResult` for the UI's matrix interpretation.
+/// Role of a free leg. Drives §5.4 output ordering: Input axes first,
+/// then Output, then Neutral.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegRole {
     Input,
@@ -47,20 +32,12 @@ pub enum LegRole {
     Neutral,
 }
 
-/// One free leg of a group tensor. `node_order` is the vertex's index in
-/// `graph.nodes` (identity only — used to match legs back to a vertex
-/// during the edge walk); `leg_index` is the leg's position within the
-/// original vertex (0..arity). The group tensor's axis `i` corresponds
-/// to `free_axes[i]`.
-///
-/// `sort_key` is the value Phase E ranks axes by within a role group:
-/// the boundary vertex's `order` (if set) when this leg was tagged by
-/// an attached boundary, otherwise the owning tensor-vertex's
-/// `order.unwrap_or(array position)`. Storing the resolved key here —
-/// rather than re-deriving it from `node_order` at sort time — is what
-/// lets a boundary's `order` actually drive axis order even though the
-/// leg lives on the neighbouring tensor-vertex (see the boundary-attach
-/// branch of the edge walk).
+/// One free leg of a group tensor. The group tensor's axis `i` corresponds
+/// to `free_axes[i]`. `node_order` matches the leg back to its vertex during
+/// the edge walk; `sort_key` is the value Phase E ranks axes by (boundary
+/// `order` if tagged, else the vertex's `order.unwrap_or(array position)`.
+/// Storing the resolved key here lets a boundary's `order` drive axis order
+/// even though the leg lives on the neighbouring tensor-vertex.
 #[derive(Debug, Clone, Copy)]
 struct FreeAxis {
     node_order: usize,
@@ -69,48 +46,29 @@ struct FreeAxis {
     sort_key: u32,
 }
 
-/// A running contraction. Lives in a `HashMap<representative_id, Group>`
-/// keyed by the union-find representative of the component.
+/// A running contraction, keyed by union-find representative id.
 struct Group {
     tensor: Tensor,
     free_axes: Vec<FreeAxis>,
 }
 
-/// Pick the position of a free leg in `axes` belonging to vertex
-/// `node_order`, preferring Neutral over boundary-tagged legs. Returns
-/// `None` if no leg of that vertex is free.
-///
-/// Why prefer Neutral: when a vertex has both a boundary-tagged leg
-/// (e.g. `Output` — destined to become a result axis) and an
-/// untagged leg connected to another tensor-vertex, an inter-tensor
-/// contraction must consume the untagged one. Otherwise the boundary
-/// tag would be lost inside the contraction and the boundary's
-/// `output_count`/`input_count` would silently drop.
-fn pick_free_axis_for_vertex(axes: &[FreeAxis], node_order: usize) -> Option<usize> {
-    // First pass: Neutral leg of this vertex.
-    axes.iter()
-        .position(|fa| fa.node_order == node_order && fa.role == LegRole::Neutral)
-        // Second pass: any leg of this vertex (boundary-tagged fallback).
-        .or_else(|| axes.iter().position(|fa| fa.node_order == node_order))
+/// Which side of an edge a vertex is on, for directional leg picking.
+#[derive(Clone, Copy)]
+enum AxisRole {
+    Source,
+    Target,
 }
 
-/// A boundary vertex awaiting attachment (via an edge) or surviving as a
-/// dangling open leg (degree 0).
+/// A boundary vertex awaiting attachment, or a dangling (degree-0) open leg.
 struct PendingBoundary {
-    /// Index in `graph.nodes` — used for the final ordering.
     node_order: usize,
     role: LegRole,
-    /// The other endpoint of the boundary's edge, if it has one. None =
-    /// degree 0 (dangling). Once attached, the boundary's role is
-    /// stamped onto the corresponding `FreeAxis` of its neighbour's
-    /// group during the edge walk.
+    /// The boundary's edge endpoint, if attached (degree 1).
     neighbour_id: Option<String>,
 }
 
-/// Top-level result of `compute_tensor`. Shape + flat complex data +
-/// per-spider parse warnings + boundary counts (the UI displays the
-/// rank-(n+m) tensor as a 2^n × 2^m matrix; n = `input_count`,
-/// m = `output_count`). Zero boundaries → scalar.
+/// Result of `compute_tensor`. The UI displays the rank-(n+m) tensor as a
+/// 2^n × 2^m matrix (n = `input_count`, m = `output_count`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TensorResult {
@@ -121,90 +79,239 @@ pub struct TensorResult {
     pub output_count: usize,
 }
 
+// ---- Graph context (Phase A lookup tables, built once) ---------------------
+
+/// Read-only graph context built once and shared across every phase.
+struct GraphCtx<'a> {
+    graph: &'a FrontendGraphSlice,
+    /// vertex id → (node_order, vertex_type, label). Duplicate ids rejected
+    /// at build time.
+    node_index: HashMap<String, (usize, VertexType, String)>,
+    /// Per-vertex sort key: explicit `order`, else array position.
+    order_key: Vec<u32>,
+    /// Edges incident per vertex (self-loops count twice).
+    degree: HashMap<String, usize>,
+    id_to_order: HashMap<String, usize>,
+    order_to_id: Vec<String>,
+}
+
+impl<'a> GraphCtx<'a> {
+    fn build(graph: &'a FrontendGraphSlice) -> Result<Self, ComputeError> {
+        let mut node_index: HashMap<String, (usize, VertexType, String)> = HashMap::new();
+        for (i, node) in graph.nodes.iter().enumerate() {
+            if node_index.contains_key(&node.id) {
+                return Err(ComputeError::DuplicateNodeId {
+                    vertex_id: node.id.clone(),
+                });
+            }
+            node_index.insert(
+                node.id.clone(),
+                (i, node.data.vertex_type, node.data.label.clone()),
+            );
+        }
+
+        let order_key: Vec<u32> = graph
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, node)| node.data.order.unwrap_or(i as u32))
+            .collect();
+
+        let mut degree: HashMap<String, usize> = HashMap::new();
+        for edge in &graph.edges {
+            if edge.source == edge.target {
+                *degree.entry(edge.source.clone()).or_insert(0) += 2;
+            } else {
+                *degree.entry(edge.source.clone()).or_insert(0) += 1;
+                *degree.entry(edge.target.clone()).or_insert(0) += 1;
+            }
+        }
+
+        let id_to_order: HashMap<String, usize> = graph
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.id.clone(), i))
+            .collect();
+        let order_to_id: Vec<String> = graph.nodes.iter().map(|n| n.id.clone()).collect();
+
+        Ok(GraphCtx {
+            graph,
+            node_index,
+            order_key,
+            degree,
+            id_to_order,
+            order_to_id,
+        })
+    }
+
+    fn is_boundary(&self, id: &str) -> bool {
+        matches!(
+            self.node_index.get(id).map(|(_, t, _)| *t),
+            Some(VertexType::Input) | Some(VertexType::Output)
+        )
+    }
+
+    fn vertex_type(&self, id: &str) -> VertexType {
+        self.node_index[id].1
+    }
+}
+
+// ---- Leg-picking helpers ----------------------------------------------------
+
+/// Pick the free-axis position belonging to `node_order`, preferring
+/// Neutral over boundary-tagged legs. Preferring Neutral keeps a
+/// boundary-tagged leg free so it reaches the result.
+fn pick_free_axis_for_vertex(axes: &[FreeAxis], node_order: usize) -> Option<usize> {
+    axes.iter()
+        .position(|fa| fa.node_order == node_order && fa.role == LegRole::Neutral)
+        .or_else(|| axes.iter().position(|fa| fa.node_order == node_order))
+}
+
+/// Pick the free-axis position for a contraction, directional-aware.
+///
+/// Symmetric vertices: delegates to `pick_free_axis_for_vertex`. W nodes
+/// are directional (axis 0 = input, axes 1..N = outputs): `Target` picks
+/// `leg_index == 0` (input), `Source` picks the smallest free `leg_index >= 1`
+/// (output).
+fn pick_contraction_axis(
+    axes: &[FreeAxis],
+    node_order: usize,
+    is_w: bool,
+    role: AxisRole,
+) -> Option<usize> {
+    if !is_w {
+        return pick_free_axis_for_vertex(axes, node_order);
+    }
+    let leg_predicate = |fa: &&FreeAxis| match role {
+        AxisRole::Target => fa.leg_index == 0,
+        AxisRole::Source => fa.leg_index >= 1,
+    };
+    axes.iter()
+        .position(|fa| {
+            fa.node_order == node_order && fa.role == LegRole::Neutral && leg_predicate(&fa)
+        })
+        .or_else(|| {
+            axes.iter()
+                .position(|fa| fa.node_order == node_order && leg_predicate(&fa))
+        })
+}
+
 // ---- Public entry point -----------------------------------------------------
 
 /// Build per-vertex tensors, contract along `graph.edges`, return the
-/// resulting tensor (or a structural `ComputeError`).
+/// result (or a structural `ComputeError`).
 ///
-/// `on_progress`, if `Some`, is invoked after each edge is contracted
-/// with `(edges_done, total_edges)`. The Phase 5 WASM bridge wraps a JS
-/// callback into this closure; native tests pass `None`.
+/// Thin orchestrator: each phase is a function below. `on_progress`, if
+/// `Some`, fires after each edge with `(edges_done, total_edges)`.
 pub fn compute_tensor(
     graph: &FrontendGraphSlice,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<TensorResult, ComputeError> {
-    // Phase A — empty graph is the scalar multiplicative identity (§5.6).
+    // Phase A — empty graph is the scalar identity (§5.6).
     if graph.nodes.is_empty() {
-        return Ok(TensorResult {
-            shape: vec![],
-            data: vec![(1.0, 0.0)],
-            warnings: vec![],
-            input_count: 0,
-            output_count: 0,
-        });
+        return Ok(empty_result());
     }
 
-    // Map vertex id → (node_order, vertex_type, label). Looked up by the
-    // edge walk; built once up front so edges referencing unknown ids
-    // surface as VertexNotFound before we touch any tensor.
-    //
-    // Duplicate ids are rejected here rather than letting the second node
-    // silently clobber the first in the HashMap (which would produce a
-    // wrong, smaller result — the union-find still tracks both by index,
-    // so the data structures go incoherent). Ids are the graph's identity
-    // contract; a duplicate is a corrupt graph.
-    let mut node_index: HashMap<String, (usize, VertexType, String)> = HashMap::new();
-    for (i, node) in graph.nodes.iter().enumerate() {
-        if node_index.contains_key(&node.id) {
-            return Err(ComputeError::DuplicateNodeId {
-                vertex_id: node.id.clone(),
+    let ctx = GraphCtx::build(graph)?;
+    validate_w_nodes(&ctx)?;
+
+    // Phase B — build per-vertex groups + collect boundaries.
+    let (mut groups, mut pending_boundaries, warnings) = build_initial_groups(&ctx)?;
+
+    // Phase C — walk edges, contracting/tagging.
+    let mut uf = UnionFind::new(graph.nodes.len());
+    edge::walk_edges(
+        &ctx,
+        &mut groups,
+        &mut pending_boundaries,
+        &mut uf,
+        on_progress,
+    )?;
+
+    // Phase D — combine disconnected components + dangling boundaries.
+    let (combined, combined_free_axes) = combine_components(&ctx, groups, pending_boundaries);
+
+    // Phase E — role-partition sort + permute.
+    let (result_tensor, input_count, output_count) =
+        partition_and_permute(combined, combined_free_axes);
+
+    // Phase F — flatten to TensorResult.
+    Ok(flatten_result(
+        result_tensor,
+        warnings,
+        input_count,
+        output_count,
+    ))
+}
+
+/// The empty-graph result: scalar `1`.
+fn empty_result() -> TensorResult {
+    TensorResult {
+        shape: vec![],
+        data: vec![(1.0, 0.0)],
+        warnings: vec![],
+        input_count: 0,
+        output_count: 0,
+    }
+}
+
+// ---- W-node validation ------------------------------------------------------
+
+/// Validate every W node: exactly 1 input edge (targeting the W) and
+/// ≥ 2 output edges (with the W as source).
+fn validate_w_nodes(ctx: &GraphCtx) -> Result<(), ComputeError> {
+    for node in &ctx.graph.nodes {
+        if node.data.vertex_type != VertexType::W {
+            continue;
+        }
+        let id = &node.id;
+        let mut input_edges = 0usize;
+        let mut output_edges = 0usize;
+        for edge in &ctx.graph.edges {
+            if edge.source == *id && edge.target == *id {
+                output_edges += 2; // self-loop: ill-defined for W
+            } else if edge.target == *id {
+                input_edges += 1;
+            } else if edge.source == *id {
+                output_edges += 1;
+            }
+        }
+        if input_edges != 1 {
+            return Err(ComputeError::WInputCount {
+                vertex_id: id.clone(),
+                actual: input_edges,
             });
         }
-        node_index.insert(
-            node.id.clone(),
-            (i, node.data.vertex_type, node.data.label.clone()),
-        );
-    }
-
-    // Per-vertex sort key for the final axis ordering (§5.4) and the
-    // Phase D group ordering. Boundary vertices carry an explicit `order`
-    // field (0-indexed within their type group); when it's absent we fall
-    // back to the node's array position, so pre-`order` documents compute
-    // identically to today. Indexed by `node_order` (the `i` everywhere
-    // else calls `node_order`) so the sort comparators can look it up in
-    // O(1) by the value already stored on `FreeAxis` / `PendingBoundary`.
-    let order_key: Vec<u32> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(i, node)| node.data.order.unwrap_or(i as u32))
-        .collect();
-
-    // Degree per vertex (count of edges incident, self-loops counted
-    // twice — they consume two legs). Used for: arity assignment,
-    // boundary degree check, H-box arity check.
-    let mut degree: HashMap<String, usize> = HashMap::new();
-    for edge in &graph.edges {
-        if edge.source == edge.target {
-            *degree.entry(edge.source.clone()).or_insert(0) += 2;
-        } else {
-            *degree.entry(edge.source.clone()).or_insert(0) += 1;
-            *degree.entry(edge.target.clone()).or_insert(0) += 1;
+        if output_edges < 2 {
+            return Err(ComputeError::WOutputCount {
+                vertex_id: id.clone(),
+                actual: output_edges,
+            });
         }
     }
+    Ok(())
+}
 
-    // Phase B — validate, build initial groups, collect pending boundaries.
+// ---- Phase B: build initial groups + pending boundaries --------------------
+
+/// Build one `Group` per tensor-vertex; boundaries become `PendingBoundary`.
+/// Validates boundary degree ≤ 1, H-box arity == 2, and tensor rank == degree.
+/// Phase-parses spider/box labels, downgrading failures to warnings + phase 0.
+fn build_initial_groups(
+    ctx: &GraphCtx,
+) -> Result<(HashMap<String, Group>, Vec<PendingBoundary>, Vec<String>), ComputeError> {
     let mut warnings: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Group> = HashMap::new();
     let mut pending_boundaries: Vec<PendingBoundary> = Vec::new();
 
-    for (i, node) in graph.nodes.iter().enumerate() {
+    for (i, node) in ctx.graph.nodes.iter().enumerate() {
         let id = &node.id;
         let vt = node.data.vertex_type;
         let label = &node.data.label;
-        let deg = *degree.get(id).unwrap_or(&0);
+        let deg = *ctx.degree.get(id).unwrap_or(&0);
 
-        // Boundary handling — never builds a tensor.
+        // Boundary — no tensor.
         if matches!(vt, VertexType::Input | VertexType::Output) {
             if deg > 1 {
                 return Err(ComputeError::BoundaryDegreeViolation {
@@ -220,12 +327,11 @@ pub fn compute_tensor(
             pending_boundaries.push(PendingBoundary {
                 node_order: i,
                 role,
-                neighbour_id: None, // filled in by edge walk if degree 1
+                neighbour_id: None,
             });
             continue;
         }
 
-        // H-box fixed arity.
         if vt == VertexType::H && deg != 2 {
             return Err(ComputeError::HBoxArity {
                 vertex_id: id.clone(),
@@ -233,9 +339,6 @@ pub fn compute_tensor(
             });
         }
 
-        // Phase-parse the label for spider/box types (§5.5). Errors are
-        // downgraded to warnings + phase 0 — don't fail the whole
-        // computation over one unparseable label.
         let phase = if matches!(
             vt,
             VertexType::Z | VertexType::X | VertexType::Zbox | VertexType::Xbox
@@ -253,20 +356,11 @@ pub fn compute_tensor(
             0.0
         };
 
-        let tensor = build_vertex_tensor(vt, deg, phase).expect(
-            "non-boundary vertex type must build a tensor (build_vertex_tensor \
-             only returns None for Input/Output, handled above)",
-        );
-        // The contraction layer assumes each builder honors its arity
-        // contract: a vertex of degree `deg` produces a rank-`deg` tensor,
-        // so `free_axes` (one entry per leg) lines up with `tensor`'s axes.
-        // Most builders do, but a few ignore `arity` and return a fixed-rank
-        // tensor (`empty` → rank 0, `h_box` → rank 2). For `empty` in
-        // particular, a self-loop pushes degree to 2 while `empty()` still
-        // returns a rank-0 scalar — without this guard the later `trace`
-        // over two non-existent axes panics in `Tensor::trace`. Surface the
-        // mismatch as `DegreeOverflow` (semantically: "more edges than
-        // tensor legs") instead of panicking downstream.
+        let tensor =
+            build_vertex_tensor(vt, deg, phase).expect("non-boundary type must build a tensor");
+        // Builder rank must match degree so free_axes lines up with the
+        // tensor's axes. Some builders return fixed rank (`empty` → 0,
+        // `h_box` → 2); a mismatch here would panic a later trace.
         let rank = tensor.rank();
         if rank != deg {
             return Err(ComputeError::DegreeOverflow {
@@ -281,283 +375,26 @@ pub fn compute_tensor(
                 node_order: i,
                 leg_index: leg,
                 role: LegRole::Neutral,
-                sort_key: order_key[i],
+                sort_key: ctx.order_key[i],
             })
             .collect();
         groups.insert(id.clone(), Group { tensor, free_axes });
     }
 
-    // Phase C — union-find + edge walk.
-    // The union-find indexes by `node_order` (0..graph.nodes.len()); a
-    // boundary's "index" never participates in unions (boundaries have
-    // no group), so we map vertex ids to indices but skip boundaries.
-    let id_to_order: HashMap<String, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| (n.id.clone(), i))
-        .collect();
-    let mut uf = UnionFind::new(graph.nodes.len());
+    Ok((groups, pending_boundaries, warnings))
+}
 
-    // Track which group each representative id maps to. As unions
-    // happen, the surviving representative keeps the merged Group; the
-    // loser's entry is removed from `groups` and its id is remapped.
-    // We resolve "which group owns vertex v right now?" via
-    // `uf.find(node_order(v))` → representative order → id_of(rep_order).
-    let order_to_id: Vec<String> = graph.nodes.iter().map(|n| n.id.clone()).collect();
+// ---- Phase D: combine disconnected components ------------------------------
 
-    let total_edges = graph.edges.len();
-    for (edge_i, edge) in graph.edges.iter().enumerate() {
-        // Validate edge endpoints exist before doing anything else — a
-        // corrupt payload (an edge referencing a vertex not in `nodes`)
-        // must surface as VertexNotFound, not a HashMap panic.
-        if !node_index.contains_key(&edge.source) {
-            return Err(ComputeError::VertexNotFound {
-                vertex_id: edge.source.clone(),
-                edge_id: edge.id.clone(),
-            });
-        }
-        if !node_index.contains_key(&edge.target) {
-            return Err(ComputeError::VertexNotFound {
-                vertex_id: edge.target.clone(),
-                edge_id: edge.id.clone(),
-            });
-        }
-
-        let src_is_boundary = matches!(
-            node_index.get(&edge.source).map(|(_, t, _)| *t),
-            Some(VertexType::Input) | Some(VertexType::Output)
-        );
-        let tgt_is_boundary = matches!(
-            node_index.get(&edge.target).map(|(_, t, _)| *t),
-            Some(VertexType::Input) | Some(VertexType::Output)
-        );
-
-        // An edge directly between two boundary vertices (e.g.
-        // `input → output` with no tensor between) has no well-defined
-        // semantics — boundary vertices declare open legs of the result,
-        // they have no tensor to contract. Without this check the branch
-        // below picks `tensor_id` = the other boundary and panics looking
-        // up a group that was never created (boundaries go into
-        // `pending_boundaries`, not `groups`).
-        if src_is_boundary && tgt_is_boundary {
-            return Err(ComputeError::BoundaryToBoundaryEdge {
-                edge_id: edge.id.clone(),
-                from: edge.source.clone(),
-                to: edge.target.clone(),
-            });
-        }
-
-        if edge.source == edge.target {
-            // Self-loop on a single vertex → trace two free legs of its
-            // group's tensor. (Boundaries can't self-loop — a boundary
-            // with degree > 1 is already rejected above.)
-            let order = id_to_order[&edge.source];
-            let rep_order = uf.find(order);
-            let rep_id = &order_to_id[rep_order];
-            let group = groups
-                .get_mut(rep_id)
-                .expect("self-loop vertex must have a group");
-            // Need two free legs to trace.
-            if group.free_axes.len() < 2 {
-                let (_, vt, _) = &node_index[&edge.source];
-                return Err(ComputeError::DegreeOverflow {
-                    vertex_id: edge.source.clone(),
-                    vertex_type: *vt,
-                    degree: *degree.get(&edge.source).unwrap_or(&0),
-                    max: group.free_axes.len(),
-                });
-            }
-            // Pop two free legs (any two — the tensor is symmetric
-            // across legs for the generators that admit self-loops in
-            // v1 graphs; H-box is arity 2 so trace is over both axes).
-            let axis_a = group.free_axes.len() - 1;
-            let axis_b = group.free_axes.len() - 2;
-            // `trace` takes `self` by value; swap the tensor out of the
-            // group with a placeholder, trace, then write the result back.
-            let tensor = std::mem::replace(
-                &mut group.tensor,
-                Tensor::scalar(num_complex::Complex::new(0.0, 0.0)),
-            );
-            group.tensor = tensor.trace(axis_a, axis_b);
-            // Remove the two consumed axes. Order matters for the
-            // remaining axis positions: drop the higher index first so
-            // the lower index is still valid.
-            group.free_axes.remove(axis_a);
-            group.free_axes.remove(axis_b);
-        } else if src_is_boundary || tgt_is_boundary {
-            // Edge between a boundary and a tensor-vertex. No
-            // contraction — just tag the tensor-vertex's free leg with
-            // the boundary's role. The boundary has exactly one free
-            // leg (degree ≤ 1 enforced above), and that "leg" is really
-            // the one on the tensor-vertex side.
-            let (boundary_id, tensor_id) = if src_is_boundary {
-                (&edge.source, &edge.target)
-            } else {
-                (&edge.target, &edge.source)
-            };
-            let boundary_role = match node_index[boundary_id].1 {
-                VertexType::Input => LegRole::Input,
-                VertexType::Output => LegRole::Output,
-                _ => unreachable!("checked src_is_boundary/tgt_is_boundary above"),
-            };
-            // Record the boundary's neighbour for the degree-1 case so
-            // dangling detection at the end knows it was attached.
-            for pb in pending_boundaries.iter_mut() {
-                if order_to_id[pb.node_order] == *boundary_id {
-                    pb.neighbour_id = Some(tensor_id.clone());
-                }
-            }
-
-            // Tag the tensor-vertex's earliest untagged free leg.
-            let order = id_to_order[tensor_id];
-            let rep_order = uf.find(order);
-            let rep_id = &order_to_id[rep_order];
-            let group = groups
-                .get_mut(rep_id)
-                .expect("tensor endpoint of a boundary edge must have a group");
-            let target_node_order = id_to_order[tensor_id];
-            let leg_to_tag = group
-                .free_axes
-                .iter_mut()
-                .find(|fa| fa.node_order == target_node_order && fa.role == LegRole::Neutral)
-                .expect(
-                    "boundary edge endpoint must have a free leg to tag — \
-                     degree-overflow should have fired earlier",
-                );
-            leg_to_tag.role = boundary_role;
-            // The boundary — not the tensor-vertex — owns this leg's sort
-            // position now, so stamp the boundary's `order_key` onto it.
-            // Without this, a boundary's `order` would have no effect:
-            // `FreeAxis.node_order` still points at the tensor-vertex, and
-            // Phase E would rank the leg by the tensor's (unrelated) key.
-            leg_to_tag.sort_key = order_key[id_to_order[boundary_id]];
-        } else {
-            // Normal edge between two tensor-vertices → contract.
-            let src_order = id_to_order[&edge.source];
-            let tgt_order = id_to_order[&edge.target];
-            let src_rep = uf.find(src_order);
-            let tgt_rep = uf.find(tgt_order);
-
-            if src_rep == tgt_rep {
-                // Same group already — this is a multi-edge or trace
-                // within one group. Contract two free legs of the same
-                // group tensor along the picked axes.
-                let rep_id = &order_to_id[src_rep];
-                let group = groups.get_mut(rep_id).expect("group must exist");
-                if group.free_axes.len() < 2 {
-                    let (_, vt, _) = &node_index[&edge.source];
-                    return Err(ComputeError::DegreeOverflow {
-                        vertex_id: edge.source.clone(),
-                        vertex_type: *vt,
-                        degree: *degree.get(&edge.source).unwrap_or(&0),
-                        max: group.free_axes.len(),
-                    });
-                }
-                // Find one free leg belonging to src and one to tgt.
-                // Prefer Neutral legs so a boundary-tagged leg (Input /
-                // Output) stays free and reaches the result — otherwise
-                // a later boundary edge would have no leg to tag.
-                let pos_src =
-                    pick_free_axis_for_vertex(&group.free_axes, src_order).ok_or_else(|| {
-                        ComputeError::DegreeOverflow {
-                            vertex_id: edge.source.clone(),
-                            vertex_type: node_index[&edge.source].1,
-                            degree: *degree.get(&edge.source).unwrap_or(&0),
-                            max: 0,
-                        }
-                    })?;
-                let pos_tgt =
-                    pick_free_axis_for_vertex(&group.free_axes, tgt_order).ok_or_else(|| {
-                        ComputeError::DegreeOverflow {
-                            vertex_id: edge.target.clone(),
-                            vertex_type: node_index[&edge.target].1,
-                            degree: *degree.get(&edge.target).unwrap_or(&0),
-                            max: 0,
-                        }
-                    })?;
-                // Contract over the two axes (use trace since both live
-                // in the same tensor). Ensure pos_src != pos_tgt — they
-                // are different legs by construction.
-                let (hi, lo) = if pos_src > pos_tgt {
-                    (pos_src, pos_tgt)
-                } else {
-                    (pos_tgt, pos_src)
-                };
-                let tensor = std::mem::replace(
-                    &mut group.tensor,
-                    Tensor::scalar(num_complex::Complex::new(0.0, 0.0)),
-                );
-                group.tensor = tensor.trace(lo, hi);
-                group.free_axes.remove(hi);
-                group.free_axes.remove(lo);
-            } else {
-                // Different groups — contract group_src's chosen axis
-                // with group_tgt's chosen axis, then union.
-                // Take possession of both groups' tensors by removing
-                // them from the map (the surviving rep gets put back).
-                let src_id = order_to_id[src_rep].clone();
-                let tgt_id = order_to_id[tgt_rep].clone();
-                let group_src = groups
-                    .remove(&src_id)
-                    .expect("src group must exist before contract");
-                let group_tgt = groups
-                    .remove(&tgt_id)
-                    .expect("tgt group must exist before contract");
-
-                // Find the position of src's and tgt's free legs in
-                // their respective groups. Prefer Neutral legs (see
-                // pick_free_axis_for_vertex rationale).
-                let pos_src = pick_free_axis_for_vertex(&group_src.free_axes, src_order)
-                    .expect("src endpoint must have a free leg in its group");
-                let pos_tgt = pick_free_axis_for_vertex(&group_tgt.free_axes, tgt_order)
-                    .expect("tgt endpoint must have a free leg in its group");
-
-                let contracted = group_src
-                    .tensor
-                    .contract(group_tgt.tensor, pos_src, pos_tgt);
-                // Concatenate free_axes: src's remainder, then tgt's
-                // remainder (matches contract's [A_free, B_free] order).
-                let mut merged_free_axes: Vec<FreeAxis> = Vec::with_capacity(
-                    group_src.free_axes.len() - 1 + group_tgt.free_axes.len() - 1,
-                );
-                for (i, fa) in group_src.free_axes.iter().enumerate() {
-                    if i != pos_src {
-                        merged_free_axes.push(*fa);
-                    }
-                }
-                for (i, fa) in group_tgt.free_axes.iter().enumerate() {
-                    if i != pos_tgt {
-                        merged_free_axes.push(*fa);
-                    }
-                }
-
-                // Union: tgt's group becomes part of src's group. The
-                // src representative owns the merged tensor.
-                uf.union(src_rep, tgt_rep);
-                let new_rep = uf.find(src_rep);
-                let new_rep_id = order_to_id[new_rep].clone();
-                groups.insert(
-                    new_rep_id,
-                    Group {
-                        tensor: contracted,
-                        free_axes: merged_free_axes,
-                    },
-                );
-            }
-        }
-
-        if let Some(cb) = on_progress {
-            cb(edge_i + 1, total_edges);
-        }
-    }
-
-    // Phase D — reduce disconnected components via outer_product.
-    // Collect surviving groups (one per connected component of non-
-    // boundary vertices). Sort by min `sort_key` in each group so the
-    // outer-product order is deterministic. Phase E re-sorts the combined
-    // axes by role + key, so this ordering only affects the pre-sort
-    // arrangement — kept consistent for tidy intermediate layouts.
+/// Outer-product surviving groups (one per connected component) into one
+/// tensor, then fold in dangling (degree-0) boundaries as length-2 identity
+/// tensors `[1, 0]`. Groups are sorted by min `sort_key` for a deterministic
+/// pre-sort arrangement (Phase E re-sorts by role + key).
+fn combine_components(
+    ctx: &GraphCtx,
+    groups: HashMap<String, Group>,
+    pending_boundaries: Vec<PendingBoundary>,
+) -> (Option<Tensor>, Vec<FreeAxis>) {
     let mut surviving: Vec<(usize, Group)> = groups
         .into_iter()
         .map(|(id, g)| {
@@ -566,7 +403,7 @@ pub fn compute_tensor(
                 .iter()
                 .map(|fa| fa.sort_key)
                 .min()
-                .unwrap_or(order_key[id_to_order[&id]]);
+                .unwrap_or(ctx.order_key[ctx.id_to_order[&id]]);
             (min_key as usize, g)
         })
         .collect();
@@ -582,14 +419,10 @@ pub fn compute_tensor(
         combined_free_axes.extend(g.free_axes);
     }
 
-    // Add dangling boundaries (degree 0) as outer-producted length-2
-    // identity tensors. Their axis gets the boundary's role and the
-    // dangling value `[1, 0]` — a fixed basis state.
     for pb in &pending_boundaries {
         if pb.neighbour_id.is_some() {
-            continue; // was attached during the edge walk
+            continue; // attached during the edge walk
         }
-        // A dangling boundary contributes one open axis of value [1, 0].
         let mut dangling = Tensor::zeros(&[2]);
         *dangling.get_mut(&[0]) = num_complex::Complex::new(1.0, 0.0);
         combined = Some(match combined {
@@ -600,17 +433,22 @@ pub fn compute_tensor(
             node_order: pb.node_order,
             leg_index: 0,
             role: pb.role,
-            // Dangling boundary owns its own axis outright, so its sort
-            // key is its own `order_key`.
-            sort_key: order_key[pb.node_order],
+            sort_key: ctx.order_key[pb.node_order],
         });
     }
 
-    // Phase E — §5.4 final partition. Stable-sort by role (Input first,
-    // then Output, then Neutral); within each role, by the leg's
-    // `sort_key` (boundary `order` for boundary-tagged legs, else the
-    // owning vertex's key — see `FreeAxis.sort_key`) then leg_index.
-    // Apply the same permutation to the tensor data.
+    (combined, combined_free_axes)
+}
+
+// ---- Phase E: role partition + axis permutation ----------------------------
+
+/// Partition axes into canonical order (Input, Output, Neutral; within each
+/// role by `sort_key` then `leg_index`) and permute the tensor data to match.
+/// Returns `(result_tensor, input_count, output_count)`.
+fn partition_and_permute(
+    combined: Option<Tensor>,
+    combined_free_axes: Vec<FreeAxis>,
+) -> (Tensor, usize, usize) {
     let mut indexed: Vec<(usize, FreeAxis)> = combined_free_axes.into_iter().enumerate().collect();
     indexed.sort_by(|a, b| {
         let role_rank = |r: LegRole| match r {
@@ -635,15 +473,8 @@ pub fn compute_tensor(
         .filter(|fa| fa.role == LegRole::Output)
         .count();
 
-    // Apply the role partition to the tensor. (No-op if the permutation
-    // is already identity, e.g. for a fully-contracted scalar.)
     let result_tensor = match combined {
-        None => {
-            // No nodes survived (only boundaries, all attached). This
-            // shouldn't normally happen — a graph with at least one
-            // tensor-vertex always leaves a group — but defend anyway.
-            Tensor::scalar(num_complex::Complex::new(1.0, 0.0))
-        }
+        None => Tensor::scalar(num_complex::Complex::new(1.0, 0.0)),
         Some(t) => {
             if t.rank() == 0 {
                 t
@@ -653,20 +484,30 @@ pub fn compute_tensor(
         }
     };
 
-    // Phase F — flatten to TensorResult.
-    let shape: Vec<usize> = result_tensor.shape().to_vec();
+    (result_tensor, input_count, output_count)
+}
+
+// ---- Phase F: flatten to TensorResult --------------------------------------
+
+/// Flatten the result tensor to row-major `(re, im)` pairs. Rank-0 → one entry.
+fn flatten_result(
+    tensor: Tensor,
+    warnings: Vec<String>,
+    input_count: usize,
+    output_count: usize,
+) -> TensorResult {
+    let shape: Vec<usize> = tensor.shape().to_vec();
     let total: usize = shape.iter().product::<usize>().max(1);
     let mut data: Vec<(f64, f64)> = Vec::with_capacity(total);
+
     if shape.is_empty() {
-        let v = result_tensor.get(&[]);
+        let v = tensor.get(&[]);
         data.push((v.re, v.im));
     } else {
-        // Enumerate every multi-index in row-major order.
         let mut idx: Vec<usize> = vec![0; shape.len()];
         for _ in 0..total {
-            let v = result_tensor.get(&idx);
+            let v = tensor.get(&idx);
             data.push((v.re, v.im));
-            // Increment row-major counter.
             for axis in (0..shape.len()).rev() {
                 idx[axis] += 1;
                 if idx[axis] < shape[axis] {
@@ -677,19 +518,298 @@ pub fn compute_tensor(
         }
     }
 
-    Ok(TensorResult {
+    TensorResult {
         shape,
         data,
         warnings,
         input_count,
         output_count,
-    })
+    }
+}
+
+// ---- Edge walk (Phase C) ---------------------------------------------------
+
+/// The three edge-walk branches, extracted so `walk_edges` stays a readable
+/// dispatch loop.
+mod edge {
+    use super::*;
+
+    /// Walk `graph.edges` in input order, dispatching each to a branch.
+    /// Validates endpoint existence and rejects boundary-to-boundary edges.
+    pub(super) fn walk_edges(
+        ctx: &GraphCtx,
+        groups: &mut HashMap<String, Group>,
+        pending_boundaries: &mut Vec<PendingBoundary>,
+        uf: &mut UnionFind,
+        on_progress: Option<&dyn Fn(usize, usize)>,
+    ) -> Result<(), ComputeError> {
+        let total_edges = ctx.graph.edges.len();
+        for (edge_i, edge) in ctx.graph.edges.iter().enumerate() {
+            if !ctx.node_index.contains_key(&edge.source) {
+                return Err(ComputeError::VertexNotFound {
+                    vertex_id: edge.source.clone(),
+                    edge_id: edge.id.clone(),
+                });
+            }
+            if !ctx.node_index.contains_key(&edge.target) {
+                return Err(ComputeError::VertexNotFound {
+                    vertex_id: edge.target.clone(),
+                    edge_id: edge.id.clone(),
+                });
+            }
+
+            let src_is_boundary = ctx.is_boundary(&edge.source);
+            let tgt_is_boundary = ctx.is_boundary(&edge.target);
+
+            if src_is_boundary && tgt_is_boundary {
+                return Err(ComputeError::BoundaryToBoundaryEdge {
+                    edge_id: edge.id.clone(),
+                    from: edge.source.clone(),
+                    to: edge.target.clone(),
+                });
+            }
+
+            if edge.source == edge.target {
+                handle_self_loop(ctx, edge, groups)?;
+            } else if src_is_boundary || tgt_is_boundary {
+                handle_boundary_edge(ctx, edge, groups, pending_boundaries, src_is_boundary)?;
+            } else {
+                handle_tensor_edge(ctx, edge, groups, uf)?;
+            }
+
+            if let Some(cb) = on_progress {
+                cb(edge_i + 1, total_edges);
+            }
+        }
+        Ok(())
+    }
+
+    /// Self-loop: trace two free legs of the vertex's group tensor.
+    /// NOTE: ill-defined for a directional W (may not respect input/output
+    /// split); produces a meaningless result rather than crashing.
+    fn handle_self_loop(
+        ctx: &GraphCtx,
+        edge: &crate::graph::FrontendGraphEdgeRecord,
+        groups: &mut HashMap<String, Group>,
+    ) -> Result<(), ComputeError> {
+        let order = ctx.id_to_order[&edge.source];
+        let group = group_for_order_mut(groups, order);
+
+        if group.free_axes.len() < 2 {
+            return Err(ComputeError::DegreeOverflow {
+                vertex_id: edge.source.clone(),
+                vertex_type: ctx.vertex_type(&edge.source),
+                degree: *ctx.degree.get(&edge.source).unwrap_or(&0),
+                max: group.free_axes.len(),
+            });
+        }
+        let axis_a = group.free_axes.len() - 1;
+        let axis_b = group.free_axes.len() - 2;
+        let tensor = std::mem::replace(
+            &mut group.tensor,
+            Tensor::scalar(num_complex::Complex::new(0.0, 0.0)),
+        );
+        group.tensor = tensor.trace(axis_a, axis_b);
+        group.free_axes.remove(axis_a);
+        group.free_axes.remove(axis_b);
+        Ok(())
+    }
+
+    /// Boundary-to-tensor edge: tag the tensor-vertex's free leg with the
+    /// boundary's role (no contraction). For a W, the leg is directional:
+    /// W-as-target → input axis (leg 0), W-as-source → output axis (leg ≥ 1).
+    fn handle_boundary_edge(
+        ctx: &GraphCtx,
+        edge: &crate::graph::FrontendGraphEdgeRecord,
+        groups: &mut HashMap<String, Group>,
+        pending_boundaries: &mut Vec<PendingBoundary>,
+        src_is_boundary: bool,
+    ) -> Result<(), ComputeError> {
+        let (boundary_id, tensor_id) = if src_is_boundary {
+            (&edge.source, &edge.target)
+        } else {
+            (&edge.target, &edge.source)
+        };
+        let boundary_role = match ctx.vertex_type(boundary_id) {
+            VertexType::Input => LegRole::Input,
+            VertexType::Output => LegRole::Output,
+            _ => unreachable!("checked src_is_boundary/tgt_is_boundary above"),
+        };
+        for pb in pending_boundaries.iter_mut() {
+            if ctx.order_to_id[pb.node_order] == *boundary_id {
+                pb.neighbour_id = Some(tensor_id.clone());
+            }
+        }
+
+        let tensor_order = ctx.id_to_order[tensor_id];
+        let group = group_for_order_mut(groups, tensor_order);
+        let tensor_is_w = ctx.vertex_type(tensor_id) == VertexType::W;
+        let w_axis_role = if src_is_boundary {
+            AxisRole::Target // W is target → input leg
+        } else {
+            AxisRole::Source // W is source → output leg
+        };
+        let leg_pos =
+            pick_contraction_axis(&group.free_axes, tensor_order, tensor_is_w, w_axis_role)
+                .expect("boundary edge endpoint must have a free leg to tag");
+        let leg_to_tag = &mut group.free_axes[leg_pos];
+        leg_to_tag.role = boundary_role;
+        // The boundary owns this leg's sort position now.
+        leg_to_tag.sort_key = ctx.order_key[ctx.id_to_order[boundary_id]];
+        Ok(())
+    }
+
+    /// Tensor-to-tensor edge: contract. Same group → trace two legs;
+    /// different groups → contract and union.
+    fn handle_tensor_edge(
+        ctx: &GraphCtx,
+        edge: &crate::graph::FrontendGraphEdgeRecord,
+        groups: &mut HashMap<String, Group>,
+        uf: &mut UnionFind,
+    ) -> Result<(), ComputeError> {
+        let src_order = ctx.id_to_order[&edge.source];
+        let tgt_order = ctx.id_to_order[&edge.target];
+        let src_rep = uf.find(src_order);
+        let tgt_rep = uf.find(tgt_order);
+
+        if src_rep == tgt_rep {
+            contract_same_group(ctx, edge, groups, src_order, tgt_order)?;
+        } else {
+            contract_different_groups(ctx, edge, groups, uf, src_rep, tgt_rep)?;
+        }
+        Ok(())
+    }
+
+    /// Same-group contraction: trace two free legs.
+    fn contract_same_group(
+        ctx: &GraphCtx,
+        edge: &crate::graph::FrontendGraphEdgeRecord,
+        groups: &mut HashMap<String, Group>,
+        src_order: usize,
+        tgt_order: usize,
+    ) -> Result<(), ComputeError> {
+        let group = group_for_order_mut(groups, src_order);
+
+        if group.free_axes.len() < 2 {
+            return Err(ComputeError::DegreeOverflow {
+                vertex_id: edge.source.clone(),
+                vertex_type: ctx.vertex_type(&edge.source),
+                degree: *ctx.degree.get(&edge.source).unwrap_or(&0),
+                max: group.free_axes.len(),
+            });
+        }
+
+        let src_is_w = ctx.vertex_type(&edge.source) == VertexType::W;
+        let tgt_is_w = ctx.vertex_type(&edge.target) == VertexType::W;
+        let pos_src =
+            pick_contraction_axis(&group.free_axes, src_order, src_is_w, AxisRole::Source)
+                .ok_or_else(|| ComputeError::DegreeOverflow {
+                    vertex_id: edge.source.clone(),
+                    vertex_type: ctx.vertex_type(&edge.source),
+                    degree: *ctx.degree.get(&edge.source).unwrap_or(&0),
+                    max: 0,
+                })?;
+        let pos_tgt =
+            pick_contraction_axis(&group.free_axes, tgt_order, tgt_is_w, AxisRole::Target)
+                .ok_or_else(|| ComputeError::DegreeOverflow {
+                    vertex_id: edge.target.clone(),
+                    vertex_type: ctx.vertex_type(&edge.target),
+                    degree: *ctx.degree.get(&edge.target).unwrap_or(&0),
+                    max: 0,
+                })?;
+
+        let (hi, lo) = if pos_src > pos_tgt {
+            (pos_src, pos_tgt)
+        } else {
+            (pos_tgt, pos_src)
+        };
+        let tensor = std::mem::replace(
+            &mut group.tensor,
+            Tensor::scalar(num_complex::Complex::new(0.0, 0.0)),
+        );
+        group.tensor = tensor.trace(lo, hi);
+        group.free_axes.remove(hi);
+        group.free_axes.remove(lo);
+        Ok(())
+    }
+
+    /// Different-group contraction: contract along the picked axes, then
+    /// union. The surviving rep owns the merged tensor + free_axes.
+    fn contract_different_groups(
+        ctx: &GraphCtx,
+        edge: &crate::graph::FrontendGraphEdgeRecord,
+        groups: &mut HashMap<String, Group>,
+        uf: &mut UnionFind,
+        src_rep: usize,
+        tgt_rep: usize,
+    ) -> Result<(), ComputeError> {
+        let src_order = ctx.id_to_order[&edge.source];
+        let tgt_order = ctx.id_to_order[&edge.target];
+        let src_id = ctx.order_to_id[src_rep].clone();
+        let tgt_id = ctx.order_to_id[tgt_rep].clone();
+        let group_src = groups
+            .remove(&src_id)
+            .expect("src group must exist before contract");
+        let group_tgt = groups
+            .remove(&tgt_id)
+            .expect("tgt group must exist before contract");
+
+        let src_is_w = ctx.vertex_type(&edge.source) == VertexType::W;
+        let tgt_is_w = ctx.vertex_type(&edge.target) == VertexType::W;
+        let pos_src =
+            pick_contraction_axis(&group_src.free_axes, src_order, src_is_w, AxisRole::Source)
+                .expect("src endpoint must have a free leg in its group");
+        let pos_tgt =
+            pick_contraction_axis(&group_tgt.free_axes, tgt_order, tgt_is_w, AxisRole::Target)
+                .expect("tgt endpoint must have a free leg in its group");
+
+        let contracted = group_src
+            .tensor
+            .contract(group_tgt.tensor, pos_src, pos_tgt);
+        // Concatenate: src's remainder, then tgt's (matches contract's
+        // [A_free, B_free] order).
+        let mut merged_free_axes: Vec<FreeAxis> =
+            Vec::with_capacity(group_src.free_axes.len() - 1 + group_tgt.free_axes.len() - 1);
+        for (i, fa) in group_src.free_axes.iter().enumerate() {
+            if i != pos_src {
+                merged_free_axes.push(*fa);
+            }
+        }
+        for (i, fa) in group_tgt.free_axes.iter().enumerate() {
+            if i != pos_tgt {
+                merged_free_axes.push(*fa);
+            }
+        }
+
+        uf.union(src_rep, tgt_rep);
+        let new_rep = uf.find(src_rep);
+        let new_rep_id = ctx.order_to_id[new_rep].clone();
+        groups.insert(
+            new_rep_id,
+            Group {
+                tensor: contracted,
+                free_axes: merged_free_axes,
+            },
+        );
+        Ok(())
+    }
+
+    // Resolve a vertex's owning group by scanning `free_axes` for its
+    // `node_order` (one per component) — avoids borrowing `uf` alongside
+    // `&mut groups`.
+
+    fn group_for_order_mut<'g>(
+        groups: &'g mut HashMap<String, Group>,
+        order: usize,
+    ) -> &'g mut Group {
+        groups
+            .values_mut()
+            .find(|g| g.free_axes.iter().any(|fa| fa.node_order == order))
+            .expect("vertex order must belong to exactly one group")
+    }
 }
 
 // ---- Union-find (hand-rolled, plan §3.3) -----------------------------------
-//
-// Path compression + union-by-rank. ~25 lines; intentionally not pulled
-// from a crate — see plan §3.3 for the buy-vs-build rationale.
 
 struct UnionFind {
     parent: Vec<usize>,
@@ -706,8 +826,7 @@ impl UnionFind {
 
     fn find(&mut self, mut x: usize) -> usize {
         while self.parent[x] != x {
-            // Path compression: point at the grandparent.
-            self.parent[x] = self.parent[self.parent[x]];
+            self.parent[x] = self.parent[self.parent[x]]; // path compression
             x = self.parent[x];
         }
         x
@@ -719,7 +838,6 @@ impl UnionFind {
         if ra == rb {
             return;
         }
-        // Attach the shorter tree under the taller one.
         if self.rank[ra] < self.rank[rb] {
             std::mem::swap(&mut ra, &mut rb);
         }
@@ -735,9 +853,7 @@ mod tests {
     use super::*;
     use crate::graph::{FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendVertexData};
 
-    /// Build a `GraphSlice` quickly from `(id, type, label)` tuples +
-    /// `(id, src, tgt)` edge tuples. Keeps test bodies focused on the
-    /// behavior under test, not the wire format.
+    /// Build a `GraphSlice` from `(id, type, label)` + `(id, src, tgt)` tuples.
     fn graph(
         nodes: &[(&str, VertexType, &str)],
         edges: &[(&str, &str, &str)],
@@ -767,23 +883,15 @@ mod tests {
         }
     }
 
-    // ---- §5.5 label-parse fallback -----------------------------------------
-
     #[test]
     fn unparseable_spider_label_yields_warning_and_phase_zero() {
-        // A spider label that fails to parse should NOT fail the
-        // computation — it's downgraded to a warning + phase 0
-        // substitution (plan §5.5). With phase 0 on an isolated
-        // z spider (arity 0), the scalar value is 1 + e^{i·0} = 2.
+        // Bad spider label → warning + phase 0, not a hard error.
+        // Isolated z spider (arity 0): scalar = 1 + e^{i·0} = 2.
         let g = graph(&[("z", VertexType::Z, "totally not a phase")], &[]);
         let result = compute_tensor(&g, None).expect("parse failure must not fail compute");
         assert_eq!(result.data.len(), 1);
         assert!((result.data[0].0 - 2.0).abs() < 1e-10, "phase 0 → 1+1 = 2");
-        assert_eq!(
-            result.warnings.len(),
-            1,
-            "exactly one warning for the one bad label"
-        );
+        assert_eq!(result.warnings.len(), 1);
         let w = &result.warnings[0].to_lowercase();
         assert!(w.contains("parse"), "warning should mention parse: {w}");
         assert!(w.contains('z'), "warning should name the vertex: {w}");
@@ -791,7 +899,6 @@ mod tests {
 
     #[test]
     fn multiple_bad_labels_each_get_their_own_warning() {
-        // Two spiders, both with unparseable labels → two warnings.
         let g = graph(
             &[("a", VertexType::Z, "foo"), ("b", VertexType::X, "bar")],
             &[],
@@ -801,26 +908,7 @@ mod tests {
     }
 
     #[test]
-    fn non_spider_bad_label_is_silently_ignored() {
-        // H / W / AND / empty labels are decoration only — a bad label
-        // on them produces NO warning (plan §5.5). Use `empty` (no
-        // arity constraint, degree 0 is fine) so we don't trip the
-        // H-box arity-2 check.
-        let g = graph(&[("e", VertexType::Empty, "this is not parsed")], &[]);
-        let result = compute_tensor(&g, None).expect("compute should succeed");
-        assert!(
-            result.warnings.is_empty(),
-            "non-spider labels must not warn: {:?}",
-            result.warnings
-        );
-    }
-
-    // ---- ComputeError paths ------------------------------------------------
-
-    #[test]
     fn edge_to_unknown_vertex_returns_vertex_not_found() {
-        // Edge references id "ghost" that's not in `nodes`. Must
-        // surface as VertexNotFound, not a panic.
         let g = graph(&[("a", VertexType::Z, "")], &[("e", "a", "ghost")]);
         let err = compute_tensor(&g, None).expect_err("unknown vertex must error");
         match err {
@@ -834,7 +922,7 @@ mod tests {
 
     #[test]
     fn progress_callback_fires_per_edge() {
-        // Two edges → callback fires twice with (1, 2) and (2, 2).
+        // Two edges → callback fires (1, 2) and (2, 2).
         let g = graph(
             &[
                 ("z1", VertexType::Z, ""),
@@ -852,14 +940,12 @@ mod tests {
         assert_eq!(calls, vec![(1, 2), (2, 2)]);
     }
 
-    // ---- UnionFind behavior (defensive) ------------------------------------
-
     #[test]
     fn union_find_union_then_find_reports_same_root() {
         let mut uf = UnionFind::new(5);
         uf.union(0, 1);
         uf.union(2, 3);
-        uf.union(1, 3); // connects {0,1} with {2,3}
+        uf.union(1, 3);
         assert_eq!(uf.find(0), uf.find(1));
         assert_eq!(uf.find(0), uf.find(2));
         assert_eq!(uf.find(0), uf.find(3));
@@ -871,7 +957,7 @@ mod tests {
         let mut uf = UnionFind::new(3);
         uf.union(0, 1);
         let root_after_first = uf.find(0);
-        uf.union(0, 1); // duplicate
+        uf.union(0, 1);
         assert_eq!(uf.find(0), root_after_first);
     }
 }

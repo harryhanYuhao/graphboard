@@ -35,10 +35,9 @@ import {
 import { StraightCenterEdge } from "./StraightCenterEdge";
 
 function GraphEditorInner() {
-  // Group state slices by concern so the component re-renders only
-  // when a slice it actually reads changes. `useShallow` makes the
-  // multi-field bundle a single shallow comparison; the actions
-  // below are stable references and don't need shallow.
+  // `useShallow` bundles multi-field state into one shallow comparison so the
+  // component re-renders only when a read slice changes. The actions below are
+  // stable references and don't need shallow.
   const { nodes, edges, mode, hasHydrated } = useGraphStore(
     useShallow((state) => ({
       nodes: state.nodes,
@@ -72,19 +71,16 @@ function GraphEditorInner() {
   const closeHelp = useGraphStore((state) => state.closeHelp);
   const openIntro = useGraphStore((state) => state.openIntro);
   const closeIntro = useGraphStore((state) => state.closeIntro);
-  // Bumps whenever the store replaces the graph (import today, possibly
-  // hydrate/load later). We watch it so the view layer can refit the
-  // viewport — the store can't call `fitView()` itself because React
-  // Flow hooks only work inside a React component under the provider.
+  // Bumps whenever the store replaces the graph (import, hydrate). The store
+  // can't call `fitView()` itself (React Flow hooks only work under the
+  // provider), so the view layer watches this nonce.
   const fitViewNonce = useGraphStore((state) => state.fitViewNonce);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
-  // Compute orchestration (WASM worker, promise/progress state, result
-  // dialog) lives in a hook rather than the store — it's a one-shot async
-  // computation, not graph state. Both the toolbar button and the
-  // Cmd/Ctrl+Enter shortcut call `requestCompute`, and the dialog is
-  // rendered here alongside the other top-level modals.
+  // Compute orchestration (WASM worker, promise/progress, result dialog) lives
+  // in a hook, not the store — it's a one-shot async computation. The toolbar
+  // button and the Cmd/Ctrl+Enter shortcut both call `requestCompute`.
   const compute = useCompute();
 
   const nodeTypes = useMemo<NodeTypes>(
@@ -113,11 +109,9 @@ function GraphEditorInner() {
     [handleVertexClick, mode],
   );
 
-  // React Flow's `onSelectionEnd` only fires when a box-select drag finishes
-  // (Shift+drag on the pane), not on single shift-clicks — which is exactly
-  // the gesture we want to capture here. We funnel the just-selected nodes
-  // into the pending source list so the user can sweep a region of vertices
-  // into the fan-out with one drag instead of N cmd-clicks.
+  // `onSelectionEnd` fires only at the end of a box-select drag (Shift+drag),
+  // not on single shift-clicks — exactly the gesture to capture here. Sweeps
+  // the just-selected nodes into the pending source list for fan-out edges.
   const handleSelectionEnd = useCallback(() => {
     if (mode !== "add-edge") return;
     addSelectedToPendingSources();
@@ -127,14 +121,10 @@ function GraphEditorInner() {
     hydrate();
   }, [hydrate]);
 
-  // Refit the viewport when the store signals the graph was replaced —
-  // bumped from `importJson` (graph import) and from `hydrate()` (reload
-  // into a non-empty saved graph). The `0` guard skips the pre-hydrate
-  // render; we deliberately do NOT fit an empty graph, so placing the
-  // first vertex on an empty canvas doesn't snap the camera to it. (We
-  // rely on this explicit nonce rather than `<ReactFlow fitView>`, whose
-  // queued fit lingers stale on an empty graph and fires when the first
-  // node is finally measured.)
+  // Refit on graph replacement (import / non-empty hydrate). The `0` guard
+  // skips the pre-hydrate render and empty graphs, so placing the first vertex
+  // on an empty canvas doesn't snap the camera to it. This explicit nonce
+  // avoids `<ReactFlow fitView>`'s stale queued fit on empty graphs.
   useEffect(() => {
     if (fitViewNonce === 0) return;
     reactFlow.fitView({ duration: 400 });
@@ -167,8 +157,7 @@ function GraphEditorInner() {
       }
 
       if (mode === EDITOR_MODES.addEdge) {
-        // Clicking empty pane in add-edge mode cancels the pending source
-        // list without creating any edges.
+        // Empty-pane click in add-edge mode cancels the pending source list.
         clearPendingEdgeSources();
       }
     },
@@ -197,10 +186,9 @@ function GraphEditorInner() {
         onPaneClick={handlePaneClick}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
-        // Shift+drag on the pane becomes a box-select that sweeps vertices
-        // into the pending source list (handled in onSelectionEnd). The
-        // default selectionKeyCode is already 'Shift', so we only need to
-        // flip selectionOnDrag on for add-edge mode.
+        // Shift+drag becomes a box-select that sweeps vertices into the pending
+        // source list (handled in onSelectionEnd). selectionKeyCode is already
+        // 'Shift', so we only flip selectionOnDrag on for add-edge mode.
         selectionOnDrag={mode === EDITOR_MODES.addEdge}
         onSelectionEnd={handleSelectionEnd}
         nodesConnectable={false}
@@ -223,8 +211,7 @@ function GraphEditorInner() {
         cancelText={confirmDialogue?.cancelText ?? "Cancel"}
         confirmButtonClassName={confirmDialogue?.confirmButtonClassName}
         onConfirm={() => {
-          // Snapshot the action before closing 
-          // closeConfirmDialogue nulls out the dialogue, 
+          // Snapshot the action before closeConfirm nulls out the dialogue.
           const action = confirmDialogue?.onConfirm;
           closeConfirm();
           action?.();

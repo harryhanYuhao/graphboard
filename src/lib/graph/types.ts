@@ -2,10 +2,9 @@
 
 import type { Edge, Node } from "@xyflow/react";
 
-// Vertex type. `input` / `output` are boundary markers (not tensors):
-// they declare open legs of the resulting tensor (each leg dimension 2),
-// so n inputs + m outputs → 2^m × 2^n matrix after contraction; no
-// boundaries → scalar. See `isBoundaryVertex` in vertex-types.ts.
+// Vertex type. `input` / `output` are boundary markers (not tensors): they
+// declare open legs (dimension 2 each), so n inputs + m outputs → 2^m × 2^n
+// matrix after contraction; no boundaries → scalar. See `isBoundaryVertex`.
 export type VertexType =
   | "z"
   | "empty"
@@ -20,17 +19,13 @@ export type VertexType =
 
 // ---- React Flow handle & edge identifiers ---------------------------------
 //
-// These string constants are the contract between the runtime edge layer
-// (`createGraphEdge` in operations.ts), the serializer (handle-id ↔
-// index translation in serialization.ts), and the renderer (`VertexNode`
-// and `StraightCenterEdge`). Centralizing them here ensures a typo at
-// one site can't silently break edge routing at another — don't sprinkle
-// the literals elsewhere.
+// Centralized string constants — the shared contract between edge creation
+// (operations.ts), serialization (serialization.ts), and the renderer. Don't
+// sprinkle the literals elsewhere.
 //
-// React Flow handle ids used on VertexNode. `center-source` /
-// `center-target` are the full-size transparent overlays at the body
-// center; `top` is the small visible dot that anchors the directional
-// W / And-gate target.
+// React Flow handle ids on VertexNode: `center-source` / `center-target` are
+// the transparent overlays at the body center; `top` is the visible dot that
+// anchors the directional W / And-gate target.
 export const HANDLE_IDS = {
   centerSource: "center-source",
   centerTarget: "center-target",
@@ -39,9 +34,8 @@ export const HANDLE_IDS = {
 
 export type HandleId = (typeof HANDLE_IDS)[keyof typeof HANDLE_IDS];
 
-// React Flow edge type discriminator. Today there's only one
-// (`straight-center`); registering the constant here means future
-// renderer variants slot in without grepping for string literals.
+// React Flow edge type discriminator. Only `straight-center` today; the
+// constant keeps future variants from scattering string literals.
 export const EDGE_TYPES = {
   straightCenter: "straight-center",
 } as const satisfies Record<string, string>;
@@ -50,9 +44,8 @@ export type EdgeType = (typeof EDGE_TYPES)[keyof typeof EDGE_TYPES];
 
 // ---- Persisted document identifiers ----------------------------------------
 //
-// Stable ids used by `createEmptyGraphDocument` and the export entry point
-// so the on-disk / on-the-wire payload is greppable without sprinkling
-// string literals across `serialization.ts`.
+// Stable ids for `createEmptyGraphDocument` and export, keeping literals
+// out of serialization.ts.
 export const PERSISTED_IDS = {
   localDocument: "local-document",
   exportedDocument: "exported-document",
@@ -61,27 +54,21 @@ export const PERSISTED_IDS = {
 export type VertexData = {
   label: string;
   vertexType: VertexType;
-  // 0-indexed ordering of `input` / `output` boundary vertices, used to
-  // determine the final axis order of the contracted tensor (Rust compute
-  // layer §5.4). Inputs and outputs are ordered independently within their
-  // own group. Ignored for all other vertex types. Optional for backward
-  // compatibility — a missing value falls back to array position, so
-  // pre-`order` saved graphs hydrate and compute identically to today.
+  // 0-indexed ordering of `input` / `output` boundary vertices, sets the final
+  // axis order of the contracted tensor (Rust compute layer §5.4). Inputs and
+  // outputs order independently; ignored for other types. Optional — missing
+  // falls back to array position so older saved graphs still work.
   order?: number;
 };
 
 // ---- Runtime layer (in-memory, what the store + React Flow hold) -----------
 //
-// These are React Flow's own object types. They carry everything the renderer
-// needs at runtime: position, React Flow plumbing (`origin`, `type`),
-// ephemeral state (`selected`), and at render time React Flow injects
-// `measured`, `internals.positionAbsolute`, etc. They are never persisted —
-// see the persistence layer below.
+// React Flow's own object types: renderer data (position, plumbing, ephemeral
+// `selected`); React Flow injects `measured`, `internals.positionAbsolute`, etc.
+// at render time. Never persisted — see the persistence layer below.
 
-// Runtime `VertexNode` carries a top-level `rotation` field. The field
-// lives outside `data` deliberately: rotation is a visual concern and
-// belongs in the view slice (see `NodeView` below), not in `VertexData`
-// which is part of the graph slice the future compute layer consumes.
+// `rotation` lives outside `data` deliberately — it's a visual concern that
+// belongs in the view slice (`NodeView`), not in the graph-slice `VertexData`.
 export type VertexNode = Node<VertexData, "vertex"> & {
   rotation: number;
 };
@@ -90,24 +77,15 @@ export type GraphEdge = Edge;
 
 // ---- Persistence layer (on-disk, what crosses the serialization boundary) ---
 //
-// The persisted document is split into two parallel slices:
+// The document is split into two parallel slices:
+//   - `graph` — graph-theoretic data only; what compute layers (Rust/WASM)
+//     consume. No visual or React-Flow-shaped fields.
+//   - `view` — visual data (position today, future curvature/labels). The
+//     renderer rebuilds runtime objects by joining `graph` + `view` on id.
 //
-//   - `graph` — graph-theoretic information only. This is the contract that
-//     future compute layers (Rust crate compiled to WASM, other researchers'
-//     tooling) consume. Contains node identity, label, vertex type, and edge
-//     endpoints. Nothing visual, nothing React-Flow-shaped.
-//
-//   - `view` — visual information. Position today; future edge curvature,
-//     group colors, edge labels go here. The renderer rebuilds runtime
-//     React Flow objects by joining `graph` + `view` on node/edge id.
-//
-// The split exists so that:
-//   1. The WASM boundary is trivial — `serde` deserializes `graph` directly.
-//   2. Visual changes don't dirty the schema; React Flow's runtime fields
-//      never leak into the document.
-//   3. Selection (`selected`) and other ephemeral state are *not* persisted.
-//      Pre-split, the document accidentally carried `selected: true` through
-//      reloads — a latent bug fixed by the split.
+// The split keeps the WASM `serde` boundary trivial, stops React Flow runtime
+// fields from dirtying the schema, and ensures ephemeral state like `selected`
+// is never persisted.
 
 // Persisted vertex — only what computation needs.
 export type GraphNodeRecord = {
@@ -115,17 +93,13 @@ export type GraphNodeRecord = {
   data: VertexData;
 };
 
-// Persisted edge — id plus endpoints, plus the connection-point
-// indices on each side. We deliberately do not persist React Flow's
-// `type` discriminator ("straight-center") here; that's a renderer
-// detail and may change without affecting the graph.
+// Persisted edge — endpoints plus connection-point indices. React Flow's
+// `type` discriminator is intentionally not persisted (renderer detail).
 //
-// `sourceHandle` / `targetHandle` are numeric indices into the
-// respective vertex's handle slots: 0 = top, 1 = bottom. Indexed
-// (not id-based) so future vertex types with more than two handles
-// can extend the scheme without churning the schema. Absent on
-// legacy documents — see `serialization.ts` for the default values
-// applied at hydration.
+// `sourceHandle` / `targetHandle` are indices into the vertex's handle slots
+// (0 = top, 1 = bottom) — indexed not id-based so future vertex types with
+// more than two handles can extend the scheme without schema churn. Absent on
+// legacy documents; `serialization.ts` applies defaults at hydration.
 export type GraphEdgeRecord = {
   id: string;
   source: string;
@@ -139,22 +113,18 @@ export type GraphSlice = {
   edges: GraphEdgeRecord[];
 };
 
-// View entry for a node — position and rotation today; more visual fields
-// later. Future additions: group/parent id, per-node style overrides.
+// View entry for a node — position and rotation today; more visual fields later.
 //
-// `rotation` is in degrees, applied to the vertex body via CSS transform.
-// It is *visual only* — the future compute layer (Rust/WASM) reads
-// `graph` and never sees this field. Optional in persisted documents
-// for backward compatibility with pre-rotation saves; missing values
-// hydrate to 0.
+// `rotation` is degrees, applied via CSS transform. Visual only — the compute
+// layer reads `graph` and never sees this. Optional for backward compat with
+// pre-rotation saves; missing values hydrate to 0.
 export type NodeView = {
   id: string;
   position: { x: number; y: number };
   rotation?: number;
 };
 
-// View entry for an edge — placeholder for future curvature, label position,
-// stroke style, etc. Empty for now.
+// View entry for an edge — placeholder for future curvature/label/style. Empty for now.
 export type EdgeView = {
   id: string;
 };
@@ -176,10 +146,8 @@ export type GraphDocument = {
   updatedAt: string;
 };
 
-// Editor interaction modes. The constant object mirrors the HANDLE_IDS /
-// EDGE_TYPES pattern (string-literal source of truth) so mode comparisons
-// across components route through named members instead of raw string
-// literals — a typo like "add-egde" would otherwise compile silently.
+// Editor interaction modes. Mirrors the HANDLE_IDS / EDGE_TYPES pattern
+// (string-literal source of truth) so a typo like "add-egde" fails to compile.
 export const EDITOR_MODES = {
   select: "select",
   addVertex: "add-vertex",

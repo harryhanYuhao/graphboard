@@ -1,17 +1,8 @@
-// src/lib/compute/index.test.ts
-//
-// Unit tests for the compute wrapper. The Web Worker is mocked via
-// `vi.stubGlobal("Worker", ...)` so CI stays JS-only (plan §9.4) — no
-// need to stand up a real wasm build or worker thread.
-//
-// The mock captures `postMessage` calls so tests can assert the
-// request shape, and exposes a `dispatch` helper so tests can deliver
-// `WorkerResponse` messages back to the wrapper as if they came from
-// the (real) worker.
-//
-// Module caching: `index.ts` caches the worker promise at module scope.
-// Each test re-imports the module freshly via `vi.resetModules()` +
-// dynamic `import()` so the cache resets between tests.
+// Compute wrapper tests. The Worker is mocked via `vi.stubGlobal("Worker")`
+// so CI stays JS-only. The mock captures `postMessage` calls and exposes a
+// `dispatch` helper to feed `WorkerResponse` messages back. `index.ts`
+// caches the worker promise at module scope, so each test re-imports the
+// module freshly via `vi.resetModules()` + dynamic `import()`.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GraphSlice } from "@/lib/graph/types";
@@ -47,7 +38,7 @@ class MockWorker {
     this.listeners.clear();
   }
 
-  /** Test helper: deliver a WorkerResponse as if it came from the worker. */
+  /** Deliver a WorkerResponse as if it came from the worker. */
   dispatch(msg: WorkerResponse) {
     for (const fn of this.listeners) {
       fn({ data: msg } as MessageEvent<WorkerResponse>);
@@ -76,7 +67,7 @@ async function waitForPosts(worker: MockWorker, n: number) {
   throw new Error(`timed out waiting for ${n} postMessage calls`);
 }
 
-/** Fresh module import + mock worker setup. Returns the computeTensor fn. */
+/** Fresh module import + mock worker setup; returns the computeTensor fn. */
 async function freshModule() {
   vi.resetModules();
   vi.stubGlobal("Worker", MockWorker);
@@ -100,17 +91,16 @@ describe("computeTensor", () => {
     await vi.waitFor(() => expect(MockWorker.lastInstance).not.toBeNull());
     const worker = MockWorker.lastInstance!;
 
-    // The very first postMessage should be the version-check.
+    // The first postMessage is the version-check.
     await waitForPosts(worker, 1);
     expect(worker.posted[0]).toEqual({ type: "version-check" });
 
-    // Reply with a version-ok. Use the same version the wrapper expects
-    // (read from the built wasm's package.json).
+    // Reply with the version the wrapper expects (from the built wasm's package.json).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const wasmPkg: { version: string } = require("../../../public/wasm/zxw/package.json");
     worker.dispatch({ type: "version-ok", version: wasmPkg.version });
 
-    // Now the compute request should land.
+    // The compute request then lands.
     await waitForPosts(worker, 2);
     expect(worker.posted[1].type).toBe("compute");
     if (worker.posted[1].type !== "compute") throw new Error("unreachable");
@@ -118,7 +108,7 @@ describe("computeTensor", () => {
     const requestId = worker.posted[1].requestId;
     expect(typeof requestId).toBe("string");
 
-    // Reply with a result — the promise should resolve with it.
+    // Reply with a result — the promise resolves with it.
     worker.dispatch({ type: "result", requestId, result: SAMPLE_RESULT });
     await expect(promise).resolves.toEqual(SAMPLE_RESULT);
   });
@@ -163,7 +153,7 @@ describe("computeTensor", () => {
     expect(onProgress).toHaveBeenCalledTimes(2);
     expect(onProgress).toHaveBeenLastCalledWith(2, 3);
 
-    // Finish the call so the promise settles and the test exits cleanly.
+    // Finish the call so the promise settles cleanly.
     worker.dispatch({ type: "result", requestId, result: SAMPLE_RESULT });
     await expect(promise).resolves.toEqual(SAMPLE_RESULT);
   });
@@ -173,9 +163,7 @@ describe("computeTensor", () => {
 
     const controller = new AbortController();
     controller.abort();
-    // The early-abort path rejects with a DOMException(name=AbortError,
-    // message="Computation cancelled"). Check the name explicitly — the
-    // message "Computation cancelled" doesn't contain "AbortError".
+    // Message is "Computation cancelled", which doesn't contain "AbortError".
     await expect(
       computeTensor(EMPTY_GRAPH, { signal: controller.signal }),
     ).rejects.toThrow(/cancelled/i);
@@ -189,17 +177,14 @@ describe("computeTensor", () => {
     const worker = MockWorker.lastInstance!;
     await waitForPosts(worker, 1);
 
-    // Reply with a WRONG version.
+    // Reply with a wrong version.
     worker.dispatch({ type: "version-ok", version: "999.999.999" });
     await expect(promise).rejects.toThrow(/version mismatch/i);
   });
 
   it("retries with a fresh worker after version mismatch (cached-rejection fix)", async () => {
-    // If the cached-rejection fix is working, a failed init (version
-    // mismatch on first call) resets the module-level `workerPromise`
-    // to null. The second call should spawn a *new* MockWorker, not
-    // immediately reject from the cached rejected promise. Without
-    // the fix, the second call would fail before even trying.
+    // A failed init resets the module-level `workerPromise` to null, so a
+    // second call spawns a new worker rather than rejecting from the cache.
     const computeTensor = await freshModule();
 
     // First call: wrong version → rejection.
@@ -219,8 +204,7 @@ describe("computeTensor", () => {
     const worker2 = MockWorker.lastInstance!;
     await waitForPosts(worker2, 1);
 
-    // This time, reply with the correct version — the call should
-    // proceed to a compute request and then resolve.
+    // Reply with the correct version — the call proceeds and resolves.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const wasmPkg: { version: string } = require("../../../public/wasm/zxw/package.json");
     worker2.dispatch({ type: "version-ok", version: wasmPkg.version });

@@ -50,9 +50,8 @@ import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 import { toSafeFilename } from "@/lib/filename";
 import { markIntroSeen, shouldShowIntro } from "@/lib/onboarding/intro";
 
-// One shape for the destructive-action confirmation dialog. `null`
-// means "no dialog open"; consumers should `confirmDialogue?.onConfirm`
-// rather than reading the action off the store directly.
+// Shape for the destructive-action confirmation dialog. `null` means
+// no dialog open; consumers call `confirmDialogue?.onConfirm`.
 export type ConfirmDialogueState = {
   title: string;
   message: string;
@@ -65,45 +64,38 @@ export type ConfirmDialogueState = {
 type GraphStore = {
   title: string;
 
-  // `createdAt`, for autosave is stamped once
-  // when the document is first created (or imported)
+  // Stamped once at document creation/import; preserved across saves.
   createdAt: string;
   nodes: VertexNode[];
   edges: GraphEdge[];
   mode: EditorMode;
   hasHydrated: boolean;
-  // Monotonic counter bumped whenever an import finishes. Purely a
-  // signal for the view layer to call `reactFlow.fitView()` after a
-  // fresh graph lands — the store itself never touches React Flow.
+  // Bumped after an import so the view layer calls `reactFlow.fitView()`;
+  // the store never touches React Flow itself.
   fitViewNonce: number;
-  // Vertex IDs staged as edge sources while in add-edge mode. Empty outside
-  // of add-edge mode. Edges are fanned out from every ID in this list to the
-  // next clicked target.
+  // Vertex IDs staged as edge sources in add-edge mode (empty otherwise);
+  // edges fan out from every ID here to the next clicked target.
   pendingEdgeSources: string[];
   selectedVertexType: VertexType;
 
-  // Destructive-action confirmation dialog. `null` when no dialog is
-  // open; the dialog component renders nothing when it receives a
-  // null/undefined `state` prop. See `ConfirmDialogueState` above.
+  // Destructive-action confirmation dialog (`null` when closed).
   confirmDialogue: ConfirmDialogueState | null;
 
-  // Keyboard-shortcuts help dialog. Pure UI — no pending action — but kept
-  // in the store so the global `?` keybinding and the toolbar button share
-  // a single source of truth.
+  // Help dialog. Kept in the store so the `?` keybinding and toolbar
+  // button share one source of truth.
   isHelpOpen: boolean;
 
-  // First-run intro guide dialog. Auto-opened once by `hydrate()` when the
-  // `graph-board-seen-intro` localStorage flag is absent; afterwards it can
-  // be reopened from the Help dialog. The flag is stamped at open time
-  // (not at close) so the intro never reappears on reload.
+  // First-run intro. Auto-opened by `hydrate()` when the
+  // `graph-board-seen-intro` flag is absent; the flag is stamped at
+  // open time so the intro never reappears on reload.
   isIntroOpen: boolean;
 
-  // Session-scoped clipboard. Not persisted — paste should not survive a reload.
+  // Session-scoped clipboard; not persisted.
   clipboard: {
     nodes: VertexNode[];
     edges: GraphEdge[];
-    // How many times the current clipboard has been pasted; each paste adds
-    // `PASTE_OFFSET_STEP * pasteCount` so duplicates don't overlap exactly.
+    // Increments per paste; each adds `PASTE_OFFSET_STEP * pasteCount`
+    // so duplicates don't overlap exactly.
     pasteCount: number;
   } | null;
 
@@ -159,12 +151,9 @@ type GraphStore = {
   onNodeDragStart: () => void;
   onNodeDragStop: () => void;
 
-  // Bounding box for any continuous "live preview" edit in the property
-  // panel (e.g. dragging the rotation slider). The pattern mirrors
+  // Property-panel continuous edit (e.g. rotation slider). Mirrors
   // onNodeDragStart/Stop: pause the undo stack during the gesture, then
-  // inject a single pre-gesture snapshot so undo restores to before the
-  // edit, not to some intermediate drag step. Generic on purpose — a
-  // future color picker or scale slider can reuse it.
+  // inject one pre-gesture snapshot so undo restores to before the edit.
   onVertexPropertyEditStart: () => void;
   onVertexPropertyEditEnd: () => void;
 
@@ -178,27 +167,20 @@ function partialize(state: GraphStore) {
   return { nodes, edges };
 }
 
-// Module-level stash for in-flight continuous-edit snapshots. Each
-// gesture (drag, property-panel slider, future colour picker, …) owns
-// its own controller so two overlapping gestures don't trample each
-// other's pre-state — see `makeGestureController` below.
+// Pre-gesture snapshot for a continuous edit. Each gesture owns its
+// own controller so overlapping gestures don't trample each other.
 type GraphSnapshot = { nodes: VertexNode[]; edges: GraphEdge[] };
 
-// Split a stream of React Flow change events into structural changes
-// (only `remove` today — future kinds may join) and visual-only changes
-// (everything else: dimension, position, select). Apply each kind with
-// the right undo policy:
-//   - structural: regular undo tracking; the user expects to be able
-//     to undo a delete.
-//   - visual: paused undo tracking; the user does not expect every
-//     drag tick or select toggle to land on the undo stack.
+// Split React Flow changes into structural (`remove`) and visual
+// (everything else: dimension, position, select), applied with the
+// right undo policy. Structural changes get normal undo tracking
+// (undo should reverse a delete); visual changes are applied with
+// tracking paused so drag ticks and selection toggles don't land on
+// the undo stack.
 //
-// Shared between `onNodesChange` and `onEdgesChange` so the two streams
-// always behave identically. The structural change is applied first so
-// the subsequent visual apply sees the post-deletion slice — otherwise
-// a single batch with both a `select` and a `remove` would either drop
-// the deletion (visual first) or the selection update (structural
-// first on stale data).
+// Shared by `onNodesChange` / `onEdgesChange`. Structural applies
+// first so the visual apply sees the post-deletion slice — otherwise
+// a batch with both `select` and `remove` would drop one update.
 function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
   changes: C[];
   getCurrent: () => T[];
@@ -223,12 +205,10 @@ function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
   }
 }
 
-// Owns one continuous-edit gesture's pause/snapshot bookkeeping. The
-// pattern mirrors React Flow's drag model: while the gesture is
-// active, the temporal store is paused (so intermediate commits
-// don't create an undo entry); on end, the pre-gesture snapshot
-// is pushed into `pastStates` so undo restores to before the gesture
-// started.
+// Pause/resume bookkeeping for one continuous-edit gesture. While
+// active the temporal store is paused (intermediate commits create no
+// undo entry); on end the pre-gesture snapshot is pushed to
+// `pastStates` so undo restores to before the gesture.
 function makeGestureController() {
   let snapshot: GraphSnapshot | null = null;
 
@@ -254,11 +234,9 @@ function makeGestureController() {
 const dragGesture = makeGestureController();
 const vertexPropertyEditGesture = makeGestureController();
 
-// Save the current graph back to localStorage under the stable local-doc
-// id. The five-field object was previously inlined verbatim in `save`,
-// `importJson.applyImport`, and `reset`; keeping it here means the field
-// list can drift in exactly one place. Takes the subset of store/runtime
-// fields `saveGraphDocument` needs (no `id` — that's always the local doc).
+// Save the graph to localStorage under the stable local-doc id. Shared
+// by `save`, `importJson.applyImport`, and `reset` so the field list
+// lives in one place.
 function persistLocal(doc: {
   title: string;
   nodes: VertexNode[];
@@ -278,15 +256,13 @@ export const useGraphStore = create<GraphStore>()(
   temporal(
     (set, get) => ({
       title: "Untitled Graph",
-      // Placeholder until `hydrate` runs; replaced with the persisted
-      // document's real `createdAt` on first hydration.
+      // Placeholder until `hydrate` replaces it with the persisted value.
       createdAt: new Date().toISOString(),
       nodes: [],
       edges: [],
       mode: EDITOR_MODES.select,
       hasHydrated: false,
 
-      // When is is not 0, an useEffect in grapheditor fits the view
       fitViewNonce: 0,
 
       pendingEdgeSources: [],
@@ -301,18 +277,14 @@ export const useGraphStore = create<GraphStore>()(
       clipboard: null,
 
       hydrate: () => {
-        // Load the persisted document (v2 `{ graph, view }` shape) and
-        // hydrate it back into runtime `VertexNode[]` / `GraphEdge[]` for
-        // the store + React Flow. The persisted shape never reaches the
-        // store directly.
+        // Hydrate the persisted doc (v2 `{ graph, view }` shape) into
+        // runtime `VertexNode[]` / `GraphEdge[]`; the persisted shape
+        // never reaches the store.
         const document = loadGraphDocument();
         const hydrated = hydrateDocument(document);
 
         set({
           title: hydrated.title,
-          // Preserve the document's original creation timestamp so
-          // subsequent saves don't clobber it (the bug this field
-          // exists to fix).
           createdAt: hydrated.createdAt,
           nodes: hydrated.nodes,
           edges: hydrated.edges,
@@ -321,16 +293,13 @@ export const useGraphStore = create<GraphStore>()(
 
         useGraphStore.temporal.getState().clear();
 
-        // Frame the graph on reload only when there's something to frame.
+        // Frame on reload only when there's something to frame.
         if (hydrated.nodes.length > 0) {
           set({ fitViewNonce: get().fitViewNonce + 1 });
         }
 
-        // Auto-open the first-run intro guide exactly once. We stamp the
-        // localStorage flag *now* (when we decide to open it), not when the
-        // dialog closes — so even if the user force-closes the tab mid-tour
-        // or reloads, the intro never reappears. See
-        // `src/lib/onboarding/intro.ts`.
+        // Auto-open the intro once: stamp the flag now (at open, not at
+        // close) so it never reappears on reload. See `intro.ts`.
         if (shouldShowIntro()) {
           markIntroSeen();
           set({ isIntroOpen: true });
@@ -338,13 +307,13 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       setMode: (mode) => {
-        // Selection is intentionally preserved across mode switches so a
-        // user can pre-select vertices in select mode and have them
-        // auto-promote to pending edge sources when they switch to add-edge.
+        // Selection is preserved across mode switches so a user can
+        // pre-select vertices and have them auto-promote to pending
+        // sources when entering add-edge mode.
         if (mode === EDITOR_MODES.addEdge) {
-          // Auto-promote currently-selected vertices into the pending source
-          // list. Merge with anything already pending so toggling add-edge
-          // off and back on preserves work-in-progress.
+          // Auto-promote selected vertices into the pending source list,
+          // merging with any already pending (toggling off/back on keeps
+          // work-in-progress).
           const selectedIds = selectSelectedNodeIds(get().nodes);
 
           const merged = Array.from(
@@ -353,8 +322,7 @@ export const useGraphStore = create<GraphStore>()(
 
           set({ mode, pendingEdgeSources: merged });
         } else {
-          // Pending sources only make sense in add-edge mode — drop them
-          // whenever we leave it so the list stays coherent.
+          // Pending sources only make sense in add-edge mode.
           set({ mode, pendingEdgeSources: [] });
         }
       },
@@ -385,9 +353,9 @@ export const useGraphStore = create<GraphStore>()(
         const vertexType = get().selectedVertexType;
         const node = createVertexNode(position, vertexType);
 
-        // Boundary vertices get an auto-assigned `order` so they land at
-        // the end of their group (inputs / outputs ordered independently).
-        // Non-boundary types ignore the field.
+        // Boundary vertices get an auto-assigned `order` at the end of
+        // their group (inputs/outputs ordered independently); others
+        // ignore the field.
         if (isBoundaryVertex(vertexType)) {
           node.data.order = nextBoundaryOrder(get().nodes, vertexType);
         }
@@ -398,16 +366,13 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       handleVertexClick: (vertexId, modifiers) => {
-        // `handleVertexClick` is only meaningful in add-edge mode —
-        // outside it the click belongs to React Flow's selection
-        // machinery and the store stays out of the way.
+        // Only meaningful in add-edge mode; outside it, React Flow owns
+        // the click for selection.
         const state = get();
         if (state.mode !== EDITOR_MODES.addEdge) return;
 
-        // The six-case dispatch lives in `computeVertexClick` (see
-        // operations.ts). It returns a partial state patch or `null`
-        // for no-op clicks (e.g. modifier-click on an already-pending
-        // vertex).
+        // Dispatch lives in `computeVertexClick` (operations.ts); returns
+        // a partial patch or null for no-op clicks.
         const patch = computeVertexClick({
           vertexId,
           modifiers,
@@ -423,11 +388,8 @@ export const useGraphStore = create<GraphStore>()(
         set({ pendingEdgeSources: [] });
       },
 
-      // Merge every currently-selected vertex into the pending source list.
-      // Intended for the box-select end in add-edge mode (Shift+drag on the
-      // pane) — React Flow has just finished updating `selected` on the
-      // boxed nodes by the time this fires, so we can read them straight
-      // from the store. Duplicates and already-pending IDs are deduped.
+      // Box-select end in add-edge mode: merge selected vertices into the
+      // pending source list, deduped.
       addSelectedToPendingSources: () => {
         const selectedIds = selectSelectedNodeIds(get().nodes);
 
@@ -492,8 +454,7 @@ export const useGraphStore = create<GraphStore>()(
           subgraph: clipboard,
           pasteCount: clipboard.pasteCount + 1,
           // Pass the live graph so pasted boundary nodes get fresh,
-          // non-colliding `order` values (a pasted input would otherwise
-          // clone the original's order and tie with it).
+          // non-colliding `order` values.
           existingNodes: get().nodes,
         });
 
@@ -521,7 +482,7 @@ export const useGraphStore = create<GraphStore>()(
 
         if (subgraph.nodes.length === 0) return;
 
-        // Cut = copy to clipboard + remove the original selection.
+        // Cut = copy to clipboard + delete the original selection.
         const remaining = deleteSelectedElements({
           nodes: get().nodes,
           edges: get().edges,
@@ -538,11 +499,8 @@ export const useGraphStore = create<GraphStore>()(
 
       save: () => {
         const state = get();
-
-        // `updatedAt` is stamped inside `saveGraphDocument` so callers
-        // don't have to keep clocks in sync. `createdAt` is preserved
-        // from the store so repeated saves don't overwrite the
-        // document's original creation time.
+        // `updatedAt` is stamped in `saveGraphDocument`; `createdAt` is
+        // preserved from the store.
         persistLocal(state);
       },
 
@@ -565,21 +523,18 @@ export const useGraphStore = create<GraphStore>()(
         });
       },
 
-      // Load JSON as graph and replace the current editor state
-      // with its contents. Importing is destructive
-      // ask if user would like to delte the current graph
+      // Import replaces the editor state; if the canvas is non-empty the
+      // user must confirm the destructive import first.
       importJson: async () => {
         const contents = await openTextFileWithPicker({});
         if (contents === null) return;
 
-        // Validate the file
         const result = importGraphJson(contents);
         if (!result.ok) {
           window.alert(`Failed to import: ${result.error}`);
           return;
         }
 
-        // Helper function
         const applyImport = () => {
           const hydrated = hydrateDocument(result.document);
 
@@ -592,16 +547,15 @@ export const useGraphStore = create<GraphStore>()(
             pendingEdgeSources: [],
             clipboard: null,
             isHelpOpen: false,
-            // Nudge the view layer to refit now that the graph replaced.
+            // Refit now that the graph replaced.
             fitViewNonce: get().fitViewNonce + 1,
           });
 
           persistLocal(hydrated);
 
-          // A new document must not carry the old undo history — same
-          // contract as `hydrate` and `reset` (AGENTS.md §"Architecture
-          // rules"). Without this, undo immediately after import would
-          // rewind INTO the pre-import graph.
+          // A new document must not carry the old undo history (same as
+          // `hydrate` / `reset`), or undo after import would rewind into
+          // the pre-import graph.
           useGraphStore.temporal.getState().clear();
         };
 
@@ -635,10 +589,9 @@ export const useGraphStore = create<GraphStore>()(
 
       updateVertexType: (nodeId, vertexType) => {
         const current = get().nodes;
-        // When the new type is a boundary, assign it the next available
-        // order in its new group (rather than inheriting a stale or
-        // undefined order). `assignBoundaryOrderOnTypeChange` returns the
-        // nodes unchanged for non-boundary targets.
+        // Assign the next available order in its new group when the
+        // target is a boundary type; `assignBoundaryOrderOnTypeChange`
+        // returns nodes unchanged for non-boundary targets.
         const nextNodes = isBoundaryVertex(vertexType)
           ? assignBoundaryOrderOnTypeChange({
             nodes: current,
@@ -654,9 +607,8 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       updateVertexOrder: (nodeId, targetOrder) => {
-        // Pure "cut the queue" reorder; a no-op (non-boundary node, or
-        // target equals current position) returns the original `nodes`
-        // reference, which the zundo equality check treats as unchanged.
+        // No-op reorder returns the original `nodes` reference, which the
+        // zundo equality check treats as unchanged.
         const { nodes } = reorderBoundaryVertex({
           nodes: get().nodes,
           vertexId: nodeId,
@@ -667,11 +619,7 @@ export const useGraphStore = create<GraphStore>()(
 
       updateVertexRotation: (nodeId, rotation) => {
         // Normalize at the store boundary so every caller gets the
-        // canonical [0, 360) value — the property panel used to be the
-        // only path that normalized (VertexPropertyPanel.tsx:109), which
-        // left direct store callers (rotation gestures, programmatic
-        // edits) writing un-normalized values that diverged from disk
-        // until the next save/hydrate cycle.
+        // canonical [0, 360) value.
         const normalized = normalizeRotation(rotation);
         set({
           nodes: get().nodes.map((node) =>
@@ -681,10 +629,8 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       reset: () => {
-        // Empty v2 doc → hydrate to runtime shape for the store. We don't
-        // reuse the persisted `nodes`/`edges` directly because after the
-        // v2 split those are `GraphNodeRecord[]` / `GraphEdgeRecord[]`,
-        // not runtime React Flow objects.
+        // Hydrate an empty v2 doc to runtime shape (the persisted records
+        // are not runtime React Flow objects).
         const document = createEmptyGraphDocument();
         const hydrated = hydrateDocument(document);
 
@@ -725,9 +671,6 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       closeConfirmDialogue: () => {
-        // Drop the whole dialogue in one go. Reads after close see null
-        // and components that key off the dialogue cleanly render their
-        // closed state.
         set({ confirmDialogue: null });
       },
 
@@ -751,27 +694,25 @@ export const useGraphStore = create<GraphStore>()(
         set({ isIntroOpen: false });
       },
 
-      // Return true if and only if the graph has no nodes.
+      // True iff the graph has no nodes.
       isStateEmpty: () => {
         return get().nodes.length === 0;
       },
 
       onNodeDragStart: () => {
-        // Snapshot the pre-drag graph state, then pause tracking so
-        // intermediate drag positions are not recorded in the undo stack.
+        // Snapshot pre-drag state, then pause tracking so intermediate
+        // positions aren't recorded.
         dragGesture.begin(partialize(get()));
       },
 
       onNodeDragStop: () => {
-        // Resume tracking and push the pre-drag snapshot into pastStates
-        // so undo restores vertex positions to before the drag.
+        // Resume and push the pre-drag snapshot so undo restores
+        // positions to before the drag.
         dragGesture.end();
       },
 
       onVertexPropertyEditStart: () => {
-        // Same idea as onNodeDragStart, but for the property panel's
-        // continuous edits (rotation slider today; future pickers reuse
-        // this without a new code path).
+        // Same as onNodeDragStart for property-panel continuous edits.
         vertexPropertyEditGesture.begin(partialize(get()));
       },
 
@@ -783,20 +724,13 @@ export const useGraphStore = create<GraphStore>()(
     }),
     {
       partialize,
-      // Compare the partialized slices field-by-field instead of
-      // relying on the default `Object.is` on the partialized object.
-      // zustand's `set` always produces a new state object, so the
-      // default Object.is is always false and a pastState is pushed
-      // for every `set` — even when the partialized slices (nodes /
-      // edges) didn't change. UI-only actions like `setMode`,
-      // `openConfirmDialogue`, and the helpers' no-op path
-      // (`selectAllElements` / `clearAllSelections` returning the
-      // original references when nothing changed) would otherwise
-      // pollute the undo stack with entries the user can "undo" to a
-      // visually-identical state. With this equality, the undo stack
-      // is reserved for real graph-structure changes. Visual changes
-      // (drag, select toggle) still bypass the stack via the
-      // pause/resume gesture controllers — see `applyReactiveFlowChanges`.
+      // Compare slices by reference: zustand's `set` always makes a new
+      // state object, so the default `Object.is` would push a pastState
+      // on every set — even UI-only actions (`setMode`,
+      // `openConfirmDialogue`) and no-op helper paths. Reference
+      // equality reserves the undo stack for real graph-structure
+      // changes; visual changes (drag, select) still bypass it via the
+      // gesture controllers in `applyReactiveFlowChanges`.
       equality: (a, b) => a.nodes === b.nodes && a.edges === b.edges,
       limit: 50,
     },

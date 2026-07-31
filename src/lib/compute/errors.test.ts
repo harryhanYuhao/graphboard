@@ -1,10 +1,7 @@
-// src/lib/compute/errors.test.ts
-//
-// Pins the error-message → `ComputeErrorKind` classification. The matched
-// substrings mirror the leading tokens of each Rust `#[error("…")]` string
-// in `crates/zxw/src/error.rs` plus the loader failure modes. If the Rust
-// side rewords a variant, this test surfaces the drift instead of silently
-// degrading the UI's remediation hint to `"unknown"`.
+// Pins error-message → `ComputeErrorKind` classification. Matched
+// substrings mirror the Rust `#[error("…")]` tokens and the loader
+// failure modes, so a Rust reword surfaces here instead of silently
+// degrading the UI's hint to `"unknown"`.
 
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +9,6 @@ import { classifyComputeError, ComputeError } from "./errors";
 
 describe("classifyComputeError", () => {
   it("matches the Rust VertexNotFound message", () => {
-    // Mirrors crates/zxw/src/error.rs:61.
     expect(
       classifyComputeError(
         "vertex 'v3' not found (referenced by edge 'e7')",
@@ -21,14 +17,12 @@ describe("classifyComputeError", () => {
   });
 
   it("matches the Rust HBoxArity message", () => {
-    // Mirrors crates/zxw/src/error.rs:70.
     expect(
       classifyComputeError("H-box vertex 'h1' must have arity 2, got 3"),
     ).toBe("h-box-arity");
   });
 
   it("matches the Rust BoundaryDegreeViolation message", () => {
-    // Mirrors crates/zxw/src/error.rs:78.
     expect(
       classifyComputeError(
         "boundary vertex 'in0' has degree 2; boundaries must have degree 0 or 1",
@@ -37,7 +31,6 @@ describe("classifyComputeError", () => {
   });
 
   it("matches the Rust DegreeOverflow message", () => {
-    // Mirrors crates/zxw/src/error.rs:86.
     expect(
       classifyComputeError(
         "vertex 'z2' of type Z has degree 4 but only 2 legs available",

@@ -10,13 +10,10 @@ export function StraightCenterEdge(props: EdgeProps) {
   const sourceNode = useInternalNode<VertexNodeType>(props.source);
   const targetNode = useInternalNode<VertexNodeType>(props.target);
 
-  // Read each endpoint vertex's rotation from the store via the
-  // memoized id→node map (O(1)). Returning a primitive so the edge
-  // re-renders only when the relevant rotation actually changes.
-  // The vertex body is rotated via CSS; the visible top handle of a
-  // directional (W / And) target orbits the center as rotation
-  // changes, so the edge endpoint must follow it — see
-  // `getEdgeEndpoint` for the geometry.
+  // Read each endpoint's rotation via the memoized id→node map; the primitive
+  // return re-renders only on change. A directional (W/And) target's top
+  // handle orbits the center as the body rotates via CSS, so the edge endpoint
+  // must follow it (see `getEdgeEndpoint` for the geometry).
   const sourceRotation = useGraphStore(
     (state) => nodesById(state.nodes).get(props.source)?.rotation ?? 0,
   );

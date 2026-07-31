@@ -1,9 +1,7 @@
 // src/components/graph-editor/VertexSwatch.tsx
 //
-// A small visual chip that mirrors the styling of a vertex (shape, color,
-// default glyph). Shared between the add-vertex side menu
-// (VertexTypeMenu) and the single-vertex property panel so both stay in
-// sync with VERTEX_TYPES.
+// Visual chip mirroring a vertex's shape/color/glyph. Shared between the
+// add-vertex menu and the property panel to stay in sync with VERTEX_TYPES.
 
 import {
   TRIANGLE_CLIP_PATH,
@@ -14,10 +12,8 @@ export function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
   return (
     <div
       className={[
-        // The visible border for non-triangle types comes from the
-        // conditional `border` below. Triangles are clipped to their
-        // silhouette so a CSS border on the box would draw outside
-        // the visible shape, hence the explicit skip.
+        // Triangles are clipped to their silhouette, so a CSS border (which
+        // would draw outside the clipped shape) is skipped for them.
         "h-5 w-5 shrink-0 flex items-center justify-center",
         meta.isTriangle ? "" : "border",
         meta.radiusClass,
@@ -27,10 +23,7 @@ export function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
         .join(" ")}
       style={{ clipPath: meta.isTriangle ? TRIANGLE_CLIP_PATH : undefined }}
     >
-      {/* Render the type's default glyph (e.g. the And gate's SVG Λ)
-          when present, otherwise fall back to the default text.
-          `block h-full w-full` on the wrapper makes the SVG fill the
-          swatch uniformly; the text fallback is unaffected. */}
+      {/* Default glyph, or fallback text. `h-full w-full` fills the swatch. */}
       <span className="block h-full w-full">
         {meta.glyph ?? meta.defaultText}
       </span>

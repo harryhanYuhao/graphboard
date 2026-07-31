@@ -1,14 +1,9 @@
 // crates/zxw/tests/phase_edge_cases.rs
 //
-// Edge-case probes for the phase-expression parser. Each test pins ONE
-// behavior, with the EXPECTED result derived from the JS source of
-// truth at `src/lib/phase/parser.ts` (the parser this Rust port must
-// match — same parse results, same error messages, fragment-matched).
-//
-// Tests for confirmed JS/Rust divergences are marked `#[ignore]` with
-// a comment citing the JS source line(s) and the suspected Rust line.
-// The parent agent keeps diff control for the fix phase, so this file
-// asserts the JS-correct behavior even where Rust currently diverges.
+// Edge-case probes for the phase-expression parser. Each pins ONE
+// behavior; expected results match the JS source of truth
+// (`src/lib/phase/parser.ts`) — same parse results, same error messages,
+// fragment-matched. Confirmed JS/Rust divergences are `#[ignore]`d.
 
 use approx::assert_relative_eq;
 use zxw::parse_phase;
@@ -17,25 +12,16 @@ use zxw::PhaseError;
 const PI: f64 = std::f64::consts::PI;
 
 // ===========================================================================
-// Prime suspect: identifier-aware `\pi` matching.
+// `\pi` matching is NOT identifier-aware.
 //
-// The plan §4.1 quirk #4 claims identifier-aware matching applies to
-// `\<word>` too. The JS parser does NOT implement that — it consumes
-// `\pi` via `tryConsumeLiteral` (parser.ts:192-196) which has NO
-// follower check, then the orphan `2` is reported as trailing junk.
-// The Rust port faithfully mirrors this. So `\pi2` is NOT an
-// `UnknownVariable("\\pi2")` in either implementation — it's an
-// `UnexpectedToken { found: "2", position: 3 }`. Pinning that here.
+// `\pi` consumes 3 chars with no follower check; the orphan follower is
+// reported as trailing junk, not absorbed into the token. So `\pi2` →
+// `UnexpectedToken { "2", 3 }`, not `UnknownVariable("\\pi2")`.
 // ===========================================================================
 
 #[test]
 fn backslash_pi_followed_by_digit_is_unexpected_token_not_unknown_var() {
-    // JS: parser.ts:192 `tryConsumeLiteral(input, c, "\\pi")` consumes
-    // `\pi` with no follower check; then the `2` is trailing junk at
-    // position 3 → `Unexpected '2' at position 3`.
-    // Rust: phase.rs:193 `try_consume_literal(chars, c, "\\pi")`
-    // likewise succeeds; phase.rs:60-62 surfaces the `2` via
-    // `trailing_junk_error` → `UnexpectedToken { found: "2", pos: 3 }`.
+    // `\pi` consumes; the `2` is trailing junk at position 3.
     let err = parse_phase("\\pi2").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -48,11 +34,7 @@ fn backslash_pi_followed_by_digit_is_unexpected_token_not_unknown_var() {
 
 #[test]
 fn backslash_pialpha_reports_alpha_without_backslash() {
-    // JS: `\pi` consumes 3 chars; `alpha` is trailing bare word →
-    // trailingJunkError bare-word branch → `Unknown variable 'alpha'`
-    // (note: NO backslash — parser.ts:79-86).
-    // Rust: phase.rs:72-83 reads bare word at the orphan position →
-    // `UnknownVariable("alpha")`.
+    // `\pi` consumes; `alpha` is a trailing bare word → `UnknownVariable("alpha")`.
     let err = parse_phase("\\pialpha").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "alpha"),
@@ -62,10 +44,7 @@ fn backslash_pialpha_reports_alpha_without_backslash() {
 
 #[test]
 fn backslash_pi_followed_by_paren_is_unexpected_token() {
-    // Two adjacent factors (`\pi` then `(1+1)`) with no operator.
-    // JS: `\pi` consumed, then `(` is trailing junk at position 3 →
-    // `Unexpected '(' at position 3` (parser.ts:87-89).
-    // Rust: phase.rs:60-62 / 84-88 → `UnexpectedToken { "(" , 3 }`.
+    // Adjacent factors with no operator: `\pi` consumes, `(` is trailing junk.
     let err = parse_phase("\\pi(1+1)").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -78,9 +57,8 @@ fn backslash_pi_followed_by_paren_is_unexpected_token() {
 
 #[test]
 fn backslash_pi_backslash_pi_reports_unknown_variable_with_backslash() {
-    // `\pi\pi`: first `\pi` consumes; second `\pi` is trailing junk
-    // via the BACKSLASH branch → `Unknown variable '\pi'` (WITH the
-    // leading backslash). JS parser.ts:71-78; Rust phase.rs:74-78.
+    // Second `\pi` is trailing junk via the backslash branch →
+    // `UnknownVariable("\\pi")` (keeps the leading backslash).
     let err = parse_phase("\\pi\\pi").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "\\pi"),
@@ -90,9 +68,7 @@ fn backslash_pi_backslash_pi_reports_unknown_variable_with_backslash() {
 
 #[test]
 fn backslash_p_is_unknown_variable() {
-    // `\p`: backslash + single letter, not `\pi`. Both parsers report
-    // the whole `\p` token as unknown. JS parser.ts:216-223;
-    // Rust phase.rs:218-222 + read_backslash_word (phase.rs:316-331).
+    // `\p` (backslash + non-`pi` letter) → whole token reported unknown.
     let err = parse_phase("\\p").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "\\p"),
@@ -102,9 +78,7 @@ fn backslash_p_is_unknown_variable() {
 
 #[test]
 fn lone_backslash_then_space_is_unexpected_token() {
-    // `1 \ 2`: the `\` is followed by a space, not a letter, so
-    // read_backslash_word returns None and it surfaces as a plain
-    // UnexpectedToken. JS parser.ts:87-89; Rust phase.rs:84-88.
+    // `\` followed by a space (not a letter) → plain UnexpectedToken.
     let err = parse_phase("1 \\ 2").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -121,9 +95,7 @@ fn lone_backslash_then_space_is_unexpected_token() {
 
 #[test]
 fn pi2_is_unknown_variable_pi2() {
-    // `pi2`: try_consume_word("pi") refuses (next char `2` is
-    // alphanumeric) → falls through to read_bare_word → whole `pi2`
-    // token reported. JS parser.ts:262-269 + 228-235.
+    // `pi` won't match (next char `2` is alphanumeric) → whole `pi2` bare word.
     let err = parse_phase("pi2").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "pi2"),
@@ -133,11 +105,8 @@ fn pi2_is_unknown_variable_pi2() {
 
 #[test]
 fn pi_underscore_2_is_unexpected_underscore() {
-    // `pi_2`: `pi` would match (next char `_` is NOT alphanumeric so
-    // try_consume_word SUCCEEDS), then `_2` is trailing junk where `_`
-    // is neither backslash nor alphabetic → `UnexpectedToken { "_" }`.
-    // JS: same — `pi` consumes, `_` at position 2 →
-    // `Unexpected '_' at position 2`.
+    // `pi` matches (next char `_` isn't alphanumeric), then `_` is
+    // trailing junk → UnexpectedToken { "_", 2 }.
     let err = parse_phase("pi_2").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -159,7 +128,7 @@ fn pizarro_is_unknown_variable_pizarro() {
 
 #[test]
 fn p_i2_is_unknown_variable_pi2() {
-    // `PI2` — only `PI` (exact) is matched; `PI2` is a bare word.
+    // Only `PI` (exact) matches; `PI2` is a bare word.
     let err = parse_phase("PI2").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "PI2"),
@@ -169,8 +138,7 @@ fn p_i2_is_unknown_variable_pi2() {
 
 #[test]
 fn mixed_case_pi_is_unknown_variable() {
-    // Only `pi` and `PI` are matched (case-sensitive). `Pi` falls
-    // through to read_bare_word. JS parser.ts:197-201.
+    // Only `pi` and `PI` match (case-sensitive); `Pi` is a bare word.
     let err = parse_phase("Pi").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "Pi"),
@@ -179,33 +147,20 @@ fn mixed_case_pi_is_unknown_variable() {
 }
 
 // ===========================================================================
-// CONFIRMED DIVERGENCE: bare-word error MESSAGE fragment.
+// CONFIRMED DIVERGENCE: bare-word UnknownVariable message fragment.
 //
-// JS has TWO separate messages for UnknownVariable:
-//   - parseFactor inline throw (parser.ts:231-234):
-//       "Unknown variable '<tok>' (only pi is supported in v1)"   <-- no `\`
-//     used when the bare word is the WHOLE expression / a factor.
-//   - trailingJunkError (parser.ts:79-86):
-//       "Unknown variable '<tok>' (only \pi is supported in v1)"   <-- WITH `\`
-//     used when the bare word is TRAILING junk after a successful parse.
-//
-// Rust's error.rs:26 has a SINGLE Display impl that always emits
-// `(only \pi is supported in v1)` — for both bare and backslash, both
-// factor-position and trailing-junk. So the factor-position bare-word
-// cases (`pi2`, `pizarro`, `PI2`, `Pi`, `alpha`) emit the WRONG
-// fragment in Rust.
-//
-// These are marked #[ignore]; destructure + check the token still
-// works (the variant + token are correct), only the message diverges.
+// JS has two messages — "(only pi is supported in v1)" for a bare-word
+// factor, "(only \pi is supported in v1)" for trailing junk. Rust has a
+// single Display impl that always uses the backslash form, so the
+// factor-position bare-word cases emit the wrong fragment. Token + variant
+// are correct; only the message diverges. Marked #[ignore].
 // ===========================================================================
 
 #[test]
-#[ignore = "JS/Rust message divergence: JS parser.ts:233 emits '(only pi is supported in v1)' \
-            for a bare-word FACTOR (no backslash); Rust error.rs:26 always emits \
-            '(only \\pi is supported in v1)'. Token + variant are correct, only the fragment differs."]
+#[ignore = "JS/Rust message divergence: bare-word FACTOR message uses '(only pi is supported \
+            in v1)' in JS but Rust always emits '(only \\pi is supported in v1)'."]
 fn bare_word_factor_message_has_no_backslash_around_pi_js_divergence() {
-    // `pi2` as a whole-expression factor: JS message contains
-    // "(only pi is supported" — the literal `pi`, no backslash.
+    // `pi2` as a whole-expression factor: JS message has "(only pi is supported".
     let err = parse_phase("pi2").unwrap_err();
     let msg = format!("{err}");
     assert!(
@@ -215,9 +170,8 @@ fn bare_word_factor_message_has_no_backslash_around_pi_js_divergence() {
 }
 
 #[test]
-#[ignore = "JS/Rust message divergence (same as above): JS parser.ts:233 for bare-word factor \
-            uses '(only pi is supported in v1)'; Rust error.rs:26 uses '(only \\pi is supported in v1)'. \
-            Affects alpha/pizarro/PI2/Pi as whole-expression factors too."]
+#[ignore = "JS/Rust message divergence (same as above): bare-word factor uses '(only pi is \
+            supported in v1)' in JS; Rust uses the backslash form. Affects alpha/pizarro/PI2/Pi too."]
 fn alpha_as_factor_message_has_no_backslash_js_divergence() {
     let err = parse_phase("alpha").unwrap_err();
     let msg = format!("{err}");
@@ -227,14 +181,11 @@ fn alpha_as_factor_message_has_no_backslash_js_divergence() {
     );
 }
 
-// Sanity check (NOT ignored): the trailing-junk bare-word path in BOTH
-// implementations DOES keep the backslash form. So `1 + 2 hello` →
-// "Unknown variable 'hello' (only \pi is supported in v1)" matches.
+// Sanity check (NOT ignored): the trailing-junk bare-word path keeps the
+// backslash form in both implementations → `1 + 2 hello` matches.
 #[test]
 fn trailing_junk_bare_word_message_keeps_backslash_form_in_both() {
-    // JS trailingJunkError (parser.ts:79-86) and Rust trailing_junk_error
-    // (phase.rs:79-83) both emit "(only \pi is supported in v1)" for a
-    // bare word that is TRAILING junk. This is consistent.
+    // Trailing-junk bare word → "(only \pi is supported in v1)" in both.
     let err = parse_phase("1 + 2 hello").unwrap_err();
     match &err {
         PhaseError::UnknownVariable(token) => {
@@ -252,12 +203,8 @@ fn trailing_junk_bare_word_message_keeps_backslash_form_in_both() {
 
 #[test]
 fn bare_dot5_no_leading_digit_is_unexpected_dot() {
-    // `.5` (no leading digit) is NOT in the v1 grammar — JS's number
-    // regex is `/^\d+\.?\d*/` (`parser.ts:206`), which requires a leading
-    // digit. Rust's `read_number` now matches that contract: the
-    // `end == start` guard fires *before* the dot branch, so the stray
-    // `.` surfaces as `UnexpectedToken { found: ".", position: 0 }` on
-    // both sides of the WASM boundary.
+    // `.5` (no leading digit) isn't in the grammar (number regex requires a
+    // leading digit); the stray `.` → UnexpectedToken { ".", 0 }.
     let err = parse_phase(".5").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -276,9 +223,7 @@ fn trailing_dot_3_parses_to_3() {
 
 #[test]
 fn two_dots_3_5_6_is_unexpected_second_dot() {
-    // `3.5.6`: number match consumes `3.5`, then `.` at position 3 is
-    // trailing junk → UnexpectedToken. JS parser.ts:87-89;
-    // Rust phase.rs:60-62.
+    // Number match consumes `3.5`; the second `.` at position 3 is trailing junk.
     let err = parse_phase("3.5.6").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -291,7 +236,7 @@ fn two_dots_3_5_6_is_unexpected_second_dot() {
 
 #[test]
 fn double_unary_minus_is_positive_3() {
-    // `--3` → `-(-(3))` = 3. JS parser.ts:169-172; Rust phase.rs:166-170.
+    // `--3` → -(-(3)) = 3.
     assert_eq!(parse_phase("--3").unwrap(), 3.0);
 }
 
@@ -303,7 +248,7 @@ fn triple_unary_minus_is_negative_3() {
 
 #[test]
 fn unary_plus_then_unary_minus_is_negative_3() {
-    // `+-3` → `+(−3)` = -3. JS parser.ts:174-177; Rust phase.rs:171-174.
+    // `+-3` → +(−3) = -3.
     assert_eq!(parse_phase("+-3").unwrap(), -3.0);
 }
 
@@ -345,9 +290,7 @@ fn one_over_zero_times_five_is_non_finite_inf_left_to_right() {
 
 #[test]
 fn negative_zero_parses_to_negative_zero() {
-    // `-0` → `-0.0` (finite, is_zero, sign negative). JS returns value 0
-    // (JS has no signed zero distinction at the API level but Number
-    // preserves -0 internally; here we pin Rust's signed-zero result).
+    // `-0` → -0.0 (finite, sign negative). Pinning Rust's signed-zero result.
     let v = parse_phase("-0").unwrap();
     assert!(v == 0.0);
     assert!(v.is_sign_negative(), "expected -0.0, got {v}");
@@ -356,7 +299,7 @@ fn negative_zero_parses_to_negative_zero() {
 
 #[test]
 fn very_large_digit_string_parses_finite() {
-    // A 30-digit `9...9` fits in f64 (≈1e30, finite). JS returns 1e30.
+    // A 30-digit `9...9` fits in f64 (≈1e30, finite).
     let v = parse_phase("999999999999999999999999999999").unwrap();
     assert!(v.is_finite());
     assert_relative_eq!(v, 1e30, max_relative = 1e-15, epsilon = 1e-15);
@@ -364,8 +307,7 @@ fn very_large_digit_string_parses_finite() {
 
 #[test]
 fn overflow_digit_string_is_non_finite_inf() {
-    // A 400-digit `9...9` overflows f64 → parse() yields inf →
-    // NonFinite(inf). JS parseFloat likewise yields Infinity → error.
+    // A 400-digit `9...9` overflows f64 → inf → NonFinite(inf).
     let big = "9".repeat(400);
     let err = parse_phase(&big).unwrap_err();
     match err {
@@ -388,9 +330,7 @@ fn two_times_unicode_pi_with_space() {
 
 #[test]
 fn two_pi_no_space_is_unexpected_pi() {
-    // `2π`: after parsing `2` as a factor, `π` is adjacent with no
-    // operator → trailing junk → UnexpectedToken { "π", 1 }.
-    // JS parser.ts:87-89; Rust phase.rs:60-62, 84-88.
+    // `2π`: `2` parses, adjacent `π` with no operator → trailing junk.
     let err = parse_phase("2π").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -413,7 +353,7 @@ fn unicode_divide_6_div_2_is_3() {
 
 #[test]
 fn unicode_minus_5_minus_2_is_3() {
-    // U+2212 minus. JS parser.ts:271-273; Rust phase.rs:333-335.
+    // U+2212 minus.
     assert_eq!(parse_phase("5 − 2").unwrap(), 3.0);
 }
 
@@ -433,9 +373,7 @@ fn nested_parens_then_multiply_is_9() {
 
 #[test]
 fn unclosed_paren_is_missing_close_paren_at_6() {
-    // `(1 + 2`: parse_expr inside parens reaches end-of-input before
-    // seeing `)` → MissingCloseParen(position past last consumed char).
-    // JS parser.ts:184-186; Rust phase.rs:181-189. Position 6 = end.
+    // `(1 + 2`: end-of-input before `)` → MissingCloseParen (position 6 = end).
     let err = parse_phase("(1 + 2").unwrap_err();
     match err {
         PhaseError::MissingCloseParen(pos) => assert_eq!(pos, 6),
@@ -445,9 +383,7 @@ fn unclosed_paren_is_missing_close_paren_at_6() {
 
 #[test]
 fn empty_parens_is_unexpected_close_paren_at_1() {
-    // `()`: parse_expr → parse_term → parse_factor at `)` → nothing
-    // matches, `)` is not a valid factor start → UnexpectedToken.
-    // JS parser.ts:242; Rust phase.rs:235-238.
+    // `()`: `)` isn't a valid factor start → UnexpectedToken.
     let err = parse_phase("()").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -477,9 +413,7 @@ fn whitespace_only_empty_parens_is_unexpected_close_at_3() {
 
 #[test]
 fn trailing_operator_is_unexpected_end_of_input() {
-    // `1 + `: `+` consumes, then parse_term → parse_factor hits
-    // end-of-input → UnexpectedEndOfInput. JS parser.ts:239-241;
-    // Rust phase.rs:161-163.
+    // `1 + `: `+` consumes, then a factor hits end-of-input.
     let err = parse_phase("1 + ").unwrap_err();
     assert!(matches!(err, PhaseError::UnexpectedEndOfInput));
 }
@@ -516,10 +450,8 @@ fn hash_is_unexpected_token_at_2() {
 
 #[test]
 fn unexpected_token_position_is_char_index_not_byte_index() {
-    // `π # `: π is 1 char (3 bytes). The `#` is at CHAR index 2 but
-    // BYTE index 3. JS uses UTF-16 code-unit index (1 unit for π on
-    // the BMP) → position 2. Rust uses `Vec<char>` index → position 2.
-    // Asserting char index keeps the two in lock-step.
+    // π is 1 char (3 bytes). `#` is at char index 2 but byte index 3;
+    // asserting char index keeps JS (UTF-16) and Rust (`Vec<char>`) in lock-step.
     let err = parse_phase("π # ").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -532,7 +464,7 @@ fn unexpected_token_position_is_char_index_not_byte_index() {
 
 #[test]
 fn unicode_pi_adjacent_to_hash_position_is_char_index() {
-    // `π#`: `#` at char index 1, byte index 3. JS reports position 1.
+    // `π#`: `#` at char index 1, byte index 3.
     let err = parse_phase("π#").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -559,12 +491,8 @@ fn double_dollar_wrap_strips_to_3_5() {
 
 #[test]
 fn triple_dollar_wrap_is_unexpected_token_at_0() {
-    // `$$$3.5$$$`: starts/ends with `$$` but the `$$...$$` strip
-    // requires len>=4 AND exact `$$` at both ends. After a `$$` match
-    // on a 3-`$` prefix there's a leftover `$` at start; the strip
-    // logic does NOT fire for the ambiguous case and the leading `$`
-    // is reported. JS: parser.ts:112-121 leaves it untouched;
-    // Rust phase.rs:105-116 likewise. Position 0.
+    // `$$$3.5$$$`: the `$$...$$` strip needs exact `$$` at both ends;
+    // a 3-`$` prefix leaves a stray `$` that the strip won't absorb.
     let err = parse_phase("$$$3.5$$$").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -577,7 +505,7 @@ fn triple_dollar_wrap_is_unexpected_token_at_0() {
 
 #[test]
 fn open_dollar_only_does_not_strip_and_is_unexpected_at_0() {
-    // `$3.5`: only ONE `$` → no strip. `$` at position 0 → junk.
+    // `$3.5`: a single `$` → no strip → `$` at position 0 is junk.
     let err = parse_phase("$3.5").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -590,8 +518,7 @@ fn open_dollar_only_does_not_strip_and_is_unexpected_at_0() {
 
 #[test]
 fn close_dollar_only_does_not_strip_and_is_unexpected_at_3() {
-    // `3.5$`: only ONE `$` → no strip → `3.5` parses, `$` at position 3
-    // is trailing junk.
+    // `3.5$`: a single `$` → no strip; `3.5` parses, trailing `$` is junk.
     let err = parse_phase("3.5$").unwrap_err();
     match err {
         PhaseError::UnexpectedToken { found, position } => {
@@ -617,9 +544,7 @@ fn whitespace_around_backslash_pi_parses() {
 
 #[test]
 fn scientific_notation_1e3_is_unknown_variable_e3() {
-    // `1e3`: number match consumes `1`; `e3` is trailing bare word →
-    // UnknownVariable("e3"). JS parser.ts:206 + 228-235;
-    // Rust phase.rs:280-297 + 227-231.
+    // `1e3`: number match consumes `1`; `e3` is a trailing bare word.
     let err = parse_phase("1e3").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "e3"),
@@ -643,9 +568,8 @@ fn hex_0x10_is_unknown_variable_x10() {
 
 #[test]
 fn pi_space_pi_reports_unknown_variable_pi() {
-    // `pi pi`: first `pi` matches (next char space, ok); second `pi` is
-    // trailing junk → UnknownVariable("pi") via the bare-word trailing
-    // branch (with the backslash form in the message, in BOTH parsers).
+    // `pi pi`: first `pi` matches, second is trailing junk (bare-word
+    // trailing branch, backslash form in the message in both parsers).
     let err = parse_phase("pi pi").unwrap_err();
     match err {
         PhaseError::UnknownVariable(token) => assert_eq!(token, "pi"),

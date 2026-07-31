@@ -1,11 +1,6 @@
-// src/lib/keyboard/shortcuts.test.ts
-//
-// The shortcut registry is a pure-function module — every entry
-// maps a description to the keys that trigger it. The tests assert
-// (1) the structural shape (groups, entries), (2) the modifier
-// symbol on Mac vs non-Mac, and (3) that every entry the hook
-// dispatches on also appears in the registry so the help dialog
-// doesn't lie.
+// The shortcut registry maps descriptions to triggering keys. Tests pin the
+// group/entry shape, the platform modifier symbol, and that every key the hook
+// dispatches on also appears in the registry (so the help dialog doesn't lie).
 
 import { afterEach, describe, expect, it } from "vitest";
 import { getShortcutGroups, modifierSymbol } from "./shortcuts";
@@ -14,8 +9,7 @@ describe("modifierSymbol", () => {
   const originalPlatform = window.navigator.platform;
 
   afterEach(() => {
-    // Restore navigator.platform after each test so the global
-    // doesn't leak across files.
+    // Restore navigator.platform so the mock doesn't leak across tests.
     Object.defineProperty(window.navigator, "platform", {
       value: originalPlatform,
       writable: true,
@@ -88,10 +82,8 @@ describe("getShortcutGroups", () => {
   });
 
   it("covers every dispatch key the hook listens for", () => {
-    // If a new shortcut is added to useKeyboardShortcuts.ts but not
-    // to the registry, the help dialog is incomplete. Read every key
-    // from the registry (flattened) and assert the known dispatch
-    // keys are present.
+    // A shortcut in the hook but missing from the registry makes the help
+    // dialog incomplete.
     const allKeys = new Set<string>();
     for (const group of getShortcutGroups()) {
       for (const entry of group.entries) {
@@ -102,7 +94,7 @@ describe("getShortcutGroups", () => {
     }
 
     // From useKeyboardShortcuts.ts single-key switch:
-    expect(allKeys.has("s")).toBe(true); // select mode
+    expect(allKeys.has("s")).toBe(true); // select
     expect(allKeys.has("v")).toBe(true); // add-vertex mode
     expect(allKeys.has("e")).toBe(true); // add-edge mode
     expect(allKeys.has("f")).toBe(true); // fit view
@@ -121,21 +113,17 @@ describe("getShortcutGroups", () => {
   });
 
   it("includes the modifier symbol in the Edit group entries", () => {
-    // The Edit group references [mod, ...] shortcuts. We don't pin
-    // a specific symbol here — just check that some entry in that
-    // group uses the platform-appropriate symbol.
+    // Edit shortcuts reference [mod, ...]; either symbol is platform-dependent.
     const editGroup = getShortcutGroups().find((g) => g.title === "Edit");
     expect(editGroup).toBeDefined();
     const flattened = editGroup!.entries.flatMap((e) => e.keys);
-    // Either "Ctrl" or "⌘" depending on platform — both are fine.
     expect(flattened.some((k) => k === "Ctrl" || k === "⌘")).toBe(true);
   });
 });
 
 describe("modifierSymbol SSR safety", () => {
   it("returns 'Ctrl' when window is undefined", async () => {
-    // Use vi.stubGlobal to simulate SSR. The function reads
-    // `typeof window === 'undefined'` first, so this path is
+    // The function reads `typeof window` first, so this SSR path is
     // independent of navigator state.
     const originalWindow = globalThis.window;
     // @ts-expect-error - intentionally stripping window for SSR sim

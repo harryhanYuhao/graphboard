@@ -1,18 +1,14 @@
-// src/lib/download.test.ts
-//
 // JSON export/import pipeline. Two strategies per direction:
 //   save: native showSaveFilePicker  |  <a download> blob fallback
 //   open: native showOpenFilePicker  |  <input type=file> fallback
 //
-// jsdom doesn't implement the File System Access API, so the native paths
-// install the picker on `window` via Object.defineProperty (vi.spyOn
-// refuses on a missing property), then drive it with vi.fn(). The
-// fallback paths exercise real DOM (Blob, URL.createObjectURL, real
-// <input> whose files we patch) against jsdom.
+// jsdom lacks the File System Access API, so native paths install the picker
+// on `window` via Object.defineProperty (vi.spyOn refuses on a missing
+// property) and drive it with vi.fn(). Fallback paths exercise real DOM
+// (Blob, URL.createObjectURL, a patched <input>) against jsdom.
 //
-// Contract pinned from the JSDoc + the caller in graph-store.ts:
-//   - saveTextFileWithPicker: writes `contents` somewhere; returns void.
-//   - openTextFileWithPicker: returns the file text, OR null on cancel.
+// Contract: saveTextFileWithPicker writes contents and returns void;
+// openTextFileWithPicker returns the file text, or null on cancel.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -20,9 +16,8 @@ import {
   saveTextFileWithPicker,
 } from "./download";
 
-// Install (or replace) one of the File System Access API entry points
-// on `window` with a vi.fn(). Returns the mock so the test can program
-// its return value / behavior.
+// Install (or replace) an FSA picker on `window` with a vi.fn(); returns the
+// mock so a test can program its return value.
 function mockPicker(
   name: "showSaveFilePicker" | "showOpenFilePicker",
 ): ReturnType<typeof vi.fn> {
@@ -35,8 +30,7 @@ function mockPicker(
   return fn;
 }
 
-// Helper: a fake FileSystemFileHandle whose createWritable() records
-// every write() call and remembers close() was hit.
+// Fake FileSystemFileHandle: records write() calls and tracks close().
 function makeFakeFileHandle() {
   const writes: string[] = [];
   let closed = false;
@@ -137,7 +131,7 @@ describe("saveTextFileWithPicker", () => {
 
   describe("anchor-download fallback (no native picker)", () => {
     it("creates a Blob and triggers an anchor download", async () => {
-      // Confirm no native picker is present.
+      // No native picker is present (fallback path).
       expect(
         typeof (window as unknown as Record<string, unknown>)
           .showSaveFilePicker,
@@ -149,9 +143,8 @@ describe("saveTextFileWithPicker", () => {
       const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL");
       const clickSpy = vi.fn();
 
-      // Spy on createElement to capture the <a> and stub click (jsdom
-      // doesn't navigate on click). Return a real anchor element so the
-      // code's property assignments (href, download) work normally.
+      // Capture the <a> and stub click (jsdom doesn't navigate on click);
+      // return a real anchor so property assignments work normally.
       const realCreate = document.createElement.bind(document);
       vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
         const el = realCreate(tag);
@@ -199,15 +192,8 @@ describe("openTextFileWithPicker", () => {
       expect(result).toBe('{"imported":true}');
     });
 
-    // ── BUG: native cancel diverges from the documented contract ──
-    //
-    // JSDoc says openTextFileWithPicker returns `string | null`, null on
-    // cancel. The fallback <input> path honors this. But the native path
-    // has NO try/catch — when the user cancels, the browser rejects
-    // showOpenFilePicker with AbortError, which propagates out as an
-    // unhandled rejection instead of resolving to null. The caller
-    // (graph-store.ts importJson) only checks `=== null`, so a native
-    // cancel surfaces as an uncaught error.
+    // Native picker rejects with AbortError on cancel; the wrapper catches it
+    // and resolves to null per the `string | null` contract.
     it("returns null when the user cancels the native picker (per contract)", async () => {
       const picker = mockPicker("showOpenFilePicker");
       picker.mockRejectedValue(
@@ -219,14 +205,10 @@ describe("openTextFileWithPicker", () => {
   });
 
   describe("<input type=file> fallback (no native picker)", () => {
-    // Build a real jsdom <input> with `files` and the change listener
-    // stubbed. jsdom's `files` is read-only and `addEventListener` needs
-    // to fire `change` on the next microtask (after the caller attaches
-    // its listener). Returning a real HTMLElement keeps createElement's
-    // signature honest — no `as any` needed at the call site.
-    //
-    // Takes the *real* (un-spied) `createElement` so the helper can build
-    // its underlying element without recursing back into the spy.
+    // Real jsdom <input> with `files` and a stubbed change listener. jsdom's
+    // `files` is read-only, and `change` must fire on the next microtask (after
+    // the caller attaches its listener). Takes the real (un-spied) createElement
+    // so it doesn't recurse into the spy.
     function makePatchedInput(
       realCreate: (tag: string) => HTMLElement,
       files: File[],

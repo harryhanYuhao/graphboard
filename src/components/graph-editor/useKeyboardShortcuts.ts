@@ -1,23 +1,11 @@
 // src/components/graph-editor/useKeyboardShortcuts.ts
 //
-// Single owner of the editor's window-level keydown handling. The previous
-// shape was three separate `useEffect` blocks in `GraphEditor.tsx`, each
-// registering its own listener — fine while the surface was small, but
-// every new shortcut made the split harder to reason about. This hook
-// attaches exactly one listener for the lifetime of the component and
-// reads store state via `getState()` so callers don't have to re-subscribe
-// the whole editor on every mode/selection change.
-//
-// Input guard: every shortcut is suppressed when an `<input>` or
-// `<textarea>` has focus, so editing a vertex label doesn't accidentally
-// trigger a mode switch.
-//
-// `onCompute` is the one shortcut that deliberately bypasses the store:
-// compute orchestration (the WASM worker, promise/progress state, the
-// result dialog) lives in the `useCompute` hook outside the store, so the
-// Cmd/Ctrl+Enter binding reaches it via a callback prop instead of a
-// store action. A ref keeps the latest callback without re-subscribing
-// the listener on every render, preserving the single-listener invariant.
+// Single owner of the editor's window-level keydown handling. Attaches one
+// listener for the component's lifetime and reads store state via `getState()`
+// so callers don't re-subscribe on every mode/selection change. Every shortcut
+// is suppressed while an `<input>`/`<textarea>` has focus. `onCompute` bypasses
+// the store (compute orchestration lives in `useCompute`) and reaches it via a
+// ref so the single-listener invariant holds across re-renders.
 
 "use client";
 
@@ -41,11 +29,8 @@ export function useKeyboardShortcuts({
   onCompute,
 }: KeyboardShortcutOptions): void {
   const reactFlow = useReactFlow();
-  // Keep the latest `onCompute` for use inside the long-lived keydown
-  // listener without making it an effect dependency (which would tear
-  // down and re-add the window listener on every parent render). The
-  // ref is mutated from an effect — never during render — per the
-  // React "latest ref" pattern.
+  // Latest-ref pattern: keep `onCompute` current for the long-lived listener
+  // without making it an effect dep (which would re-add the window listener).
   const onComputeRef = useRef(onCompute);
   useEffect(() => {
     onComputeRef.current = onCompute;
@@ -60,14 +45,13 @@ export function useKeyboardShortcuts({
         useGraphStore.getState();
 
       // ---- Modifier-bearing shortcuts ----
-      // Handled before the single-key block so Ctrl+S never collides with
-      // a future single-key `s` binding, etc.
+      // Handled before the single-key block so Ctrl+S never collides with a
+      // future single-key `s` binding, etc.
       if (mod) {
         const key = event.key.toLowerCase();
 
         if (key === "a") {
-          // Ctrl/Cmd+A — select everything. Suppress the browser's native
-          // "select all text" behaviour.
+          // Ctrl/Cmd+A — select all; suppress the browser's text selection.
           event.preventDefault();
           selectAll();
           return;
@@ -82,18 +66,14 @@ export function useKeyboardShortcuts({
         }
 
         if (key === "s") {
-          // Ctrl/Cmd+S — save. Suppress the browser's "save page as" dialog.
+          // Ctrl/Cmd+S — save; suppress the browser's "save page as".
           event.preventDefault();
           save();
           return;
         }
 
         if (key === "enter") {
-          // Ctrl/Cmd+Enter — compute tensor. Suppress the browser's
-          // default so the same chord isn't double-handled (e.g.
-          // submitting a form if one ever wraps the canvas). Compute
-          // orchestration lives in `useCompute`, reached via the
-          // `onCompute` prop rather than a store action.
+          // Ctrl/Cmd+Enter — compute (orchestration in `useCompute`).
           event.preventDefault();
           onComputeRef.current();
           return;
@@ -129,17 +109,15 @@ export function useKeyboardShortcuts({
           return;
         }
 
-        // Other modifier-bearing keys: leave alone so the browser can do
-        // its thing (e.g. Ctrl+F find-in-page).
+        // Other modifier-bearing keys: leave alone for the browser (e.g. Ctrl+F).
         return;
       }
 
       // ---- Single-key shortcuts ----
       //
-      // Lowercase the key so Shift (and caps lock) doesn't silently
-      // disable a binding — the modifier block above already handles
-      // every Shift-prefixed shortcut, so plain `S`, `Shift+S`, and
-      // caps-lock `S` all reach the same mode switch.
+      // Lowercase the key so Shift/caps lock doesn't disable a binding; the
+      // modifier block above handles every Shift-prefixed shortcut, so plain
+      // `S`, `Shift+S`, and caps-lock `S` all reach the same mode switch.
       switch (event.key.toLowerCase()) {
         case "s":
           setMode(EDITOR_MODES.select);
@@ -151,15 +129,11 @@ export function useKeyboardShortcuts({
           setMode(EDITOR_MODES.addEdge);
           return;
         case "f":
-          // Fit view to all nodes/edges — handy for getting back to the
-          // canvas after panning off into the void.
+          // Fit view to all nodes/edges.
           reactFlow.fitView({ padding: 0.1, duration: 200 });
           return;
         case "?":
-          // Toggle the keyboard-shortcuts help dialog. Works regardless of
-          // the current editor mode, including add-vertex (where the
-          // default branch below would otherwise try to parse it as a
-          // vertex-type index).
+          // Toggle help — handled before the default vertex-type-number branch.
           toggleHelp();
           return;
         case "backspace":
@@ -167,10 +141,8 @@ export function useKeyboardShortcuts({
           deleteSelected();
           return;
         case "escape": {
-          // Three-step escape ladder, applied top-down:
-          //   1. If there are pending edge sources, clear those.
-          //   2. Otherwise, if anything is selected, clear selection.
-          //   3. Otherwise, if we're not in select mode, snap back to it.
+          // Three-step escape ladder (top-down): pending edge sources →
+          // selection → snap back to select mode.
           const state = useGraphStore.getState();
           if (state.pendingEdgeSources.length > 0) {
             clearPendingEdgeSources();
@@ -186,11 +158,9 @@ export function useKeyboardShortcuts({
           return;
         }
         default: {
-          // Vertex-type number shortcuts: only meaningful while placing
-          // vertices. `1` selects the first entry in VERTEX_TYPES, `2` the
-          // second, etc. No-op if the number is out of range — but we
-          // also guard on `mode` so users can press e.g. `0` in other
-          // modes without surprise.
+          // Vertex-type number shortcuts (only in add-vertex mode): `1` selects
+          // the first entry in VERTEX_TYPES, etc. Guarded on `mode` so pressing
+          // `0` elsewhere is a no-op.
           if (mode !== EDITOR_MODES.addVertex) return;
 
           const index = Number.parseInt(event.key, 10);

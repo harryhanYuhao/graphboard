@@ -1,17 +1,8 @@
-// src/lib/graph/operations_serialization_edge_cases.test.ts
-//
-// Edge-case probes for the pure graph-logic modules (`operations.ts`) and
-// the persistence boundary (`serialization.ts`). These are *deliberately*
-// non-overlapping with `operations.test.ts` / `serialization.test.ts`:
-// every test here targets a corner the existing suites don't pin — empty
-// inputs, the `createGraphEdge` no-`nodes` asymmetry, handle-index
-// round-trips for directional vertices, `parseDocument` shape rejection,
-// and the documented-but-fragile behaviors (e.g. `cloneSubgraphForClipboard`
-// not stripping `selected`).
-//
-// Latent bugs surfaced by these probes are pinned with `it.skip` plus a
-// comment naming the violated contract and the actual behavior, so the
-// parent agent keeps diff control over any fix.
+// Edge-case probes for `operations.ts` and `serialization.ts`, deliberately
+// non-overlapping with their main suites. Each test pins a corner they don't:
+// empty inputs, the `createGraphEdge` no-`nodes` asymmetry, directional
+// handle-index round-trips, `parseDocument` shape rejection, and fragile-but-
+// documented behaviors. Latent bugs are pinned with `it.skip` plus a comment.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -72,9 +63,8 @@ describe("createVertexNode (edge cases)", () => {
   });
 
   it("uses the type's defaultText as the initial label when present", () => {
-    // No shipped type has a non-empty defaultText today, but the helper
-    // reads `VERTEX_TYPE_MAP[type].defaultText ?? ""` — pin that the
-    // empty-string fallback holds for the default type.
+    // No shipped type has a non-empty defaultText today, but the helper reads
+    // `VERTEX_TYPE_MAP[type].defaultText ?? ""` — pin the empty-string fallback.
     expect(createVertexNode({ x: 0, y: 0 }, "w").data.label).toBe("");
   });
 });
@@ -97,35 +87,19 @@ describe("createGraphEdge (defaults)", () => {
   });
 
   it("edge created without `nodes` defaults targetHandle to center-target (no longer undefined)", () => {
-    // FIXED: `createGraphEdge("a","b")` without `nodes` used to leave
-    // `targetHandle = undefined`, which silently became `HANDLE_IDS.top`
-    // on save/load for a directional target (the serializer's
-    // default-on-hydrate fallback). It now defaults to
-    // `HANDLE_IDS.centerTarget` — matching `sourceHandle`'s unconditional
-    // default — so the runtime handle is always set and survives the
-    // round-trip unchanged.
+    // Without `nodes`, targetHandle defaults to centerTarget (matching
+    // sourceHandle), so the runtime handle is always concrete.
     expect(createGraphEdge("a", "b").targetHandle).toBe(
       HANDLE_IDS.centerTarget,
     );
   });
 
   it("edge created without `nodes` no longer leaves targetHandle undefined (round-trip is well-defined)", () => {
-    // FIXED: `createGraphEdge("a","b")` without `nodes` used to leave
-    // `targetHandle = undefined`, which silently became `HANDLE_IDS.top`
-    // on save/load for a directional target (the serializer's
-    // default-on-hydrate fallback). It now defaults to
-    // `HANDLE_IDS.centerTarget` — matching `sourceHandle`'s unconditional
-    // default — so the runtime handle is always set.
-    //
-    // NOTE: the persisted format is intentionally lossy for directional
-    // vertices — both `centerTarget` and `top` map to numeric index 0
-    // (the target-side slot). On hydrate, a directional target at index
-    // 0 canonicalizes back to `top` (the visible input dot for W/And).
-    // That canonicalization is correct (directional vertices only expose
-    // `top` as a target), so a `centerTarget` on a directional vertex
-    // round-tripping to `top` is the serializer doing its job, not a bug.
-    // The bug was the *undefined* runtime value silently becoming
-    // something — now it's always a concrete handle.
+    // The persisted format is intentionally lossy for directional vertices:
+    // both centerTarget and top map to numeric index 0 (the target slot). On
+    // hydrate, a directional target at index 0 canonicalizes back to `top`
+    // (the visible input dot for W/And) — directional vertices only expose
+    // `top` as a target, so that's correct, not a bug.
     const runtimeEdge = createGraphEdge("a", "b"); // no nodes
     expect(runtimeEdge.targetHandle).toBe(HANDLE_IDS.centerTarget);
   });
@@ -187,11 +161,8 @@ describe("computeVertexClick (explicit parametric cases)", () => {
     makeVertex("c", { x: 100, y: 0 }),
   ];
 
-  // The store's select-mode and add-vertex-mode never dispatch into
-  // computeVertexClick at all (it's add-edge only), so the function
-  // itself has no "mode" branch to test — those two cases are no-ops at
-  // the call site, not inside the helper. We pin the add-edge cases
-  // explicitly.
+  // select/add-vertex modes never dispatch into computeVertexClick (it's
+  // add-edge only), so the function has no mode branch; pin the add-edge cases.
 
   it("add-edge, empty pending: first click seeds the pending list (no edge created)", () => {
     const result = computeVertexClick({
@@ -322,12 +293,8 @@ describe("cloneSubgraphForClipboard (edge cases)", () => {
   });
 
   it("strips `selected` from nodes and edges so the clipboard is selection-agnostic", () => {
-    // FIXED: the clone used to spread `...node` verbatim, carrying
-    // `selected: true` onto the clipboard when a node was copied while
-    // selected. That was stale state (paste re-selects the new nodes
-    // explicitly via `pasteSubgraph`). The clone now forces
-    // `selected: false` on both nodes and edges so the payload is
-    // selection-agnostic.
+    // Paste re-selects new nodes via pasteSubgraph, so the clone forces
+    // selected:false on both nodes and edges.
     const nodes = [makeVertex("a", { x: 0, y: 0 }, true)];
     const edges = [{ ...makeEdge("e1", "a", "a"), selected: true }] as const;
     const clone = cloneSubgraphForClipboard({ nodes, edges: [...edges] });
@@ -377,9 +344,7 @@ describe("pasteSubgraph (edge cases)", () => {
   });
 
   it("throws on a dangling edge source endpoint (id missing from node set)", () => {
-    // operations.ts:325 throws when an edge endpoint isn't in the idMap.
-    // The existing suite covers a dangling target; this pins a dangling
-    // source as well.
+    // The existing suite covers a dangling target; this pins a dangling source.
     expect(() =>
       pasteSubgraph({
         subgraph: {
@@ -666,9 +631,8 @@ describe("handleIdToIndex / indexToHandleId (round-trip via project+hydrate)", (
   });
 
   it("an edge with undefined handle ids uses the per-role default on hydrate", () => {
-    // Persistence shape with no handle fields at all (legacy). The source
-    // side defaults to center-source; the target side picks based on the
-    // target vertex's directional flag.
+    // Legacy shape with no handle fields: source defaults to center-source;
+    // target picks based on the target vertex's directional flag.
     const legacyDoc: GraphDocument = {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       id: "d",
@@ -707,12 +671,9 @@ describe("parseDocument (validators)", () => {
   });
 
   it("rejects a top-level JSON array (no graph slice to find)", () => {
-    // A JSON array passes `isRecord` (because `typeof [] === "object"` in
-    // JS), so it falls through to the graph-slice check, which rejects
-    // it with a "graph slice" error rather than an "object" error. The
-    // payload is still rejected — pin the actual path so a future move
-    // of the `Array.isArray` guard earlier in the validator is a
-    // deliberate change.
+    // A JSON array passes `isRecord` (`typeof [] === "object"`), so it falls
+    // through to the graph-slice check and is rejected with a "graph" error
+    // rather than an "object" error.
     const r = parseDocument("[1,2,3]");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/graph/i);
@@ -799,9 +760,8 @@ describe("parseDocument (validators)", () => {
   });
 
   it("accepts an older (lower) schema version and stamps the current one", () => {
-    // The validator only rejects versions *newer* than current; older or
-    // equal versions are accepted and re-stamped. Pin this so a future
-    // tightening of the rule is a deliberate change.
+    // Only versions newer than current are rejected; older/equal are accepted
+    // and re-stamped.
     const r = parseDocument(
       JSON.stringify({
         schemaVersion: 0,
@@ -848,10 +808,7 @@ describe("importGraphJson (pipeline)", () => {
 
 describe("parseDocument (unknown fields)", () => {
   it("preserves unknown top-level fields in the parsed document (object spread)", () => {
-    // serialization.ts:415-418 spreads the whole parsed object, so any
-    // extra fields ride along into the returned document. Pin this so a
-    // future move to an allow-list schema is a deliberate, reviewed
-    // change rather than an accidental behavior shift.
+    // The validator spreads the parsed object, so extra fields ride along.
     const r = parseDocument(
       JSON.stringify({
         graph: { nodes: [], edges: [] },

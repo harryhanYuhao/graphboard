@@ -1,13 +1,7 @@
-// src/lib/graph/serialization.test.ts
-//
-// The persistence boundary. Bugs here corrupt saved graphs and break
-// the WASM compute boundary, so the test surface is intentionally
-// broad: rotation normalization, the runtime ↔ persisted round trip,
-// and the importer's failure modes.
-//
-// localStorage is provided by jsdom — `saveGraphDocument` and
-// `loadGraphDocument` are tested against the real store so we know
-// the persisted format round-trips cleanly through disk.
+// The persistence boundary. Bugs here corrupt saved graphs and break the WASM
+// compute boundary, so coverage is broad: rotation normalization, the runtime
+// ↔ persisted round trip, and the importer's failure modes. localStorage comes
+// from jsdom; save/load are tested against it so the format round-trips cleanly.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -47,18 +41,16 @@ describe("normalizeRotation", () => {
   });
 
   it("coerces non-finite values to 0", () => {
-    // `NaN` would otherwise propagate through every comparison and
-    // break rendering — the panel's slider can't produce this, but
-    // a corrupt persisted document can.
+    // NaN would propagate through every comparison; the slider can't
+    // produce it, but a corrupt persisted document can.
     expect(normalizeRotation(NaN)).toBe(0);
     expect(normalizeRotation(Infinity)).toBe(0);
     expect(normalizeRotation(-Infinity)).toBe(0);
   });
 
   it("rounds away float drift from modulo math", () => {
-    // `%` on doubles can leave values like 270.00000000006 or
-    // 89.99999999999. Without rounding, these accumulate across
-    // save/load cycles and make equality checks flaky.
+    // `%` on doubles leaves values like 270.00000000006; without rounding,
+    // they accumulate across save/load cycles and flake equality checks.
     expect(normalizeRotation(-90.0000000001)).toBe(270);
     expect(normalizeRotation(360.0000000001)).toBe(0);
     expect(normalizeRotation(44.9999999999)).toBe(45);
@@ -108,8 +100,8 @@ describe("projectDocument ↔ hydrateDocument", () => {
     });
     expect(doc.graph.nodes.map((n) => n.id)).toEqual(["a", "b"]);
     expect(doc.view.nodes.map((n) => n.id).sort()).toEqual(["a", "b"]);
-    // `rotation` lives in the view slice; the graph entry only carries
-    // identity + label + vertex type.
+    // rotation lives in the view slice; the graph entry carries identity
+    // + label + vertex type only.
     const graphA = doc.graph.nodes.find((n) => n.id === "a");
     expect(graphA?.data).toEqual({ label: "", vertexType: "z" });
     expect((graphA as unknown as { rotation?: number }).rotation).toBeUndefined();
@@ -137,7 +129,7 @@ describe("projectDocument ↔ hydrateDocument", () => {
       nodes: baseNodes,
       edges: baseEdges,
     });
-    // centerSource → index 1, every other handle → index 0.
+    // centerSource → index 1, other handles → index 0.
     expect(doc.graph.edges[0].sourceHandle).toBe(1);
     expect(doc.graph.edges[0].targetHandle).toBe(0);
     expect(doc.graph.edges[1].targetHandle).toBe(0);
@@ -163,9 +155,8 @@ describe("projectDocument ↔ hydrateDocument", () => {
   });
 
   it("strips the ephemeral `selected` field (pre-v1 persistence bug)", () => {
-    // Pre-v1 documents accidentally carried `selected: true` through
-    // reloads. The split into graph/view drops it on hydration so
-    // freshly-loaded graphs start with nothing selected.
+    // The graph/view split drops `selected` on hydration so loaded graphs
+    // start with nothing selected.
     const nodes = [
       { ...makeVertex("a", { x: 0, y: 0 }), selected: true },
     ];
@@ -320,8 +311,7 @@ describe("saveGraphDocument / loadGraphDocument (localStorage)", () => {
   });
 
   it("is a no-op under SSR (typeof window === 'undefined')", () => {
-    // We can't easily undefine window in jsdom; just check the
-    // happy-path save+load pair runs without throwing.
+    // jsdom can't undefine window; just check the save+load pair runs.
     saveGraphDocument({
       id: PERSISTED_IDS.localDocument,
       title: "ok",
@@ -333,12 +323,8 @@ describe("saveGraphDocument / loadGraphDocument (localStorage)", () => {
   });
 
   it("fails soft on a structurally-corrupt document instead of throwing", () => {
-    // Regression guard: pre-fix, `loadGraphDocument` cast the whole
-    // payload to `GraphDocument` after a single `typeof object` check,
-    // so a graph slice missing its `nodes` array would crash
-    // `hydrateDocument` with "nodes.map is not a function" on next
-    // reload. The shared validator now catches this and falls back to
-    // an empty document.
+    // A graph slice missing its `nodes` array must fall back to an empty
+    // document, not crash hydrate with "nodes.map is not a function".
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     localStorage.setItem(
       "graph-board-document",
@@ -417,9 +403,7 @@ describe("exportGraphJson / importGraphJson", () => {
   });
 
   it("rejects a 'graph' slice whose nodes/edges aren't arrays", () => {
-    // Regression guard for the load-path bug: a hand-edited
-    // localStorage entry used to crash `hydrateDocument` (nodes.map
-    // is not a function) because load trusted the payload shape.
+    // Pins the import-path validation for the load-path shape check.
     const result = importGraphJson(
       JSON.stringify({
         graph: { nodes: "not-an-array", edges: [] },
@@ -460,13 +444,10 @@ describe("exportGraphJson / importGraphJson", () => {
     }
   });
 
-  // Trust boundary: the validator only checks the structural shape
-  // (graph/view slices with arrays). Other required fields
-  // (id / title / createdAt / updatedAt) are NOT validated — a
-  // document missing them is accepted and the missing fields are
-  // `undefined` on the returned object. We don't try to repair this
-  // (the call sites always supply all fields) but pin the behavior
-  // so a future tightening of the validator is a deliberate change.
+  // Trust boundary: the validator only checks the structural shape (graph/view
+  // slices with arrays). Other fields (id / title / createdAt / updatedAt) are
+  // NOT validated — missing ones are `undefined` on the returned object. Call
+  // sites always supply all fields, so this is pinned, not repaired.
   it("accepts a document with `graph`/`view` slices but missing other required fields", () => {
     const minimal = JSON.stringify({
       graph: { nodes: [], edges: [] },
@@ -475,7 +456,7 @@ describe("exportGraphJson / importGraphJson", () => {
     const result = importGraphJson(minimal);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      // Missing fields are spread as `undefined`.
+      // Missing fields are `undefined`.
       expect(result.document.id).toBeUndefined();
       expect(result.document.title).toBeUndefined();
       expect(result.document.createdAt).toBeUndefined();
@@ -484,9 +465,8 @@ describe("exportGraphJson / importGraphJson", () => {
   });
 
   it("accepts a document with `graph`/`view` slices but with extra top-level fields", () => {
-    // The validator spreads the parsed object, so extra fields ride
-    // along into the returned document. Useful for forward-compat
-    // (e.g. a tool that adds a `tags` field this version ignores).
+    // The validator spreads the parsed object, so extra fields ride along —
+    // useful for forward-compat (a tool adding a field this version ignores).
     const extra = JSON.stringify({
       id: "x",
       title: "extra-fields",
@@ -507,8 +487,8 @@ describe("exportGraphJson / importGraphJson", () => {
   });
 
   it("accepts a document with `graph`/`view` slices but with extra fields in the slices", () => {
-    // Same trust-boundary pin: extra fields inside `graph` or `view`
-    // ride along. (Hydration only reads the documented fields.)
+    // Same trust-boundary pin: extra fields inside graph/view ride along
+    // (hydration only reads the documented fields).
     const extra = JSON.stringify({
       id: "x",
       title: "extra-slice-fields",

@@ -1,10 +1,6 @@
-// src/store/selectors.test.ts
-//
-// Pure-function tests for the store selectors. These are tiny and
-// trivial in isolation, but they're called by both the store and the
-// keyboard hook — keeping them under test means a future refactor of
-// either call site doesn't have to re-derive the contract from
-// inspection.
+// Pure-function tests for the store selectors. They're tiny, but both the
+// store and the keyboard hook call them — pinning the contract means a
+// future refactor of either call site doesn't have to re-derive it.
 
 import { describe, expect, it } from "vitest";
 import { hasSelection, nodesById, selectSelectedNodeIds } from "./selectors";
@@ -30,9 +26,7 @@ describe("selectSelectedNodeIds", () => {
   });
 
   it("treats `selected: undefined` as not selected", () => {
-    // React Flow's runtime types allow `selected` to be undefined for
-    // fresh nodes that have never been touched. The selector should
-    // not yield those ids.
+    // React Flow leaves `selected` undefined on untouched nodes.
     const nodes = [
       { ...makeVertex("a"), selected: undefined as unknown as boolean },
     ];
@@ -73,9 +67,8 @@ describe("nodesById", () => {
   });
 
   it("caches by array identity — the same input returns the same map", () => {
-    // Per-node store subscribers run the selector body on every store
-    // update; the WeakMap cache must return the same map instance so
-    // the lookup is O(1), not O(n) on every call.
+    // Subscribers run the selector body on every store update; the cache
+    // must return the same instance so the lookup stays O(1).
     const nodes = [makeVertex("a")];
     expect(nodesById(nodes)).toBe(nodesById(nodes));
   });

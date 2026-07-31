@@ -1,23 +1,10 @@
-// src/lib/misc_edge_cases.test.ts
-//
-// Edge-case coverage for three pure modules whose existing tests cover the
-// happy paths but leave the boundaries (invalid input, non-axis-aligned
-// rotations, the input/output boundary vertex types, and a couple of
-// suspected bugs) un-pinned:
-//
-//   - vertex-types.ts — `isBoundaryVertex` was UNTESTED and the existing
-//     `allTypes` array (vertex-types.test.ts:28-37) omitted `input` /
-//     `output`, so the registry metadata for those two boundary markers
-//     was never asserted.
-//   - edge-geometry.ts — existing tests cover rotation 90/180/270; this
-//     file adds 0/45/360/-90 plus the NaN / Infinity degenerate inputs.
-//   - download.ts — existing tests cover the native + fallback paths;
-//     this file pins the anchor Blob content type / filename, custom MIME
-//     propagation, and the suspected bug where the native `open` picker
-//     ignores the `accept` parameter (download.ts:81-89 hardcodes JSON).
-//
-// One behavior per test. Bugs are pinned with `it.skip` + a pointer to the
-// offending file:line — NOT fixed here (parent agent keeps diff control).
+// Edge-case coverage for three pure modules whose main suites cover only the
+// happy paths:
+//   - vertex-types.ts — `isBoundaryVertex` plus `input`/`output` registry metadata.
+//   - edge-geometry.ts — rotations 0/45/360/-90 and NaN/Infinity degenerate input.
+//   - download.ts — anchor Blob content type/filename, custom MIME propagation,
+//     and the `accept` param on both native and fallback paths.
+// One behavior per test.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -65,17 +52,13 @@ describe("isBoundaryVertex", () => {
   });
 
   it("returns false (not throw) for an invalid vertex type string", () => {
-    // The predicate is a strict equality check against 'input' / 'output'
-    // (vertex-types.ts:48-50), so an unknown string just misses both
-    // branches. Pin that contract: no throw, returns false.
+    // Strict equality against 'input'/'output'; an unknown string misses both.
     expect(isBoundaryVertex("nonsense" as VertexType)).toBe(false);
   });
 });
 
 describe("VERTEX_TYPES registry — boundary entries", () => {
-  // The existing `allTypes` array in vertex-types.test.ts:28-37 OMITS
-  // `input` / `output`, so the registry's metadata for those two boundary
-  // types is never asserted. Fill the gap.
+  // The main suite's `allTypes` array omits input/output; fill that gap.
 
   it("includes an 'input' entry with sensible shape / color / size", () => {
     const meta = VERTEX_TYPE_MAP.input;
@@ -83,8 +66,7 @@ describe("VERTEX_TYPES registry — boundary entries", () => {
     expect(meta.type).toBe("input");
     expect(meta.shape).toBe("circle");
     expect(meta.size).toBeGreaterThan(0);
-    // Boundary markers render as blue-dotted circles — the className is
-    // the single source of truth for that styling.
+    // Boundary markers render as blue-dotted circles.
     expect(meta.className).toMatch(/blue/);
     expect(meta.label.length).toBeGreaterThan(0);
   });
@@ -103,9 +85,7 @@ describe("VERTEX_TYPES registry — boundary entries", () => {
 
 describe("VERTEX_TYPE_MAP — exhaustive coverage", () => {
   it("contains every VertexType union member as a key", () => {
-    // Pin the full 10-type union exhaustively. If a new type is added to
-    // the union in types.ts but forgotten in the registry, the lookup
-    // would be undefined and the renderer would draw a missing-glyph box.
+    // A union member missing from the registry would render a missing-glyph box.
     const allTypes: VertexType[] = [
       "z",
       "empty",
@@ -128,8 +108,7 @@ describe("VERTEX_TYPE_MAP — exhaustive coverage", () => {
 
 describe("VERTEX_TYPES registry — structural invariants", () => {
   it("contains no duplicate type keys", () => {
-    // A duplicate `type` field would silently overwrite one entry in the
-    // VERTEX_TYPE_MAP, dropping its metadata from the registry.
+    // A duplicate would silently overwrite one entry's metadata in the map.
     const seen = new Set<VertexType>();
     for (const meta of VERTEX_TYPES) {
       expect(seen.has(meta.type)).toBe(false);
@@ -138,9 +117,7 @@ describe("VERTEX_TYPES registry — structural invariants", () => {
   });
 
   it("every entry has the required base fields", () => {
-    // Structural pin: each entry must declare the four base fields the
-    // renderer reads directly. Derived fields (radiusClass / isTriangle)
-    // are checked separately below.
+    // Derived fields (radiusClass / isTriangle) are checked separately below.
     for (const meta of VERTEX_TYPES) {
       expect(typeof meta.shape).toBe("string");
       expect(typeof meta.className).toBe("string");
@@ -155,13 +132,11 @@ describe("VERTEX_TYPES registry — structural invariants", () => {
 
 describe("enrich() derived fields", () => {
   it("derives radiusClass and isTriangle consistently for the W node (triangle)", () => {
-    // The W node is the only triangle in the registry — a good single
-    // sample to pin that `enrich()` derived both fields from `shape`.
+    // W is the only triangle; a sample that enrich() derived both from shape.
     const w = VERTEX_TYPE_MAP.w;
     expect(w.shape).toBe("triangle");
     expect(w.isTriangle).toBe(true);
-    // Triangles are clipped to their silhouette, so radiusClass is the
-    // empty string (a CSS radius would be a no-op).
+    // Triangles are clipped to their silhouette, so radiusClass is empty.
     expect(w.radiusClass).toBe("");
   });
 
@@ -175,16 +150,13 @@ describe("enrich() derived fields", () => {
 
 describe("DEFAULT_VERTEX_TYPE", () => {
   it("is the Z spider", () => {
-    // Pinned literal — `z` is the default the side menu and the empty-
-    // graph factory both assume. A silent change here would shift every
-    // new vertex's type.
+    // `z` is the default the side menu and empty-graph factory assume.
     expect(DEFAULT_VERTEX_TYPE).toBe("z");
   });
 });
 
 describe("isSpiderType / isDirectionalVertex — parametric re-pin", () => {
-  // Existing tests cover these, but here they are parametric over the
-  // full 10-type union (including input/output) for completeness.
+  // Parametric over the full 10-type union (including input/output).
 
   it.each<VertexType>(["z", "x", "zbox", "xbox"])(
     "isSpiderType('%s') is true",
@@ -224,9 +196,8 @@ describe("isSpiderType / isDirectionalVertex — parametric re-pin", () => {
 // ──────────────────────────────────────────────────────────────────────────
 // edge-geometry
 //
-// Build inputs from a small inline factory so the rotation cases below
-// stay readable. Existing edge-geometry.test.ts uses the same shape but
-// hides it behind a `node()` helper local to that file.
+// Inline factory so the rotation cases stay readable (the main suite hides
+// the same shape behind a local `node()` helper).
 // ──────────────────────────────────────────────────────────────────────────
 
 function endpoint(
@@ -252,12 +223,12 @@ function expectPoint(
 
 describe("getEdgeEndpoint — rotation 0 (the no-rotation fast path)", () => {
   it("anchors a symmetric target at the node center", () => {
-    // 40x40 at (0,0) → center (20,20). Symmetric = no local offset.
+    // 40x40 at (0,0) → center (20,20); symmetric = no local offset.
     expectPoint(getEdgeEndpoint(endpoint(), "target"), { x: 20, y: 20 });
   });
 
   it("anchors a directional target on the top edge (W / And)", () => {
-    // Top edge dot: offset (0, -height/2) = (0, -20) → y=0.
+    // Top dot: offset (0, -height/2) = (0, -20) → y=0.
     expectPoint(
       getEdgeEndpoint(endpoint({ vertexType: "w" }), "target"),
       { x: 20, y: 0 },
@@ -267,10 +238,7 @@ describe("getEdgeEndpoint — rotation 0 (the no-rotation fast path)", () => {
 
 describe("getEdgeEndpoint — non-axis-aligned rotation", () => {
   it("rotates the directional top dot 45° clockwise around the center", () => {
-    // Top dot local offset (0, -20), rotated 45° CW (y-down):
-    //   rx = 0*cos45 - (-20)*sin45 = 20*sin45 ≈ 14.142
-    //   ry = 0*sin45 + (-20)*cos45 = -20*cos45 ≈ -14.142
-    // → endpoint (20 + 14.142, 20 - 14.142) ≈ (34.142, 5.858).
+    // Top dot local offset (0, -20) rotated 45° CW (y-down) ≈ (34.142, 5.858).
     expectPoint(
       getEdgeEndpoint(endpoint({ vertexType: "w", rotation: 45 }), "target"),
       { x: 20 + 20 * Math.SQRT1_2, y: 20 - 20 * Math.SQRT1_2 },
@@ -280,10 +248,7 @@ describe("getEdgeEndpoint — non-axis-aligned rotation", () => {
 
 describe("getEdgeEndpoint — full-circle and negative rotations", () => {
   it("treats 360° as equivalent to 0° (top dot stays on the top edge)", () => {
-    // 360° rotates the offset back onto itself modulo float noise:
-    // rx ≈ 0, ry ≈ -20. Source: the rotation formula at
-    // edge-geometry.ts:60-64. Pinned with toBeCloseTo to absorb the
-    // ~1e-15 round-trip error.
+    // 360° rotates the offset back onto itself modulo ~1e-15 float noise.
     expectPoint(
       getEdgeEndpoint(
         endpoint({ vertexType: "w", rotation: 360 }),
@@ -294,10 +259,7 @@ describe("getEdgeEndpoint — full-circle and negative rotations", () => {
   });
 
   it("treats -90° as equivalent to 270° (top dot moves to the left edge)", () => {
-    // (0, -20) rotated -90° CW:
-    //   rx = 0*cos(-90) - (-20)*sin(-90) = -20
-    //   ry = 0*sin(-90) + (-20)*cos(-90) ≈ 0
-    // → (0, 20), i.e. left edge center — matches the existing 270° pin.
+    // (0, -20) rotated -90° CW → (0, 20), the left edge center.
     expectPoint(
       getEdgeEndpoint(
         endpoint({ vertexType: "w", rotation: -90 }),
@@ -310,10 +272,7 @@ describe("getEdgeEndpoint — full-circle and negative rotations", () => {
 
 describe("getEdgeEndpoint — node position offset", () => {
   it("adds the absolute position to a rotated directional endpoint", () => {
-    // Node translated to (100, 50): center (120, 70). Top dot local
-    // offset (0, -20) rotated 90° CW → (20, 0). Endpoint = center +
-    // rotated offset = (140, 70) — the right edge center of a node
-    // spanning (100,50)-(140,90).
+    // Node at (100, 50): center (120, 70); top dot rotated 90° CW → (140, 70).
     expectPoint(
       getEdgeEndpoint(
         endpoint({
@@ -330,7 +289,7 @@ describe("getEdgeEndpoint — node position offset", () => {
 
 describe("getEdgeEndpoint — source vs target role", () => {
   it("places the directional source one-third down the body (rotation 0)", () => {
-    // localY = +height/3 for the source role (edge-geometry.ts:51).
+    // localY = +height/3 for the source role.
     expectPoint(
       getEdgeEndpoint(endpoint({ vertexType: "w" }), "source"),
       { x: 20, y: 20 + 40 / 3 },
@@ -372,11 +331,9 @@ describe("getEdgeEndpoint — vertex-type classification", () => {
 });
 
 describe("getEdgeEndpoint — degenerate rotation inputs", () => {
-  // FIXED: edge-geometry now normalizes the rotation at the boundary via
-  // `normalizeRotation`, which maps NaN/±Infinity to 0 (and wraps any real
-  // value to [0, 360)). The `=== 0` fast path is therefore also the
-  // recovery path for degenerate input — a stray NaN from an unhydrated
-  // view field no longer sends the edge to (NaN, NaN).
+  // edge-geometry normalizes rotation at the boundary: NaN/±Infinity → 0,
+  // reals wrapped to [0, 360). The 0° fast path is also the recovery path,
+  // so a stray NaN from an unhydrated view field can't send the edge to (NaN, NaN).
 
   it("returns a finite point for a NaN rotation (falls back to 0)", () => {
     const result = getEdgeEndpoint(
@@ -385,8 +342,7 @@ describe("getEdgeEndpoint — degenerate rotation inputs", () => {
     );
     expect(Number.isFinite(result.x)).toBe(true);
     expect(Number.isFinite(result.y)).toBe(true);
-    // NaN → 0 → directional target sits on the top edge: center x (20),
-    // top edge y (0) for the 40×40 fixture at position (0,0).
+    // NaN → 0 → top edge for the 40×40 fixture at (0,0): (20, 0).
     expect(result.x).toBeCloseTo(20, 6);
     expect(result.y).toBeCloseTo(0, 6);
   });
@@ -413,9 +369,9 @@ describe("getEdgeEndpoint — degenerate rotation inputs", () => {
 // ──────────────────────────────────────────────────────────────────────────
 // download
 //
-// Mocking pattern mirrors download.test.ts: install the FSA pickers on
-// `window` via Object.defineProperty (vi.spyOn refuses on a missing
-// property), drive with vi.fn(), and tear down in afterEach.
+// Mocking mirrors download.test.ts: install the FSA pickers on `window` via
+// Object.defineProperty (vi.spyOn refuses on a missing property), drive with
+// vi.fn(), tear down in afterEach.
 // ──────────────────────────────────────────────────────────────────────────
 
 function mockPicker(
@@ -448,8 +404,8 @@ describe("saveTextFileWithPicker — anchor fallback", () => {
         .showSaveFilePicker,
     ).toBe("undefined");
 
-    // Spy on the Blob constructor to capture the options the code passes.
-    // jsdom's Blob is real, but we replace it so we can assert on `type`.
+    // Spy on the Blob constructor to capture the options (jsdom's Blob is real,
+    // but we replace it to assert on `type`).
     const blobCtor = vi.spyOn(globalThis, "Blob");
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:fake-url");
     vi.spyOn(URL, "revokeObjectURL");
@@ -470,12 +426,12 @@ describe("saveTextFileWithPicker — anchor fallback", () => {
       contents: "hello",
     });
 
-    // Default MIME type is application/json (download.ts:9).
+    // Default MIME is application/json.
     expect(blobCtor).toHaveBeenCalledOnce();
     expect(blobCtor).toHaveBeenCalledWith(["hello"], {
       type: "application/json",
     });
-    // The filename flows through to the anchor's `download` attribute.
+    // The filename flows to the anchor's `download` attribute.
     expect((capturedAnchor as HTMLAnchorElement | null)?.download).toBe(
       "fallback.json",
     );
@@ -523,10 +479,8 @@ describe("saveTextFileWithPicker — anchor fallback", () => {
       return el;
     });
 
-    // Pin: an empty suggestedName flows straight into anchor.download
-    // (download.ts:45) without any validation. Browsers treat an empty
-    // download attribute as "use the blob's default name", so this is
-    // a degenerate-but-non-throwing path.
+    // An empty suggestedName flows straight into anchor.download with no
+    // validation; browsers treat that as "use the blob's default name".
     await expect(
       saveTextFileWithPicker({
         suggestedName: "",
@@ -561,7 +515,7 @@ describe("saveTextFileWithPicker — anchor fallback", () => {
       contents: "{}",
     });
 
-    // No sanitization happens on the fallback path (download.ts:42-46).
+    // No sanitization on the fallback path.
     expect((capturedAnchor as HTMLAnchorElement | null)?.download).toBe(
       weirdName,
     );
@@ -571,9 +525,8 @@ describe("saveTextFileWithPicker — anchor fallback", () => {
 
 describe("openTextFileWithPicker — native cancel contract", () => {
   it("resolves to null when the user aborts the native picker", async () => {
-    // Documented contract (download.ts:51-52, 91-99): cancel → null,
-    // regardless of which API fired. The native path catches
-    // AbortError and returns null.
+    // Contract: cancel → null regardless of which API fired; the native path
+    // catches AbortError.
     const picker = mockPicker("showOpenFilePicker");
     picker.mockRejectedValue(
       new DOMException("The user aborted a request.", "AbortError"),
@@ -584,8 +537,7 @@ describe("openTextFileWithPicker — native cancel contract", () => {
 });
 
 describe("openTextFileWithPicker — <input> fallback", () => {
-  // Mirrors the makePatchedInput helper in download.test.ts: a real
-  // jsdom <input> whose `files` and `change` listener we control.
+  // Mirrors the makePatchedInput helper in download.test.ts.
   function makePatchedInput(
     realCreate: (tag: string) => HTMLElement,
     files: File[],
@@ -633,11 +585,10 @@ describe("openTextFileWithPicker — <input> fallback", () => {
       return el;
     });
 
-    // Drive the change event so the promise settles instead of hanging
-    // on the focus-cancel timer.
+    // Drive the change event so the promise settles instead of hanging.
     await openTextFileWithPicker({ accept: ".csv,text/csv" });
 
-    // download.ts:114 — the input fallback uses params.accept.
+    // The input fallback uses params.accept.
     expect((capturedInput as HTMLInputElement | null)?.accept).toBe(
       ".csv,text/csv",
     );
@@ -645,10 +596,9 @@ describe("openTextFileWithPicker — <input> fallback", () => {
 });
 
 describe("openTextFileWithPicker — accept param on the native path", () => {
-  // FIXED: the native picker now forwards `params.accept` (parsed from the
-  // freeform comma string into the FSA `Record<MIME, extension[]>` shape)
-  // instead of hardcoding JSON. The `<input>` fallback already honored
-  // `accept`, so the two paths now agree for any caller.
+  // The native picker forwards `params.accept` (parsed from the freeform comma
+  // string into the FSA `Record<MIME, extension[]>` shape); the input fallback
+  // already honored it, so the two paths agree.
 
   it("forwards the `accept` param to the native picker types array", async () => {
     const picker = mockPicker("showOpenFilePicker");
@@ -663,13 +613,11 @@ describe("openTextFileWithPicker — accept param on the native path", () => {
 
     expect(picker).toHaveBeenCalledOnce();
     const arg = picker.mock.calls[0][0];
-    // The MIME type lands as a key; the extension associates with it
-    // (the parser pairs every extension with every declared MIME).
+    // The MIME type is the key; the extension pairs with it.
     expect(arg.types[0].accept).toEqual({ "text/csv": [".csv"] });
   });
 
-  // Pin the default: when no `accept` is supplied, the native path falls
-  // back to the JSON default (matches the `<input>` fallback's default).
+  // With no `accept`, the native path falls back to the JSON default.
   it("defaults to application/json on the native path when accept is absent", async () => {
     const picker = mockPicker("showOpenFilePicker");
     const fakeHandle = {
@@ -689,12 +637,9 @@ describe("openTextFileWithPicker — accept param on the native path", () => {
 });
 
 describe("download — SSR guard in jsdom", () => {
-  // In jsdom `typeof window === "undefined"` is always false, so the SSR
-  // early-return can't be exercised directly without deleting
-  // globalThis.window (the existing download.test.ts does that for the
-  // SSR path). Here we just pin the weaker contract: in a jsdom
-  // environment both entry points dispatch normally rather than throwing
-  // from the SSR guard.
+  // In jsdom `typeof window` is always defined, so the SSR early-return can't
+  // be hit directly. Pin the weaker contract: both entry points dispatch
+  // normally rather than throwing from the SSR guard.
 
   it("saveTextFileWithPicker does not throw in jsdom (no SSR short-circuit)", async () => {
     expect(
@@ -738,9 +683,8 @@ describe("download — SSR guard in jsdom", () => {
         : realCreate(tag),
     );
 
-    // We don't await the full promise (it hangs on the focus-cancel
-    // timer). Just pin that calling it doesn't throw synchronously —
-    // the SSR guard at download.ts:69 didn't short-circuit.
+    // Don't await the promise (it hangs on the focus-cancel timer); just pin
+    // that calling it doesn't throw synchronously.
     expect(() => openTextFileWithPicker({})).not.toThrow();
   });
 });

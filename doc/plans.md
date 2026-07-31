@@ -422,10 +422,17 @@ uniform contraction semantics.
   factors; the spider is *not* unitary for arity ≠ 2.
 - **H-box:** unitary, `1/√2 · [[1,1],[1,-1]]`. This is the only builder
   with a normalization factor in v1.
-- **W-node:** **unnormalized single-hot** — any index with exactly one
-  bit set → 1, all others → 0. No `/√n`. (Matches the AND convention;
-  the normalized physics W-state is a Phase 6 concern.) Directionality
-  is a renderer concern only; all legs are equivalent for the tensor.
+- **W-node:** **directional** — `w_node(num_outputs)` builds a
+  rank-`(1 + num_outputs)` tensor where **axis 0 is the single input**
+  and **axes 1..N are the outputs**. The linear map it encodes:
+  `|0⟩ → |00…0⟩` (input |0⟩, all outputs |0⟩), and
+  `|1⟩ → |10…0⟩ + |01…0⟩ + … + |00…01⟩` (input |1⟩, exactly one output
+  is |1⟩ — the unnormalized single-hot superposition over outputs). No
+  `/√n`; the normalized physics W-state is a Phase 6 concern. **Breaking
+  change** from the earlier "all legs equivalent" convention — the W is
+  now genuinely directional at the tensor level, not just the renderer.
+  The contraction layer validates exactly 1 input edge (the edge
+  targeting the W) and ≥ 2 output edges (edges with the W as source).
 - **AND-gate:** unnormalized indicator — the all-1s index → 1, else 0.
 - **zbox / xbox (v1):** **two-corner box.** `z_box(arity, phase)`
   → rank-`arity` tensor with non-zero entries **only** at the two
@@ -445,7 +452,7 @@ uniform contraction semantics.
 |---|---|---|
 | `z_spider(arity, phase)` | `(2,)*arity` | `(0,0,…,0) → 1`, `(1,1,…,1) → e^{i·phase}` |
 | `x_spider(arity, phase)` | `(2,)*arity` | Same as Z but in X basis (H⊗…⊗H applied to Z spider). |
-| `w_node(arity)` | `(2,)*arity` | Any `i` with exactly one bit set → 1; else 0. (Unnormalized; directional in the renderer only.) |
+| `w_node(num_outputs)` | `(2,)*(1+num_outputs)` | Directional: axis 0 = input, axes 1..N = outputs. `T[0,0,…,0]=1` (input \|0⟩→all outputs \|0⟩); `T[1, single-hot at output axis k]=1` for each k. Else 0. |
 | `h_box()` | `(2, 2)` | `1/√2 · [[1,1],[1,-1]]`. Fixed arity 2; for larger circuits the user chains H-boxes. |
 | `z_box(arity, phase: f64)` | `(2,)*arity` | Two-corner: `T[0,…,0]=1`, `T[1,…,1]=phase` (raw value, **not** `e^{i·phase}`), every other entry 0. |
 | `x_box(arity, phase: f64)` | `(2,)*arity` | Same but X basis (H⊗…⊗H applied to z_box). |
@@ -460,10 +467,14 @@ uniform contraction semantics.
 - **H-box arity** — fixed at 2 today; if we want general Hadamards
   (n-arity controls) we'd add an `h_general(arity)`. Not for v1.
 - **Directional vertices (W, AND)** — the renderer draws them with a
-  "single input at the top, N outputs at the bottom". For the *tensor* we
-  treat all legs as equivalent (W with k legs is the k-leg W state; AND
-  with k legs is the k-input AND). This is the standard convention and
-  matches what ZXW libraries do.
+  "single input at the top, N outputs at the bottom". The **W node is
+  directional at the tensor level too** (axis 0 = input, axes 1..N =
+  outputs; see the W-node bullet above) — the contraction layer routes
+  the edge targeting the W to axis 0 and edges leaving the W to output
+  axes. The **AND gate** remains symmetric (all legs equivalent; the
+  all-1s indicator is permutation-invariant). This W/AND asymmetry is
+  intentional: W's map is inherently directional (1→many copy), while
+  AND is a symmetric multi-input gate.
 - **Box parameters (v1 = single phase value, multi-phase = Phase 6).** The
   label-as-phase convention carries exactly one expression; in v1
   `z_box` / `x_box` take a single `phase: f64` and place it **as the
@@ -627,6 +638,28 @@ edge is contracted with `(contracted_so_far, total_edges)`. When `None`
 (native tests, or when the caller doesn't need progress), the loop skips the
 call with zero overhead. The callback crosses the WASM boundary in Phase 5
 via `wasm_bindgen`'s `Closure` type — see §6.1.
+
+**Code organization.** `compute_tensor` is a thin orchestrator that calls
+one function per phase, each in its own top-level item in
+`contraction.rs`:
+
+- `GraphCtx::build` — Phase A: builds the read-only lookup tables
+  (`node_index`, `order_key`, `degree`, `id_to_order`/`order_to_id`)
+  shared across all phases.
+- `validate_w_nodes` — structural check: every W node has exactly 1 input
+  edge + ≥ 2 output edges (the directional topology contract).
+- `build_initial_groups` — Phase B: one `Group` per tensor-vertex;
+  boundaries become `PendingBoundary`; spider/box labels phase-parsed.
+- `edge::walk_edges` — Phase C: the edge-walk dispatch loop. The three
+  branches (self-loop, boundary-to-tensor, tensor-to-tensor) are separate
+  functions in the private `edge` submodule.
+- `combine_components` — Phase D: outer-product disconnected groups +
+  dangling boundaries.
+- `partition_and_permute` — Phase E: role-partition sort + axis permute.
+- `flatten_result` — Phase F: row-major flatten to `TensorResult`.
+
+The algorithm above is unchanged; this split is purely structural so each
+phase is independently readable and testable.
 
 ### 5.2 Complexity
 

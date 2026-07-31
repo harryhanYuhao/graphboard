@@ -1,12 +1,7 @@
-// src/components/graph-editor/useKeyboardShortcuts.test.ts
-//
-// Hook tests for the editor's window-level keyboard handler. We mock
-// `useReactFlow` (otherwise the hook would crash without a real
-// `ReactFlowProvider` context) and fire keydown events on `document.body`
-// to exercise the handler end-to-end.
-//
-// Assertions look at the store via `useGraphStore.getState()` — that's
-// the observable side effect every shortcut produces.
+// Hook tests for the editor's window-level keyboard handler. `useReactFlow` is
+// mocked (the hook would crash without a ReactFlowProvider context); keydown is
+// fired on `document.body`. Assertions read the store via `getState()` — the
+// observable side effect of every shortcut.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, renderHook } from "@testing-library/react";
@@ -14,9 +9,8 @@ import { useGraphStore } from "@/store/graph-store";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { makeVertex } from "@/test-utils/factories";
 
-// `useReactFlow` requires a `ReactFlowProvider` context which we don't
-// mount here. Mock just that one export, share the fitView spy via
-// `vi.hoisted` so tests can assert on it directly.
+// `useReactFlow` needs a ReactFlowProvider we don't mount; mock just that
+// export and share the fitView/onCompute spies via `vi.hoisted`.
 const { fitViewMock, onComputeMock } = vi.hoisted(() => ({
   fitViewMock: vi.fn(),
   onComputeMock: vi.fn(),
@@ -50,9 +44,8 @@ afterEach(() => {
   useGraphStore.temporal.getState().clear();
 });
 
-// The hook now takes an `onCompute` callback (compute orchestration
-// lives in `useCompute`, outside the store). Every test mounts the hook
-// the same way, so funnel through one helper that wires the shared spy.
+// The hook takes an `onCompute` callback (compute orchestration lives in
+// `useCompute`, outside the store). Funnel every mount through one helper.
 function renderShortcuts() {
   return renderHook(() =>
     useKeyboardShortcuts({ onCompute: onComputeMock }),
@@ -88,9 +81,8 @@ describe("mode-switch shortcuts", () => {
   });
 
   it("single-key shortcuts are case-insensitive (Shift+S still switches mode)", () => {
-    // Regression guard: the single-key switch used to compare the raw
-    // `event.key`, so Shift+S (capital) silently did nothing while
-    // lowercase s worked. Caps-lock users hit the same path.
+    // Caps-lock users produce capital letters; the switch must treat them
+    // like lowercase.
     useGraphStore.setState({ mode: "add-vertex" });
     renderShortcuts();
     pressOnBody({ key: "S", shiftKey: true });
@@ -157,13 +149,9 @@ describe("modifier-bearing shortcuts", () => {
   });
 
   it("Ctrl+S calls save and preventDefaults", () => {
-    // The real `save()` writes to localStorage. We stub it so the
-    // assertion below is about the *dispatch*, not about whether the
-    // store correctly wrote a JSON document to disk (that's covered
-    // by `serialization.test.ts` and `graph-store.test.ts`'s save/
-    // hydrate round-trip). The browser swallows event-listener
-    // throws silently, so without this stub the spy assertion would
-    // still pass while vitest caught the throw as an unhandled error.
+    // Stub `save()` so this asserts the dispatch, not the disk write (the
+    // round-trip is covered in serialization/graph-store tests). Without the
+    // stub the listener throw is swallowed but surfaces as an unhandled error.
     const saveSpy = vi
       .spyOn(useGraphStore.getState(), "save")
       .mockImplementation(() => {});
@@ -317,8 +305,7 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
     renderShortcuts();
 
     pressOnBody({ key: "1" });
-    // VERTEX_TYPES[0] is "zbox" per vertex-types.ts — assert the
-    // handler routed through the registry.
+    // VERTEX_TYPES[0] is "zbox" — routed through the registry.
     expect(useGraphStore.getState().selectedVertexType).toBe("zbox");
   });
 
@@ -327,8 +314,7 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
     renderShortcuts();
 
     pressOnBody({ key: "4" });
-    // VERTEX_TYPES[3] is "input" per vertex-types.ts (order: zbox, z,
-    // empty, input, output, x, …).
+    // VERTEX_TYPES[3] is "input" (order: zbox, z, empty, input, output, x, …).
     expect(useGraphStore.getState().selectedVertexType).toBe("input");
   });
 
@@ -341,7 +327,7 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
   });
 
   it("press 9 selects the 9th vertex type (h)", () => {
-    // 10 types today → digits 1–9 are all valid; 9 maps to index 8 = "h".
+    // 10 types today → digits 1–9 are valid; 9 maps to index 8 = "h".
     useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
     renderShortcuts();
 
@@ -402,8 +388,6 @@ describe("modifier-bearing keys outside the known set", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 });
-
-// ---- Coverage for shortcuts not exercised by the original file ----
 
 describe("Cmd/Ctrl+C (copy) / Cmd+V (paste) / Cmd+X (cut)", () => {
   function fireMod(key: string, shift = false) {
@@ -471,9 +455,7 @@ describe("Cmd/Ctrl+C (copy) / Cmd+V (paste) / Cmd+X (cut)", () => {
   });
 
   it("does not handle Ctrl+Shift+C / V / X (those are not bound)", () => {
-    // The hook treats those keys (with shift) as out-of-set and
-    // leaves them alone — shift modifies the gesture for `z` and `y`
-    // but is meaningless for the clipboard shortcuts.
+    // Shift is meaningful for z/y but not the clipboard shortcuts.
     const c = fireMod("c", true);
     const v = fireMod("v", true);
     const x = fireMod("x", true);
@@ -519,9 +501,8 @@ describe("Cmd/Ctrl+Y (redo alternative)", () => {
   });
 
   it("Ctrl+Enter calls onCompute and preventDefaults", () => {
-    // Compute orchestration lives in `useCompute` (outside the store);
-    // the hook reaches it via the `onCompute` callback. Assert the spy
-    // fired and the default was suppressed.
+    // Compute orchestration lives in `useCompute`; the hook reaches it via
+    // `onCompute`. Assert the spy fired and default was suppressed.
     renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
@@ -575,8 +556,7 @@ describe("Ctrl+Z without shift does not trigger redo", () => {
 
 describe("vertex-type shortcut outside add-vertex mode does not match", () => {
   it("press '5' in select mode is a no-op", () => {
-    // The number-key branch is gated on mode === "add-vertex", so any
-    // other mode swallows the key silently.
+    // The number-key branch is gated on mode === "add-vertex".
     useGraphStore.setState({ mode: "select", selectedVertexType: "z" });
     renderShortcuts();
 
@@ -586,11 +566,9 @@ describe("vertex-type shortcut outside add-vertex mode does not match", () => {
 });
 
 describe("? key with the help dialog already open", () => {
-  // The `?` key is bound to `toggleHelp()`. When the help dialog is
-  // already open, pressing `?` again should close it (toggle semantics).
-  // The dialog auto-focuses its close button on open (see
-  // KeyboardShortcutsDialog), so the keydown event fires on the close
-  // button, bubbles up to the window, and the global handler runs.
+  // `?` is toggleHelp(); pressing it again closes the dialog. The dialog
+  // auto-focuses its close button, but the keydown bubbles to the window
+  // handler.
   it("pressing ? while the help dialog is open closes it", () => {
     useGraphStore.setState({ isHelpOpen: true });
     renderShortcuts();
@@ -615,11 +593,7 @@ describe("? key with the help dialog already open", () => {
 });
 
 describe("shift + letter keys", () => {
-  // Regression guard: the single-key switch used to compare the raw
-  // `event.key`, so Shift+S (uppercase) silently did nothing. The
-  // existing test "single-key shortcuts are case-insensitive" covers
-  // mode-switch letters. This block extends the coverage to the
-  // escape ladder and the help toggle with shift.
+  // Extends the case-insensitivity pin to shift combinations.
   it("Shift+S also switches to select mode (uppercase S)", () => {
     useGraphStore.setState({ mode: "add-vertex" });
     renderShortcuts();
@@ -660,8 +634,7 @@ describe("event.preventDefault behavior", () => {
     });
     window.dispatchEvent(event);
 
-    // 'a' without modifier is not bound — the global handler returns
-    // without calling preventDefault, so the browser can do its thing.
+    // 'a' without modifier isn't bound — no preventDefault.
     expect(event.defaultPrevented).toBe(false);
   });
 
@@ -678,18 +651,14 @@ describe("event.preventDefault behavior", () => {
     });
     window.dispatchEvent(event);
 
-    // The Delete handler calls deleteSelected but does NOT
-    // preventDefault — browsers don't have a default action for
-    // Delete inside a regular page, so this is a no-op. Pin the
-    // current behavior so a future "preventDefault on Delete" is a
-    // deliberate change.
+    // Delete deletes but does NOT preventDefault (no browser default in a
+    // page). Pinned so adding preventDefault is a deliberate change.
     expect(event.defaultPrevented).toBe(false);
   });
 
   it("prevents default on 'f' (fit-view) so the browser's find-in-page isn't triggered", () => {
-    // The 'f' key (fit view) is handled but does NOT call
-    // preventDefault — without a Ctrl modifier, 'f' has no browser
-    // default in a regular page. Pin the current behavior.
+    // 'f' (fit view) is handled but does NOT preventDefault — without Ctrl,
+    // 'f' has no browser default in a page. Pinned.
     renderShortcuts();
 
     const event = new KeyboardEvent("keydown", {
