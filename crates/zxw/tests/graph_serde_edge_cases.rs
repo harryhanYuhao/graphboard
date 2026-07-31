@@ -497,6 +497,7 @@ fn serialization_key_order_is_stable() {
         data: FrontendVertexData {
             label: "l".into(),
             vertex_type: VertexType::Z,
+            order: None,
         },
     };
     assert_eq!(

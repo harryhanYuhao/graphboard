@@ -18,6 +18,7 @@ import {
   FolderOutput,
   CircleQuestionMark,
   Calculator,
+  Bug,
 } from "lucide-react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
@@ -70,6 +71,8 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
 
   const canUndo = useStore(useGraphStore.temporal, (state) => state.pastStates.length > 0);
   const canRedo = useStore(useGraphStore.temporal, (state) => state.futureStates.length > 0);
+
+  const onDebugButtonPressed = useGraphStore((state) => state.onDebugButtonPressed);
 
   return (
     <>
@@ -175,6 +178,8 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
           <Calculator size={18} />
         </ToolbarButton>
 
+        <div className="mx-1 h-6 w-px bg-slate-200" />
+
         <ToolbarButton
           title="RESET (Can NOT be undo)"
           onClick={() => {
@@ -191,6 +196,13 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
             });
           }}>
           <OctagonX size={18} color="#f00707" />
+        </ToolbarButton>
+
+        <ToolbarButton
+          title="Debug (For developping purpose only"
+          onClick={onDebugButtonPressed}
+        >
+          <Bug size={18} />
         </ToolbarButton>
       </div>
     </>

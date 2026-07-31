@@ -44,6 +44,16 @@ pub struct FrontendGraphNodeRecord {
 pub struct FrontendVertexData {
     pub label: String,
     pub vertex_type: VertexType,
+    /// 0-indexed ordering of `Input` / `Output` boundary vertices. Inputs
+    /// and outputs are ordered independently within their own group, and
+    /// this drives the final axis order of the contracted tensor (§5.4).
+    /// Ignored for non-boundary types. `None` (absent in JSON) means
+    /// "fall back to array position", so pre-`order` documents hydrate
+    /// and compute identically to today. `skip_serializing_if` keeps
+    /// re-serialized output byte-compatible with the frontend (mirrors
+    /// `source_handle`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
 }
 
 /// The ten vertex types: eight ZXW generators plus two boundary markers

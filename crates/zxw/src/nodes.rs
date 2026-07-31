@@ -148,10 +148,15 @@ pub fn x_box(arity: usize, phase: f64) -> Tensor {
     t
 }
 
-/// The empty node: a scalar `1`. Represents a 0-leg identity weight;
+/// The empty node is 2-leg identity weight;
 /// contributes nothing when contracted (the multiplicative identity).
 pub fn empty() -> Tensor {
-    Tensor::scalar(Cplx::new(1.0, 0.0))
+    let mut t = Tensor::zeros(&[2, 2]);
+    *t.get_mut(&[0, 0]) = Cplx::new(1.0, 0.0);
+    *t.get_mut(&[0, 1]) = Cplx::new(0.0, 0.0);
+    *t.get_mut(&[1, 0]) = Cplx::new(0.0, 0.0);
+    *t.get_mut(&[1, 1]) = Cplx::new(1.0, 0.0);
+    t
 }
 
 /// Dispatch a `VertexType` to its builder, returning the initial tensor
@@ -168,11 +173,7 @@ pub fn empty() -> Tensor {
 /// The builders themselves do no validation — this dispatcher only
 /// routes, so all arity / degree checks belong to the caller
 /// (`compute_tensor`).
-pub fn build_vertex_tensor(
-    vertex_type: VertexType,
-    arity: usize,
-    phase: f64,
-) -> Option<Tensor> {
+pub fn build_vertex_tensor(vertex_type: VertexType, arity: usize, phase: f64) -> Option<Tensor> {
     use VertexType::*;
     match vertex_type {
         Z => Some(z_spider(arity, phase)),
@@ -250,30 +251,27 @@ mod tests {
         // the named test makes the contract readable).
         use crate::graph::VertexType::*;
         let cases: [(VertexType, Option<usize>); 10] = [
-            (Z, Some(2)),      // arity-2 z_spider → shape (2,2)
+            (Z, Some(2)), // arity-2 z_spider → shape (2,2)
             (X, Some(2)),
             (Zbox, Some(2)),
             (Xbox, Some(2)),
             (W, Some(2)),
-            (H, Some(2)),      // h_box always shape (2,2) regardless of arity
+            (H, Some(2)), // h_box always shape (2,2) regardless of arity
             (And, Some(2)),
-            (Empty, Some(0)),  // scalar → rank 0
-            (Input, None),     // boundary, no tensor
+            (Empty, Some(0)), // scalar → rank 0
+            (Input, None),    // boundary, no tensor
             (Output, None),
         ];
         for (vt, expected_rank) in cases {
             let built = build_vertex_tensor(vt, 2, std::f64::consts::PI);
             match (built, expected_rank) {
                 (Some(t), Some(r)) => {
-                    assert_eq!(
-                        t.rank(), r,
-                        "rank mismatch for variant {vt:?}"
-                    );
+                    assert_eq!(t.rank(), r, "rank mismatch for variant {vt:?}");
                 }
                 (None, None) => { /* boundary as expected */ }
-                (got, want) => panic!(
-                    "dispatch for {vt:?}: got rank {got:?}, expected rank {want:?}"
-                ),
+                (got, want) => {
+                    panic!("dispatch for {vt:?}: got rank {got:?}, expected rank {want:?}")
+                }
             }
         }
     }
@@ -429,8 +427,14 @@ mod tests {
         let phi = std::f64::consts::FRAC_PI_3;
         let mut x = x_box(2, phi);
         let h: [[Cplx; 2]; 2] = [
-            [c(std::f64::consts::FRAC_1_SQRT_2, 0.0), c(std::f64::consts::FRAC_1_SQRT_2, 0.0)],
-            [c(std::f64::consts::FRAC_1_SQRT_2, 0.0), c(-std::f64::consts::FRAC_1_SQRT_2, 0.0)],
+            [
+                c(std::f64::consts::FRAC_1_SQRT_2, 0.0),
+                c(std::f64::consts::FRAC_1_SQRT_2, 0.0),
+            ],
+            [
+                c(std::f64::consts::FRAC_1_SQRT_2, 0.0),
+                c(-std::f64::consts::FRAC_1_SQRT_2, 0.0),
+            ],
         ];
         x.apply_2x2_to_axis(0, h);
         x.apply_2x2_to_axis(1, h);
@@ -462,7 +466,10 @@ mod tests {
                 non_zero += 1;
             }
         }
-        assert_eq!(non_zero, 2, "z_spider(3) should have exactly 2 non-zero entries");
+        assert_eq!(
+            non_zero, 2,
+            "z_spider(3) should have exactly 2 non-zero entries"
+        );
         // (0,0,0) = 1, (1,1,1) = e^{iπ} = -1.
         assert_eq!(z.get(&[0, 0, 0]), c(1.0, 0.0));
         assert!((z.get(&[1, 1, 1]).re - (-1.0)).abs() < 1e-10);

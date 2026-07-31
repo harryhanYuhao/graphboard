@@ -48,14 +48,25 @@ pub enum LegRole {
 }
 
 /// One free leg of a group tensor. `node_order` is the vertex's index in
-/// `graph.nodes` (used for the stable sort at the end); `leg_index` is
-/// the leg's position within the original vertex (0..arity). The group
-/// tensor's axis `i` corresponds to `free_axes[i]`.
+/// `graph.nodes` (identity only — used to match legs back to a vertex
+/// during the edge walk); `leg_index` is the leg's position within the
+/// original vertex (0..arity). The group tensor's axis `i` corresponds
+/// to `free_axes[i]`.
+///
+/// `sort_key` is the value Phase E ranks axes by within a role group:
+/// the boundary vertex's `order` (if set) when this leg was tagged by
+/// an attached boundary, otherwise the owning tensor-vertex's
+/// `order.unwrap_or(array position)`. Storing the resolved key here —
+/// rather than re-deriving it from `node_order` at sort time — is what
+/// lets a boundary's `order` actually drive axis order even though the
+/// leg lives on the neighbouring tensor-vertex (see the boundary-attach
+/// branch of the edge walk).
 #[derive(Debug, Clone, Copy)]
 struct FreeAxis {
     node_order: usize,
     leg_index: usize,
     role: LegRole,
+    sort_key: u32,
 }
 
 /// A running contraction. Lives in a `HashMap<representative_id, Group>`
@@ -154,6 +165,20 @@ pub fn compute_tensor(
             (i, node.data.vertex_type, node.data.label.clone()),
         );
     }
+
+    // Per-vertex sort key for the final axis ordering (§5.4) and the
+    // Phase D group ordering. Boundary vertices carry an explicit `order`
+    // field (0-indexed within their type group); when it's absent we fall
+    // back to the node's array position, so pre-`order` documents compute
+    // identically to today. Indexed by `node_order` (the `i` everywhere
+    // else calls `node_order`) so the sort comparators can look it up in
+    // O(1) by the value already stored on `FreeAxis` / `PendingBoundary`.
+    let order_key: Vec<u32> = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| node.data.order.unwrap_or(i as u32))
+        .collect();
 
     // Degree per vertex (count of edges incident, self-loops counted
     // twice — they consume two legs). Used for: arity assignment,
@@ -256,6 +281,7 @@ pub fn compute_tensor(
                 node_order: i,
                 leg_index: leg,
                 role: LegRole::Neutral,
+                sort_key: order_key[i],
             })
             .collect();
         groups.insert(id.clone(), Group { tensor, free_axes });
@@ -400,6 +426,12 @@ pub fn compute_tensor(
                      degree-overflow should have fired earlier",
                 );
             leg_to_tag.role = boundary_role;
+            // The boundary — not the tensor-vertex — owns this leg's sort
+            // position now, so stamp the boundary's `order_key` onto it.
+            // Without this, a boundary's `order` would have no effect:
+            // `FreeAxis.node_order` still points at the tensor-vertex, and
+            // Phase E would rank the leg by the tensor's (unrelated) key.
+            leg_to_tag.sort_key = order_key[id_to_order[boundary_id]];
         } else {
             // Normal edge between two tensor-vertices → contract.
             let src_order = id_to_order[&edge.source];
@@ -522,15 +554,20 @@ pub fn compute_tensor(
 
     // Phase D — reduce disconnected components via outer_product.
     // Collect surviving groups (one per connected component of non-
-    // boundary vertices). Sort by min node_order in each group so the
-    // outer-product order is deterministic and matches `graph.nodes`.
+    // boundary vertices). Sort by min `sort_key` in each group so the
+    // outer-product order is deterministic. Phase E re-sorts the combined
+    // axes by role + key, so this ordering only affects the pre-sort
+    // arrangement — kept consistent for tidy intermediate layouts.
     let mut surviving: Vec<(usize, Group)> = groups
         .into_iter()
         .map(|(id, g)| {
-            let min_order = g.free_axes.iter().map(|fa| fa.node_order).min().unwrap_or(
-                id_to_order[&id], // group with no free legs — use the rep's order
-            );
-            (min_order, g)
+            let min_key = g
+                .free_axes
+                .iter()
+                .map(|fa| fa.sort_key)
+                .min()
+                .unwrap_or(order_key[id_to_order[&id]]);
+            (min_key as usize, g)
         })
         .collect();
     surviving.sort_by_key(|(order, _)| *order);
@@ -563,12 +600,17 @@ pub fn compute_tensor(
             node_order: pb.node_order,
             leg_index: 0,
             role: pb.role,
+            // Dangling boundary owns its own axis outright, so its sort
+            // key is its own `order_key`.
+            sort_key: order_key[pb.node_order],
         });
     }
 
     // Phase E — §5.4 final partition. Stable-sort by role (Input first,
-    // then Output, then Neutral); within each role, by node_order then
-    // leg_index. Apply the same permutation to the tensor data.
+    // then Output, then Neutral); within each role, by the leg's
+    // `sort_key` (boundary `order` for boundary-tagged legs, else the
+    // owning vertex's key — see `FreeAxis.sort_key`) then leg_index.
+    // Apply the same permutation to the tensor data.
     let mut indexed: Vec<(usize, FreeAxis)> = combined_free_axes.into_iter().enumerate().collect();
     indexed.sort_by(|a, b| {
         let role_rank = |r: LegRole| match r {
@@ -578,7 +620,7 @@ pub fn compute_tensor(
         };
         role_rank(a.1.role)
             .cmp(&role_rank(b.1.role))
-            .then(a.1.node_order.cmp(&b.1.node_order))
+            .then(a.1.sort_key.cmp(&b.1.sort_key))
             .then(a.1.leg_index.cmp(&b.1.leg_index))
     });
     let perm: Vec<usize> = indexed.iter().map(|(orig, _)| *orig).collect();
@@ -708,6 +750,7 @@ mod tests {
                     data: FrontendVertexData {
                         label: (*label).into(),
                         vertex_type: *vt,
+                        order: None,
                     },
                 })
                 .collect(),

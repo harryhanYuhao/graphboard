@@ -61,6 +61,13 @@ export const PERSISTED_IDS = {
 export type VertexData = {
   label: string;
   vertexType: VertexType;
+  // 0-indexed ordering of `input` / `output` boundary vertices, used to
+  // determine the final axis order of the contracted tensor (Rust compute
+  // layer §5.4). Inputs and outputs are ordered independently within their
+  // own group. Ignored for all other vertex types. Optional for backward
+  // compatibility — a missing value falls back to array position, so
+  // pre-`order` saved graphs hydrate and compute identically to today.
+  order?: number;
 };
 
 // ---- Runtime layer (in-memory, what the store + React Flow hold) -----------

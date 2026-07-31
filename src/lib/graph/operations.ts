@@ -6,7 +6,11 @@ import {
   type VertexNode,
   type VertexType,
 } from "./types";
-import { DEFAULT_VERTEX_TYPE, VERTEX_TYPE_MAP } from "./vertex-types";
+import {
+  DEFAULT_VERTEX_TYPE,
+  VERTEX_TYPE_MAP,
+  isBoundaryVertex,
+} from "./vertex-types";
 
 export function createVertexNode(
   position: {
@@ -28,6 +32,150 @@ export function createVertexNode(
       vertexType,
     },
   };
+}
+
+// ---- Boundary ordering (input / output) -----------------------------------
+//
+// Boundary vertices (`input` / `output`) carry an `order` field that
+// determines the final axis order of the contracted tensor. Inputs and
+// outputs are ordered independently within their own group (0-indexed).
+// The compute layer falls back to array position when `order` is unset,
+// so these helpers only matter for boundary nodes — for every other
+// type the field is ignored. See `VertexData.order` in types.ts and the
+// §5.4 axis-ordering contract in `crates/zxw/src/contraction.rs`.
+
+// Comparator key for sorting boundary nodes of the same type: current
+// `order` if set, otherwise the node's position in `nodes` (matching the
+// compute-layer fallback). Nodes with the same key keep their relative
+// array order (stable behavior is the caller's responsibility).
+function boundaryOrderKey(
+  node: VertexNode,
+  nodes: VertexNode[],
+): number {
+  if (typeof node.data.order === "number" && Number.isFinite(node.data.order)) {
+    return node.data.order;
+  }
+  return nodes.indexOf(node);
+}
+
+// Next available `order` for a boundary vertex of `vertexType` among
+// `nodes`. Returns `max(existing orders of that type) + 1`, or `0` if
+// there are none (or none with a set order). Used at creation, type
+// change, and paste so a new boundary always lands at the end of its
+// group without colliding with an existing one.
+export function nextBoundaryOrder(
+  nodes: VertexNode[],
+  vertexType: VertexType,
+): number {
+  let max = -1;
+  for (const node of nodes) {
+    if (node.data.vertexType !== vertexType) continue;
+    if (
+      typeof node.data.order === "number" &&
+      Number.isFinite(node.data.order) &&
+      node.data.order > max
+    ) {
+      max = node.data.order;
+    }
+  }
+  return max + 1;
+}
+
+export type ReorderBoundaryResult = {
+  nodes: VertexNode[];
+};
+
+// Reorder a boundary vertex to `targetOrder` using "cut the queue"
+// insert semantics: within the boundary node's own type group, remove
+// the node from its current position and re-insert at `targetOrder`,
+// then re-stamp sequential orders `0..n-1` so the group never carries
+// gaps or duplicates. Example: orders [0,1,2,3,4], move order-4 to
+// target 1 → the moved node becomes 1 and the others shift to
+// [0,2,3,4]→[0,2,3,4] re-stamped as [0,1,2,3,4] (moved node = 1).
+//
+// Non-boundary nodes and boundary nodes of the *other* type are
+// returned untouched (inputs and outputs are ordered independently).
+// Returns the original `nodes` reference if nothing changed (so the
+// Zustand equality check short-circuits a no-op). Out-of-range or
+// non-finite `targetOrder` is clamped to `[0, count-1]`; a no-op
+// (target equals current effective position) returns the input ref.
+export function reorderBoundaryVertex(params: {
+  nodes: VertexNode[];
+  vertexId: string;
+  targetOrder: number;
+}): ReorderBoundaryResult {
+  const { nodes, vertexId } = params;
+  const target = nodes.find((n) => n.id === vertexId);
+  if (!target || !isBoundaryVertex(target.data.vertexType)) {
+    return { nodes };
+  }
+
+  const type = target.data.vertexType;
+
+  // Indices into `nodes` of every boundary node of the same type, in
+  // ascending order of their current effective key. Stable on ties so
+  // the pre-existing array order is the final tiebreaker.
+  const sameTypeIdx = nodes
+    .map((n, i) => ({ n, i }))
+    .filter(({ n }) => n.data.vertexType === type)
+    .sort(
+      (a, b) =>
+        boundaryOrderKey(a.n, nodes) - boundaryOrderKey(b.n, nodes) ||
+        a.i - b.i,
+    );
+
+  const fromPos = sameTypeIdx.findIndex(({ n }) => n.id === vertexId);
+  if (fromPos === -1) return { nodes };
+
+  const count = sameTypeIdx.length;
+  let targetPos = Math.floor(params.targetOrder);
+  if (!Number.isFinite(targetPos)) return { nodes };
+  targetPos = Math.max(0, Math.min(count - 1, targetPos));
+  if (targetPos === fromPos) return { nodes };
+
+  // Re-stamp sequential orders on the reordered sequence.
+  const reordered = sameTypeIdx
+    .map(({ n }) => ({ id: n.id }))
+    .filter(({ id }) => id !== vertexId);
+  reordered.splice(targetPos, 0, { id: vertexId });
+
+  const newOrderByNodeId = new Map<string, number>();
+  reordered.forEach(({ id }, order) => newOrderByNodeId.set(id, order));
+
+  const nextNodes = nodes.map((n) => {
+    const order = newOrderByNodeId.get(n.id);
+    if (order === undefined || order === n.data.order) return n;
+    return { ...n, data: { ...n.data, order } };
+  });
+
+  return { nodes: nextNodes };
+}
+
+// When a vertex changes type *to* a boundary (via the property panel),
+// assign it the next available order in its new group so it lands at
+// the end rather than inheriting a stale or undefined `order`. When
+// changing *away* from a boundary, leave any existing `order` in
+// place — it's ignored for non-boundary types and stripping it would
+// be surprising if the user flips back.
+export function assignBoundaryOrderOnTypeChange(params: {
+  nodes: VertexNode[];
+  vertexId: string;
+  newType: VertexType;
+}): VertexNode[] {
+  const { nodes, vertexId, newType } = params;
+  if (!isBoundaryVertex(newType)) return nodes;
+
+  // Compute the next order against the list *excluding* the node being
+  // changed — it's about to become the new type, so its old order
+  // (if any) shouldn't count toward the max.
+  const others = nodes.filter((n) => n.id !== vertexId);
+  const order = nextBoundaryOrder(others, newType);
+
+  return nodes.map((n) =>
+    n.id === vertexId
+      ? { ...n, data: { ...n.data, vertexType: newType, order } }
+      : n,
+  );
 }
 
 export function createGraphEdge(
@@ -324,12 +472,19 @@ export function cloneSubgraphForClipboard(subgraph: {
 // Re-mint every node and edge ID, remap edge endpoints to the new node IDs,
 // translate positions by `pasteCount * PASTE_OFFSET_STEP`, and mark all
 // produced elements selected so the user can immediately move the result.
+//
+// `existingNodes` (the live graph the paste is landing into) lets pasted
+// boundary (`input` / `output`) nodes get fresh, non-colliding `order`
+// values via `nextBoundaryOrder`. Without it a pasted input would clone
+// the original's order and the two would tie. Optional so legacy callers
+// and tests keep working — omitting it leaves boundary orders untouched.
 export function pasteSubgraph(params: {
   subgraph: {
     nodes: VertexNode[];
     edges: GraphEdge[];
   };
   pasteCount: number;
+  existingNodes?: VertexNode[];
 }): {
   nodes: VertexNode[];
   edges: GraphEdge[];
@@ -341,16 +496,34 @@ export function pasteSubgraph(params: {
     idMap.set(node.id, nanoid());
   }
 
-  const newNodes: VertexNode[] = params.subgraph.nodes.map((node) => ({
-    ...node,
-    id: idMap.get(node.id) as string,
-    position: {
-      x: node.position.x + offset,
-      y: node.position.y + offset,
-    },
-    data: { ...node.data },
-    selected: true,
-  }));
+  // Seed the order-assignment pool with the live graph so the first
+  // pasted boundary of each type lands after the last existing one of
+  // the same type. Each pasted boundary then bumps the running max so
+  // multiple pasted inputs/outputs stay sequential among themselves.
+  const pool: VertexNode[] = params.existingNodes
+    ? params.existingNodes.map((n) => ({ ...n, data: { ...n.data } }))
+    : [];
+
+  const newNodes: VertexNode[] = params.subgraph.nodes.map((node) => {
+    const newNode: VertexNode = {
+      ...node,
+      id: idMap.get(node.id) as string,
+      position: {
+        x: node.position.x + offset,
+        y: node.position.y + offset,
+      },
+      data: { ...node.data },
+      selected: true,
+    };
+
+    if (isBoundaryVertex(node.data.vertexType)) {
+      const order = nextBoundaryOrder(pool, node.data.vertexType);
+      newNode.data.order = order;
+      pool.push(newNode);
+    }
+
+    return newNode;
+  });
 
   const newEdges: GraphEdge[] = params.subgraph.edges.map((edge) => {
     const newSource = idMap.get(edge.source);

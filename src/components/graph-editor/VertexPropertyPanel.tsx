@@ -21,6 +21,7 @@ import { useMemo, useState } from "react";
 import { useGraphStore } from "@/store/graph-store";
 import {
   VERTEX_TYPES,
+  isBoundaryVertex,
   isSpiderType,
 } from "@/lib/graph/vertex-types";
 import { normalizeRotation } from "@/lib/graph/serialization";
@@ -37,6 +38,9 @@ export function VertexPropertyPanel() {
   const updateVertexType = useGraphStore((state) => state.updateVertexType);
   const updateVertexRotation = useGraphStore(
     (state) => state.updateVertexRotation,
+  );
+  const updateVertexOrder = useGraphStore(
+    (state) => state.updateVertexOrder,
   );
   const onVertexPropertyEditStart = useGraphStore(
     (state) => state.onVertexPropertyEditStart,
@@ -76,12 +80,20 @@ export function VertexPropertyPanel() {
     skipDriftCheck: isDraggingRotationSlider,
   });
 
+  // Order is meaningful only for boundary vertices (input / output);
+  // the section below renders for them alone, so this draft is only
+  // interacted with there.
+  const [orderDraft, setOrderDraft, orderDidReset] = useTrackedDraft({
+    source: selectedVertex?.data.order ?? 0,
+    trackKey: selectedVertex?.id ?? null,
+  });
+
   if (!selectedVertex) return null;
 
   // Either draft just queued a reset this render — bail so the panel
   // doesn't flash stale data for one frame before the reset applies
   // on the next render.
-  if (labelDidReset || rotationDidReset) return null;
+  if (labelDidReset || rotationDidReset || orderDidReset) return null;
 
   const commitLabel = () => {
     const trimmed = labelDraft.trim();
@@ -93,6 +105,22 @@ export function VertexPropertyPanel() {
   const handleTypeChange = (next: VertexType) => {
     if (next !== selectedVertex.data.vertexType) {
       updateVertexType(selectedVertex.id, next);
+    }
+  };
+
+  // Commit an order change. `reorderBoundaryVertex` re-stamps the whole
+  // group sequentially (0..n-1), so the committed value lands exactly on
+  // the clamped target; we mirror it back into the draft so the input
+  // shows the canonical post-reorder value rather than an out-of-range
+  // number the user may have typed.
+  const commitOrder = (value: number) => {
+    if (!Number.isFinite(value)) {
+      setOrderDraft(selectedVertex.data.order ?? 0);
+      return;
+    }
+    const clamped = Math.floor(value);
+    if (clamped !== selectedVertex.data.order) {
+      updateVertexOrder(selectedVertex.id, clamped);
     }
   };
 
@@ -166,6 +194,38 @@ export function VertexPropertyPanel() {
             })}
           </div>
         </div>
+
+        {/* Order — shown only for boundary vertices (input / output).
+            0-indexed position within its own type group; determines the
+            final axis order of the contracted tensor. Changing it applies
+            "cut the queue" reorder semantics (the store re-stamps the
+            whole group sequentially). */}
+        {isBoundaryVertex(selectedVertex.data.vertexType) && (
+          <div className="mb-3">
+            <label className="mb-1 block text-xs text-slate-600">Order</label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={Number.isFinite(orderDraft) ? orderDraft : ""}
+              onChange={(event) =>
+                setOrderDraft(Number(event.target.value))
+              }
+              onBlur={() => commitOrder(orderDraft)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  (event.target as HTMLInputElement).blur();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setOrderDraft(selectedVertex.data.order ?? 0);
+                  (event.target as HTMLInputElement).blur();
+                }
+              }}
+              className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
+            />
+          </div>
+        )}
 
         {/* Label input — commits on blur / Enter, reverts on Escape.
             Mirrors the double-click-to-edit behavior already inside

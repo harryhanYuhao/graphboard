@@ -17,17 +17,23 @@ import {
   type VertexType,
 } from "@/lib/graph/types";
 import {
+  assignBoundaryOrderOnTypeChange,
   computeVertexClick,
   createVertexNode,
   deleteSelectedElements,
   cloneSubgraphForClipboard,
   clearAllSelections,
   getSelectedSubgraph,
+  nextBoundaryOrder,
   pasteSubgraph,
+  reorderBoundaryVertex,
   selectAllElements,
   type VertexClickModifiers,
 } from "@/lib/graph/operations";
-import { DEFAULT_VERTEX_TYPE } from "@/lib/graph/vertex-types";
+import {
+  DEFAULT_VERTEX_TYPE,
+  isBoundaryVertex,
+} from "@/lib/graph/vertex-types";
 import { selectSelectedNodeIds } from "@/store/selectors";
 import {
   createEmptyGraphDocument,
@@ -117,6 +123,7 @@ type GraphStore = {
   addSelectedToPendingSources: () => void;
   updateVertexLabel: (nodeId: string, label: string) => void;
   updateVertexType: (nodeId: string, vertexType: VertexType) => void;
+  updateVertexOrder: (nodeId: string, targetOrder: number) => void;
   updateVertexRotation: (nodeId: string, rotation: number) => void;
   copySelected: () => void;
   paste: () => void;
@@ -160,6 +167,10 @@ type GraphStore = {
   // future color picker or scale slider can reuse it.
   onVertexPropertyEditStart: () => void;
   onVertexPropertyEditEnd: () => void;
+
+
+  // DEBUG: for debugs
+  onDebugButtonPressed: () => void;
 };
 
 function partialize(state: GraphStore) {
@@ -371,7 +382,15 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       addVertexAt: (position) => {
-        const node = createVertexNode(position, get().selectedVertexType);
+        const vertexType = get().selectedVertexType;
+        const node = createVertexNode(position, vertexType);
+
+        // Boundary vertices get an auto-assigned `order` so they land at
+        // the end of their group (inputs / outputs ordered independently).
+        // Non-boundary types ignore the field.
+        if (isBoundaryVertex(vertexType)) {
+          node.data.order = nextBoundaryOrder(get().nodes, vertexType);
+        }
 
         set({
           nodes: [...get().nodes, node],
@@ -472,6 +491,10 @@ export const useGraphStore = create<GraphStore>()(
         const pasted = pasteSubgraph({
           subgraph: clipboard,
           pasteCount: clipboard.pasteCount + 1,
+          // Pass the live graph so pasted boundary nodes get fresh,
+          // non-colliding `order` values (a pasted input would otherwise
+          // clone the original's order and tie with it).
+          existingNodes: get().nodes,
         });
 
         set({
@@ -611,13 +634,35 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       updateVertexType: (nodeId, vertexType) => {
-        set({
-          nodes: get().nodes.map((node) =>
+        const current = get().nodes;
+        // When the new type is a boundary, assign it the next available
+        // order in its new group (rather than inheriting a stale or
+        // undefined order). `assignBoundaryOrderOnTypeChange` returns the
+        // nodes unchanged for non-boundary targets.
+        const nextNodes = isBoundaryVertex(vertexType)
+          ? assignBoundaryOrderOnTypeChange({
+            nodes: current,
+            vertexId: nodeId,
+            newType: vertexType,
+          })
+          : current.map((node) =>
             node.id === nodeId
               ? { ...node, data: { ...node.data, vertexType } }
               : node,
-          ),
+          );
+        set({ nodes: nextNodes });
+      },
+
+      updateVertexOrder: (nodeId, targetOrder) => {
+        // Pure "cut the queue" reorder; a no-op (non-boundary node, or
+        // target equals current position) returns the original `nodes`
+        // reference, which the zundo equality check treats as unchanged.
+        const { nodes } = reorderBoundaryVertex({
+          nodes: get().nodes,
+          vertexId: nodeId,
+          targetOrder,
         });
+        set({ nodes });
       },
 
       updateVertexRotation: (nodeId, rotation) => {
@@ -733,6 +778,8 @@ export const useGraphStore = create<GraphStore>()(
       onVertexPropertyEditEnd: () => {
         vertexPropertyEditGesture.end();
       },
+
+      onDebugButtonPressed: () => { console.log("For Debug!") }
     }),
     {
       partialize,

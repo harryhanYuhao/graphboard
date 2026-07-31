@@ -659,6 +659,86 @@ fn two_inputs_two_outputs_basis_order_is_big_endian() {
     }
 }
 
+// ---- Boundary `order` field drives axis ordering --------------------------
+//
+// Same graph topology, two different `order` assignments on the inputs →
+// two different `data` layouts. Proves the `order` field (not array
+// position) decides which input becomes axis 0 vs axis 1 in the result.
+//
+// Topology: two disconnected components, each `input → z spider → output`.
+// Component A uses a Z(π) spider → its 2×2 matrix is diag(1, -1) (the
+// "−1" component). Component B uses a Z(0) spider → identity (the "+1"
+// component). The outer product is rank-4 over [inA, inB, outA, outB];
+// only the entries where each component is on its diagonal are non-zero.
+//
+// With axes [iX, iY, oA, oB] (iX = first input, iY = second), row-major
+// index = x*8 + y*4 + a*2 + b, value = M_component-of-X[x][a] *
+// M_component-of-Y[y][b]. The non-zero pattern shifts when we swap which
+// input is "first", so the two `order` assignments below must produce
+// different `data` arrays — and each matches the hand-derived pattern.
+#[test]
+fn boundary_order_field_drives_input_axis_order() {
+    // Case 1 — no `order` field anywhere → array position is the key.
+    // Array order: iA(0) < iB(3), so axes = [iA, iB, oA, oB].
+    // iA is the Z(π) (−1) leg, iB is the Z(0) (+1) leg.
+    // Non-zero: idx 0→1, 5→1, 10→−1, 15→−1.
+    let baseline = compute(r#"{
+        "nodes": [
+            {"id":"iA","data":{"label":"","vertexType":"input"}},
+            {"id":"oA","data":{"label":"","vertexType":"output"}},
+            {"id":"zA","data":{"label":"\\pi","vertexType":"z"}},
+            {"id":"iB","data":{"label":"","vertexType":"input"}},
+            {"id":"oB","data":{"label":"","vertexType":"output"}},
+            {"id":"zB","data":{"label":"0","vertexType":"z"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"iA","target":"zA"},
+            {"id":"e2","source":"zA","target":"oA"},
+            {"id":"e3","source":"iB","target":"zB"},
+            {"id":"e4","source":"zB","target":"oB"}
+        ]
+    }"#);
+    assert_eq!(baseline.shape, vec![2, 2, 2, 2]);
+    assert_eq!(baseline.input_count, 2);
+    assert_eq!(baseline.output_count, 2);
+    assert_relative_eq!(baseline.data[0].0, 1.0, epsilon = 1e-10);
+    assert_relative_eq!(baseline.data[5].0, 1.0, epsilon = 1e-10);
+    assert_relative_eq!(baseline.data[10].0, -1.0, epsilon = 1e-10);
+    assert_relative_eq!(baseline.data[15].0, -1.0, epsilon = 1e-10);
+
+    // Case 2 — `order` reverses the inputs: iB.order=0, iA.order=1.
+    // Now axes = [iB, iA, oA, oB] — iB (the +1 leg) is first.
+    // Non-zero: idx 0→1, 9→1, 6→−1, 15→−1.
+    let reordered = compute(r#"{
+        "nodes": [
+            {"id":"iA","data":{"label":"","vertexType":"input","order":1}},
+            {"id":"oA","data":{"label":"","vertexType":"output"}},
+            {"id":"zA","data":{"label":"\\pi","vertexType":"z"}},
+            {"id":"iB","data":{"label":"","vertexType":"input","order":0}},
+            {"id":"oB","data":{"label":"","vertexType":"output"}},
+            {"id":"zB","data":{"label":"0","vertexType":"z"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"iA","target":"zA"},
+            {"id":"e2","source":"zA","target":"oA"},
+            {"id":"e3","source":"iB","target":"zB"},
+            {"id":"e4","source":"zB","target":"oB"}
+        ]
+    }"#);
+    assert_eq!(reordered.shape, vec![2, 2, 2, 2]);
+    assert_relative_eq!(reordered.data[0].0, 1.0, epsilon = 1e-10);
+    assert_relative_eq!(reordered.data[9].0, 1.0, epsilon = 1e-10);
+    assert_relative_eq!(reordered.data[6].0, -1.0, epsilon = 1e-10);
+    assert_relative_eq!(reordered.data[15].0, -1.0, epsilon = 1e-10);
+
+    // The two arrangements must differ — otherwise `order` isn't driving
+    // anything. Indices 5/6/9/10 are exactly where they diverge.
+    assert_ne!(baseline.data[5].0, reordered.data[5].0);
+    assert_ne!(baseline.data[6].0, reordered.data[6].0);
+    assert_ne!(baseline.data[9].0, reordered.data[9].0);
+    assert_ne!(baseline.data[10].0, reordered.data[10].0);
+}
+
 // ---- Error paths ----------------------------------------------------------
 
 #[test]

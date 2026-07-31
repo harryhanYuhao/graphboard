@@ -7,6 +7,7 @@ import {
   DEFAULT_VERTEX_TYPE,
   TRIANGLE_CLIP_PATH,
   VERTEX_TYPE_MAP,
+  isBoundaryVertex,
   isDirectionalVertex,
 } from "@/lib/graph/vertex-types";
 import { useGraphStore } from "@/store/graph-store";
@@ -92,6 +93,31 @@ export function VertexNode({
         labelEditorRef.current?.startEditing();
       }}
     >
+      {/* Order badge for boundary vertices (input / output). Placed in
+          the OUTER non-rotated wrapper (not the inner rotated one) so it
+          stays screen-upright at any rotation — a number that spins with
+          the vertex would be unreadable. Rendered only when `order` is a
+          finite number; legacy docs with unset `order` still show the
+          node itself, just without a (potentially misleading) number.
+          `pointer-events-none` keeps clicks/drags routed to the body and
+          React Flow. Input pins top-left (it clusters at the left canvas
+          edge), output pins top-right — mirrors the blue/green palette
+          already used for these types. */}
+      {isBoundaryVertex(data.vertexType) &&
+        typeof data.order === "number" &&
+        Number.isFinite(data.order) && (
+          <div
+            className={[
+              "pointer-events-none absolute top-0 z-10 flex min-w-[0.9rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white",
+              data.vertexType === "input"
+                ? "left-0 -translate-x-1/2 -translate-y-1/2 bg-blue-600"
+                : "right-0 translate-x-1/2 -translate-y-1/2 bg-green-600",
+            ].join(" ")}
+          >
+            {data.order}
+          </div>
+        )}
+
       <div
         className="relative"
         style={{

@@ -127,6 +127,7 @@ fn struct_can_be_built_and_named_directly() {
         data: zxw::FrontendVertexData {
             label: "label".into(),
             vertex_type: VertexType::Empty,
+            order: None,
         },
     };
 }
@@ -299,4 +300,45 @@ fn negative_and_large_handle_indices_deserialize() {
         serde_json::from_str::<FrontendGraphSlice>(negative).is_err(),
         "negative handle index must be rejected (u32)"
     );
+}
+
+#[test]
+fn vertex_order_field_round_trips_and_defaults_to_none() {
+    // `order` is an optional boundary-ordering field. Three contract
+    // points: (a) present values deserialize; (b) absent values default
+    // to `None` (backward compat with pre-`order` documents); (c)
+    // `None` re-serializes with the field omitted entirely, so output
+    // stays byte-compatible with the frontend's payload shape.
+    let json = r#"{
+        "nodes": [
+            {"id":"i0","data":{"label":"","vertexType":"input","order":0}},
+            {"id":"i1","data":{"label":"","vertexType":"input","order":1}},
+            {"id":"z","data":{"label":"","vertexType":"z"}}
+        ],
+        "edges": []
+    }"#;
+    let slice: FrontendGraphSlice = serde_json::from_str(json).unwrap();
+    assert_eq!(slice.nodes[0].data.order, Some(0));
+    assert_eq!(slice.nodes[1].data.order, Some(1));
+    // Non-boundary (and any node without the field) defaults to None.
+    assert_eq!(slice.nodes[2].data.order, None);
+
+    // Re-serializing a `None` order omits the key (skip_serializing_if).
+    let out = serde_json::to_string(&slice).unwrap();
+    assert!(
+        out.contains(r#""order":0"#),
+        "set order must serialize: {out}"
+    );
+    assert!(
+        !out.contains(r#""order":null"#),
+        "None order must be omitted, not null: {out}"
+    );
+
+    // Absent field deserializes to None — old documents load unchanged.
+    let legacy = r#"{
+        "nodes": [{"id":"i","data":{"label":"","vertexType":"input"}}],
+        "edges": []
+    }"#;
+    let legacy_slice: FrontendGraphSlice = serde_json::from_str(legacy).unwrap();
+    assert_eq!(legacy_slice.nodes[0].data.order, None);
 }
