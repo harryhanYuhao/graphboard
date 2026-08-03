@@ -59,11 +59,11 @@ describe("setMode", () => {
 });
 
 describe("addVertexAt", () => {
-  it("appends a new node at the given position", () => {
+  it("appends a new node at the given position, snapped to the grid", () => {
     useGraphStore.getState().addVertexAt({ x: 50, y: 75 });
     const nodes = useGraphStore.getState().nodes;
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].position).toEqual({ x: 50, y: 75 });
+    expect(nodes[0].position).toEqual({ x: 48, y: 72 });
   });
 
   it("uses the currently selected vertex type", () => {
@@ -466,7 +466,8 @@ describe("save / hydrate round-trip via localStorage", () => {
     expect(state.title).toBe("From disk");
     expect(state.nodes).toHaveLength(1);
     expect(state.nodes[0].id).toBe("x");
-    expect(state.nodes[0].position).toEqual({ x: 5, y: 7 });
+    // Non-aligned disk positions snap to the grid on load.
+    expect(state.nodes[0].position).toEqual({ x: 0, y: 0 });
     expect(state.hasHydrated).toBe(true);
   });
 
@@ -534,6 +535,32 @@ describe("save / hydrate round-trip via localStorage", () => {
     const secondRaw = localStorage.getItem("graph-board-document")!;
     expect(JSON.parse(secondRaw).createdAt).toBe("2020-05-05T05:05:05.000Z");
   });
+
+  it("hydrate clears stale validationErrors from the prior session", () => {
+    // On reload the persisted doc comes back via `hydrate`; any compute-time
+    // errors left in the store must be wiped (they referenced a graph that no
+    // longer exists, and `importJson.applyImport` mirrors the same reset).
+    localStorage.setItem(
+      "graph-board-document",
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "local-document",
+        title: "Reload",
+        graph: { nodes: [], edges: [] },
+        view: { nodes: [], edges: [] },
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      }),
+    );
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "stale", vertexId: "w1" },
+    ]);
+    expect(useGraphStore.getState().validationErrors).not.toEqual({});
+
+    useGraphStore.getState().hydrate();
+
+    expect(useGraphStore.getState().validationErrors).toEqual({});
+  });
 });
 
 describe("reset", () => {
@@ -564,6 +591,19 @@ describe("reset", () => {
     // Reset writes the empty doc so a refresh keeps the cleared state.
     expect(localStorage.getItem("graph-board-document")).not.toBeNull();
   });
+
+  it("clears validationErrors from the last compute", () => {
+    localStorage.clear();
+    // Seed the store with errors as if a prior compute had flagged a vertex.
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "a", vertexId: "w1" },
+    ]);
+    expect(useGraphStore.getState().validationErrors).not.toEqual({});
+
+    useGraphStore.getState().reset();
+
+    expect(useGraphStore.getState().validationErrors).toEqual({});
+  });
 });
 
 describe("onNodesChange / onEdgesChange (visual vs structural split)", () => {
@@ -579,11 +619,33 @@ describe("onNodesChange / onEdgesChange (visual vs structural split)", () => {
   it("applies a 'position' change without recording it in the undo stack", () => {
     useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
     const pastBefore = useGraphStore.temporal.getState().pastStates.length;
+    // Grid-aligned target so the snap is a no-op; the point of this test is
+    // the undo-stack behavior, not the snap.
     useGraphStore
       .getState()
-      .onNodesChange([{ id: "a", type: "position", position: { x: 100, y: 100 } }]);
-    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 100, y: 100 });
+      .onNodesChange([{ id: "a", type: "position", position: { x: 96, y: 96 } }]);
+    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 96, y: 96 });
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(pastBefore);
+  });
+
+  it("snaps a 'position' change to the nearest grid intersection", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
+    // {50, 30} snaps to {48, 24}.
+    useGraphStore
+      .getState()
+      .onNodesChange([{ id: "a", type: "position", position: { x: 50, y: 30 } }]);
+    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 48, y: 24 });
+  });
+
+  it("leaves non-position changes (select, dimensions) untouched by snapping", () => {
+    useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
+    useGraphStore.getState().onNodesChange([
+      { id: "a", type: "select", selected: true },
+      { id: "a", type: "dimensions", dimensions: { width: 30, height: 30 } },
+    ]);
+    const node = useGraphStore.getState().nodes[0];
+    expect(node.selected).toBe(true);
+    expect(node.position).toEqual({ x: 0, y: 0 });
   });
 
   it("records 'remove' changes in the undo stack", () => {
@@ -624,7 +686,7 @@ describe("drag gesture (onNodeDragStart/Stop)", () => {
     useGraphStore.setState({
       nodes: [
         makeVertex("a", { position: { x: 0, y: 0 } }),
-        makeVertex("b", { position: { x: 50, y: 0 } }),
+        makeVertex("b", { position: { x: 48, y: 0 } }),
       ],
       edges: [],
     });
@@ -635,7 +697,7 @@ describe("drag gesture (onNodeDragStart/Stop)", () => {
     // Visual changes during the drag must not land on the undo stack.
     useGraphStore
       .getState()
-      .onNodesChange([{ id: "a", type: "position", position: { x: 100, y: 100 } }]);
+      .onNodesChange([{ id: "a", type: "position", position: { x: 96, y: 96 } }]);
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
 
     useGraphStore.getState().onNodeDragStop();
@@ -644,7 +706,7 @@ describe("drag gesture (onNodeDragStart/Stop)", () => {
     expect(pastAfter.length).toBe(baseline + 1);
     expect(pastAfter[pastAfter.length - 1].nodes.map((n) => n.position)).toEqual([
       { x: 0, y: 0 },
-      { x: 50, y: 0 },
+      { x: 48, y: 0 },
     ]);
   });
 });
@@ -680,6 +742,21 @@ describe("validation errors", () => {
     expect(errs.h1).toHaveLength(1);
   });
 
+  it("setValidationErrors replaces (does not merge with) the prior map", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "old", vertexId: "w1" },
+    ]);
+    // A new compute with a different offending vertex must drop w1.
+    useGraphStore.getState().setValidationErrors([
+      { kind: "h-box-arity", message: "new", vertexId: "h1" },
+    ]);
+    const errs = useGraphStore.getState().validationErrors;
+    expect(errs).toEqual({
+      h1: [{ kind: "h-box-arity", message: "new", vertexId: "h1" }],
+    });
+    expect(errs.w1).toBeUndefined();
+  });
+
   it("setValidationErrors drops errors without a vertexId", () => {
     useGraphStore.getState().setValidationErrors([
       { kind: "w-input-count", message: "a", vertexId: "w1" },
@@ -712,5 +789,74 @@ describe("validation errors", () => {
     ]);
     useGraphStore.getState().clearValidationErrors();
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
+  });
+
+  // Edge cases the existing tests don't pin: duplicate ids collapse into one
+  // bucket, a large batch still groups correctly, and — the load-bearing one —
+  // an error with an EMPTY-STRING vertexId cannot be attributed to a node, so
+  // it must be dropped just like a missing vertexId (otherwise a "" key
+  // lingers in the map forever and node renderers never select it).
+  it("setValidationErrors collapses duplicate vertexIds into one bucket", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "1", vertexId: "w1" },
+      { kind: "w-output-count", message: "2", vertexId: "w1" },
+      { kind: "w-input-count", message: "3", vertexId: "w1" },
+    ]);
+    const errs = useGraphStore.getState().validationErrors;
+    expect(Object.keys(errs)).toEqual(["w1"]);
+    expect(errs.w1).toHaveLength(3);
+  });
+
+  it("setValidationErrors groups a large batch across many vertices", () => {
+    const batch = [];
+    for (let i = 0; i < 50; i++) {
+      batch.push({
+        kind: "w-input-count" as const,
+        message: `err ${i}`,
+        vertexId: `v${i % 10}`,
+      });
+    }
+    useGraphStore.getState().setValidationErrors(batch);
+    const errs = useGraphStore.getState().validationErrors;
+    // 10 distinct vertex ids, 5 errors each.
+    expect(Object.keys(errs).sort()).toEqual(
+      Array.from({ length: 10 }, (_, i) => `v${i}`),
+    );
+    for (let i = 0; i < 10; i++) {
+      expect(errs[`v${i}`]).toHaveLength(5);
+    }
+  });
+
+  it("setValidationErrors drops errors with an empty-string vertexId", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "real", vertexId: "w1" },
+      { kind: "w-input-count", message: "empty-string id", vertexId: "" },
+    ]);
+    const errs = useGraphStore.getState().validationErrors;
+    expect(errs).toEqual({
+      w1: [{ kind: "w-input-count", message: "real", vertexId: "w1" }],
+    });
+    expect(errs[""]).toBeUndefined();
+  });
+
+  // A graph mutation between two error sets must not leak the (now-stale)
+  // errors into the undo snapshot. `partialize` only captures `{nodes,edges}`,
+  // but this pins that contract end-to-end: a real vertex add followed by an
+  // error clear should leave exactly one undo entry (for the add), with that
+  // snapshot carrying NO validationErrors.
+  it("a graph mutation between error sets does not snapshot the errors", () => {
+    useGraphStore.getState().setValidationErrors([
+      { kind: "w-input-count", message: "a", vertexId: "w1" },
+    ]);
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+
+    useGraphStore.getState().addVertexAt({ x: 1, y: 1 });
+    useGraphStore.getState().setValidationErrors([]);
+
+    const past = useGraphStore.temporal.getState().pastStates;
+    expect(past.length).toBe(baseline + 1);
+    // The snapshot for the add must not carry validationErrors at all.
+    const snapshot = past[past.length - 1];
+    expect((snapshot as { validationErrors?: unknown }).validationErrors).toBeUndefined();
   });
 });

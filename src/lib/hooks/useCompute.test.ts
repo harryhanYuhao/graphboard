@@ -80,6 +80,45 @@ describe("useCompute — validation gate", () => {
     expect(useGraphStore.getState().validationErrors).toEqual({});
   });
 
+  it("a subsequent valid compute clears errors from a prior invalid one", () => {
+    computeTensorMock.mockResolvedValue({
+      shape: [],
+      data: [[1, 0]],
+      warnings: [],
+      inputCount: 0,
+      outputCount: 0,
+    });
+
+    // First: invalid graph → errors published, worker not called.
+    useGraphStore.setState({
+      nodes: [makeVertexWith("w", { data: { vertexType: "w" } })],
+    });
+    const { result } = renderHook(() => useCompute());
+    act(() => result.current.requestCompute());
+    expect(computeTensorMock).not.toHaveBeenCalled();
+    expect(useGraphStore.getState().validationErrors.w).toBeDefined();
+
+    // Now fix the graph (give the W proper input + 2 outputs) and recompute.
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+    });
+    act(() => result.current.requestCompute());
+
+    // The prior error is gone; the map is fully cleared.
+    expect(useGraphStore.getState().validationErrors).toEqual({});
+    expect(computeTensorMock).toHaveBeenCalledTimes(1);
+  });
+
   it("clears progress when surfacing a validation error", () => {
     useGraphStore.setState({
       nodes: [makeVertexWith("h", { data: { vertexType: "h" } })],
@@ -113,6 +152,140 @@ describe("useCompute — validation gate", () => {
       });
       expect(unhandled).toHaveLength(0);
     } finally {
+      process.off("unhandledRejection", handler);
+    }
+  });
+
+  // Regression: errors seeded into the store via setState (e.g. left over by
+  // a previous mount) must be cleared on a valid compute. The validation
+  // gate publishes [] BEFORE calling the worker, so no stale error can linger
+  // even when the prior errors didn't come from a requestCompute call.
+  it("a valid compute clears errors that were seeded directly in the store", () => {
+    computeTensorMock.mockResolvedValue({
+      shape: [],
+      data: [[1, 0]],
+      warnings: [],
+      inputCount: 0,
+      outputCount: 0,
+    });
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+      // Errors planted as if from an earlier, different compute.
+      validationErrors: {
+        w: [{ kind: "w-input-count", message: "stale", vertexId: "w" }],
+      },
+    });
+
+    const { result } = renderHook(() => useCompute());
+    act(() => result.current.requestCompute());
+
+    expect(computeTensorMock).toHaveBeenCalledTimes(1);
+    // Stale errors wiped before the worker was even called.
+    expect(useGraphStore.getState().validationErrors).toEqual({});
+  });
+
+  // The validation gate clears errors BEFORE invoking the worker. So if
+  // validation passes but the worker later rejects, the store stays empty —
+  // no stale error lingers to mislead the user into thinking the structure
+  // was the problem.
+  it("a worker rejection (after valid validation) leaves the error map empty", async () => {
+    computeTensorMock.mockRejectedValue(
+      new ComputeError("unknown", "wasm exploded"),
+    );
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+    });
+
+    const { result } = renderHook(() => useCompute());
+    act(() => result.current.requestCompute());
+
+    // Worker was called (validation passed), and the store is empty even
+    // though the compute is about to fail.
+    expect(computeTensorMock).toHaveBeenCalledTimes(1);
+    expect(useGraphStore.getState().validationErrors).toEqual({});
+
+    // Settle the rejection so it doesn't surface as an unhandled rejection
+    // during this test (the dialog's `.catch` would do this in the app).
+    await act(async () => {
+      try {
+        await result.current.computePromise;
+      } catch {
+        /* swallowed for test hygiene */
+      }
+    });
+  });
+
+  // The worker promise (line 91) is NOT pre-caught, unlike the validation
+  // path which attaches `rejected.catch(() => {})` eagerly. This test pins
+  // that the worker path doesn't surface as an unhandled rejection in the
+  // app's normal lifecycle. NOTE: Node only fires `unhandledRejection` once
+  // a rejected promise is GC'd with no handler. Here (and in the app) React
+  // state holds `computePromise`, keeping it alive — so the rejection is
+  // effectively absorbed by the held reference until the dialog's effect
+  // attaches its `.catch`. This passes for that reason, not because the
+  // promise is eagerly caught. The asymmetry vs the validation path is a
+  // defense-in-depth smell worth noting, but not a live bug under this
+  // holding-reference invariant.
+  it("does not create an unhandled rejection when the worker rejects", async () => {
+    computeTensorMock.mockRejectedValue(
+      new ComputeError("unknown", "wasm exploded"),
+    );
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+    });
+
+    const unhandled: unknown[] = [];
+    const handler = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", handler);
+
+    let result: ReturnType<typeof renderHook<ReturnType<typeof useCompute>>["result"]> | null = null;
+    try {
+      const rendered = renderHook(() => useCompute());
+      result = rendered.result;
+      await act(async () => {
+        rendered.result.current.requestCompute();
+        // Flush microtasks so any rejection settles before assertions.
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(unhandled).toHaveLength(0);
+    } finally {
+      // Drain the promise so later tests don't see the rejection.
+      try {
+        if (result) await result.current.computePromise;
+      } catch {
+        /* drained */
+      }
       process.off("unhandledRejection", handler);
     }
   });

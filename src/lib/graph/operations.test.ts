@@ -9,10 +9,12 @@ import {
   createGraphEdge,
   createVertexNode,
   deleteSelectedElements,
+  GRID_SIZE,
   getSelectedSubgraph,
   PASTE_OFFSET_STEP,
   pasteSubgraph,
   selectAllElements,
+  snapPosition,
 } from "./operations";
 import { EDGE_TYPES, HANDLE_IDS, type VertexNode } from "./types";
 import { makeEdge, makeVertex } from "@/test-utils/factories";
@@ -431,5 +433,35 @@ describe("computeVertexClick", () => {
       });
       expect(result?.edges?.[0].targetHandle).toBe(HANDLE_IDS.top);
     });
+  });
+});
+describe("snapPosition", () => {
+  it("leaves grid-aligned positions unchanged (incl. the origin)", () => {
+    expect(snapPosition({ x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
+    expect(snapPosition({ x: GRID_SIZE, y: GRID_SIZE })).toEqual({
+      x: GRID_SIZE,
+      y: GRID_SIZE,
+    });
+    expect(snapPosition({ x: 48, y: 72 })).toEqual({ x: 48, y: 72 });
+  });
+
+  it("rounds to the nearest grid intersection", () => {
+    // 12 is exactly half of 24 → rounds up.
+    expect(snapPosition({ x: 12, y: 12 })).toEqual({ x: 24, y: 24 });
+    // 11 rounds down to 0.
+    expect(snapPosition({ x: 11, y: 13 })).toEqual({ x: 0, y: 24 });
+  });
+
+  it("rounds negatives to the nearest intersection (-0 normalized to +0)", () => {
+    // -12/24 = -0.5 → Math.round(-0.5) = -0 ≡ +0; -36/24 = -1.5 → -1.
+    expect(snapPosition({ x: -12, y: -36 })).toEqual({ x: 0, y: -24 });
+    // -5/24 = -0.21 → 0.
+    expect(snapPosition({ x: -5, y: -5 })).toEqual({ x: 0, y: 0 });
+  });
+
+  it("does not mutate the input", () => {
+    const input = { x: 11, y: 13 };
+    snapPosition(input);
+    expect(input).toEqual({ x: 11, y: 13 });
   });
 });

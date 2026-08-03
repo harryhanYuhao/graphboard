@@ -468,14 +468,14 @@ describe("projectDocument / hydrateDocument (round-trip)", () => {
 
   it("preserves nodes, edges, labels, vertexType, source/target, and handles for a directional graph", () => {
     const nodes: VertexNode[] = [
-      makeVertex("a", { x: 10, y: 20 }),
+      makeVertex("a", { x: 0, y: 24 }),
       makeVertexWith("b", {
-        position: { x: 30, y: 40 },
+        position: { x: 24, y: 48 },
         rotation: 90,
         data: { label: "W0", vertexType: "w" },
       }),
       makeVertexWith("c", {
-        position: { x: 50, y: 60 },
+        position: { x: 48, y: 72 },
         data: { label: "AND", vertexType: "and" },
       }),
     ];
@@ -507,9 +507,9 @@ describe("projectDocument / hydrateDocument (round-trip)", () => {
       { label: "AND", vertexType: "and" },
     ]);
     expect(hydrated.nodes.map((n) => n.position)).toEqual([
-      { x: 10, y: 20 },
-      { x: 30, y: 40 },
-      { x: 50, y: 60 },
+      { x: 0, y: 24 },
+      { x: 24, y: 48 },
+      { x: 48, y: 72 },
     ]);
     expect(hydrated.edges.map((e) => `${e.source}->${e.target}`)).toEqual([
       "a->b",

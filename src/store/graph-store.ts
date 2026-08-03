@@ -28,6 +28,7 @@ import {
   pasteSubgraph,
   reorderBoundaryVertex,
   selectAllElements,
+  snapPosition,
   type VertexClickModifiers,
 } from "@/lib/graph/operations";
 import {
@@ -344,8 +345,18 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       onNodesChange: (changes) => {
+        // Snap incoming position changes to the grid before applying. This is
+        // the chokepoint for both drag ticks and programmatic moves; it stays
+        // undo-safe because drag ticks are excluded from the temporal stack
+        // (see applyReactiveFlowChanges) and React Flow recomputes position
+        // from the cursor each tick, so there's no feedback jitter.
+        const snapped = changes.map((c) =>
+          c.type === "position" && c.position
+            ? { ...c, position: snapPosition(c.position) }
+            : c,
+        );
         applyReactiveFlowChanges({
-          changes,
+          changes: snapped,
           getCurrent: () => get().nodes,
           apply: applyNodeChanges,
           setSlice: (nodes) => set({ nodes }),
@@ -363,7 +374,7 @@ export const useGraphStore = create<GraphStore>()(
 
       addVertexAt: (position) => {
         const vertexType = get().selectedVertexType;
-        const node = createVertexNode(position, vertexType);
+        const node = createVertexNode(snapPosition(position), vertexType);
 
         // Boundary vertices get an auto-assigned `order` at the end of
         // their group (inputs/outputs ordered independently); others
@@ -710,11 +721,13 @@ export const useGraphStore = create<GraphStore>()(
 
       // Group the flat error list by vertex id into a Record. Errors
       // without a `vertexId` (none today, but defended) are dropped —
-      // they can't be attributed to a rendered node.
+      // they can't be attributed to a rendered node. An empty-string id
+      // is dropped too: a node id is never `""`, so a "" bucket would
+      // linger in the map with no renderer to consume it.
       setValidationErrors: (errors) => {
         const grouped: Record<string, ValidationError[]> = {};
         for (const e of errors) {
-          if (e.vertexId === undefined) continue;
+          if (!e.vertexId) continue;
           (grouped[e.vertexId] ??= []).push(e);
         }
         set({ validationErrors: grouped });

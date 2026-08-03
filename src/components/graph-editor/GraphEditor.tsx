@@ -32,6 +32,7 @@ import {
   type GraphEdge,
   type VertexNode as VertexNodeType,
 } from "@/lib/graph/types";
+import { GRID_SIZE } from "@/lib/graph/operations";
 import { StraightCenterEdge } from "./StraightCenterEdge";
 
 function GraphEditorInner() {
@@ -194,7 +195,7 @@ function GraphEditorInner() {
         nodesConnectable={false}
         defaultViewport={{ x: 0, y: 0, zoom: 2 }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+        <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1} />
         <Controls />
         <MiniMap />
       </ReactFlow>

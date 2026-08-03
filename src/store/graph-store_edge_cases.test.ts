@@ -135,14 +135,15 @@ describe("drag gesture snapshot counting", () => {
 
     useGraphStore.getState().onNodeDragStart();
     // Several intermediate position ticks — all visual, all paused.
+    // (Grid-aligned so snapping is a no-op; this test is about undo counting.)
     useGraphStore.getState().onNodesChange([
-      { id: "a", type: "position", position: { x: 5, y: 5 } },
+      { id: "a", type: "position", position: { x: 24, y: 24 } },
     ]);
     useGraphStore.getState().onNodesChange([
-      { id: "a", type: "position", position: { x: 50, y: 50 } },
+      { id: "a", type: "position", position: { x: 48, y: 48 } },
     ]);
     useGraphStore.getState().onNodesChange([
-      { id: "a", type: "position", position: { x: 100, y: 100 } },
+      { id: "a", type: "position", position: { x: 96, y: 96 } },
     ]);
     // While active, nothing lands on the stack.
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
@@ -160,8 +161,8 @@ describe("drag gesture snapshot counting", () => {
     expect(last.nodes![0].position).toEqual({ x: 0, y: 0 });
     // The live node reflects the final drag position.
     expect(useGraphStore.getState().nodes[0].position).toEqual({
-      x: 100,
-      y: 100,
+      x: 96,
+      y: 96,
     });
   });
 
@@ -175,12 +176,12 @@ describe("drag gesture snapshot counting", () => {
 
     useGraphStore.getState().onNodeDragStart();
     useGraphStore.getState().onNodesChange([
-      { id: "a", type: "position", position: { x: 10, y: 10 } },
+      { id: "a", type: "position", position: { x: 24, y: 24 } },
     ]);
-    // Second begin without a stop — captures the current (10,10) state.
+    // Second begin without a stop — captures the current (24,24) state.
     useGraphStore.getState().onNodeDragStart();
     useGraphStore.getState().onNodesChange([
-      { id: "a", type: "position", position: { x: 20, y: 20 } },
+      { id: "a", type: "position", position: { x: 48, y: 48 } },
     ]);
     useGraphStore.getState().onNodeDragStop();
 
@@ -192,8 +193,8 @@ describe("drag gesture snapshot counting", () => {
       useGraphStore.temporal.getState().pastStates[
         useGraphStore.temporal.getState().pastStates.length - 1
       ]!;
-    // The snapshot is the second begin's pre-state (10,10), not the original.
-    expect(last.nodes![0].position).toEqual({ x: 10, y: 10 });
+    // The snapshot is the second begin's pre-state (24,24), not the original.
+    expect(last.nodes![0].position).toEqual({ x: 24, y: 24 });
   });
 });
 
@@ -582,7 +583,8 @@ describe("addVertexAt / selectedVertexType", () => {
     const nodes = useGraphStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0].data.vertexType).toBe("x");
-    expect(nodes[0].position).toEqual({ x: 1, y: 2 });
+    // Non-aligned positions snap to the grid on creation.
+    expect(nodes[0].position).toEqual({ x: 0, y: 0 });
   });
 
   it("undo after addVertexAt restores the pre-add state", () => {
@@ -859,8 +861,9 @@ describe("save → hydrate round-trip preserves nodes/edges/title", () => {
       title: "Round Trip",
       createdAt: "2020-03-03T03:03:03.000Z",
       nodes: [
-        makeVertex("a", { position: { x: 10, y: 20 } }),
-        makeVertex("b", { position: { x: 30, y: 40 }, rotation: 45 }),
+        // Grid-aligned positions so the round-trip is exact.
+        makeVertex("a", { position: { x: 0, y: 24 } }),
+        makeVertex("b", { position: { x: 24, y: 48 }, rotation: 45 }),
       ],
       edges: [makeEdge("e1", "a", "b")],
     });
@@ -876,8 +879,8 @@ describe("save → hydrate round-trip preserves nodes/edges/title", () => {
     expect(state.nodes.map((n) => n.id).sort()).toEqual(["a", "b"]);
     const a = state.nodes.find((n) => n.id === "a")!;
     const b = state.nodes.find((n) => n.id === "b")!;
-    expect(a.position).toEqual({ x: 10, y: 20 });
-    expect(b.position).toEqual({ x: 30, y: 40 });
+    expect(a.position).toEqual({ x: 0, y: 24 });
+    expect(b.position).toEqual({ x: 24, y: 48 });
     expect(b.rotation).toBe(45);
     expect(state.edges).toHaveLength(1);
     expect(state.hasHydrated).toBe(true);

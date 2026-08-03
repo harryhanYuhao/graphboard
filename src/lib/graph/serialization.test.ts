@@ -66,7 +66,7 @@ describe("projectDocument ↔ hydrateDocument", () => {
   };
 
   const baseNodes: VertexNode[] = [
-    { ...makeVertex("a", { x: 10, y: 20 }), rotation: 45 },
+    { ...makeVertex("a", { x: 0, y: 24 }), rotation: 45 },
     makeVertex("b", { x: 0, y: 0 }),
   ];
 
@@ -144,7 +144,7 @@ describe("projectDocument ↔ hydrateDocument", () => {
     const hydrated = hydrateDocument(doc);
     expect(hydrated.title).toBe(baseInput.title);
     expect(hydrated.nodes.map((n) => n.position)).toEqual([
-      { x: 10, y: 20 },
+      { x: 0, y: 24 },
       { x: 0, y: 0 },
     ]);
     expect(hydrated.nodes.map((n) => n.data.label)).toEqual(["", ""]);
@@ -201,7 +201,39 @@ describe("projectDocument ↔ hydrateDocument", () => {
     };
     const hydrated = hydrateDocument(doc);
     expect(hydrated.nodes[0].rotation).toBe(0);
-    expect(hydrated.nodes[0].position).toEqual({ x: 1, y: 2 });
+    // The {1,2} disk position snaps to {0,0} on hydrate.
+    expect(hydrated.nodes[0].position).toEqual({ x: 0, y: 0 });
+  });
+
+  it("snaps non-aligned disk positions to the grid on hydrate (migration)", () => {
+    // An old document written before snap-to-grid can carry arbitrary float
+    // positions; loading it should bring every vertex onto the lattice.
+    const doc: GraphDocument = {
+      schemaVersion: 1,
+      id: "local-document",
+      title: "Legacy",
+      graph: {
+        nodes: [
+          { id: "a", data: { label: "", vertexType: "z" } },
+          { id: "b", data: { label: "", vertexType: "z" } },
+        ],
+        edges: [],
+      },
+      view: {
+        nodes: [
+          { id: "a", position: { x: 11, y: 13 } },
+          { id: "b", position: { x: 50, y: -36 } },
+        ],
+        edges: [],
+      },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.nodes.map((n) => n.position)).toEqual([
+      { x: 0, y: 24 },
+      { x: 48, y: -24 },
+    ]);
   });
 
   it("restores directional 'top' handle on hydrate (W / And target)", () => {

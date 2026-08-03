@@ -18,6 +18,7 @@ import {
   type VertexNode,
   type VertexType,
 } from "./types";
+import { snapPosition } from "./operations";
 import { VERTEX_TYPE_MAP } from "./vertex-types";
 
 const LOCAL_STORAGE_KEY = "graph-board-document";
@@ -105,7 +106,9 @@ function hydrateNode(
   return {
     id: graphNode.id,
     type: "vertex",
-    position: view?.position ?? { x: 0, y: 0 },
+    // Snap on load so old/non-aligned docs migrate to the grid (mirrors
+    // `normalizeRotation` for rotation).
+    position: snapPosition(view?.position ?? { x: 0, y: 0 }),
     // Absent `rotation` (pre-rotation docs) hydrates as 0.
     rotation: normalizeRotation(view?.rotation ?? 0),
     data: graphNode.data,

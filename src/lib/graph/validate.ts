@@ -74,8 +74,14 @@ export function validateGraphForCompute(graph: GraphSlice): ValidationError[] {
   }
 
   // --- per-node structural checks ---
+  // Process each distinct vertex id once: a duplicated id is already flagged
+  // above, and re-running the structural checks on the extra records would
+  // multiply those errors (once per record) for the same vertex.
+  const checked = new Set<string>();
   for (const node of graph.nodes) {
     const id = node.id;
+    if (checked.has(id)) continue;
+    checked.add(id);
     const vt = node.data.vertexType;
     const deg = degree.get(id) ?? 0;
 

@@ -214,6 +214,25 @@ export function deleteSelectedElements(params: {
 // Per-paste translation step (flow-space units) so repeated pastes don't stack.
 export const PASTE_OFFSET_STEP = 24;
 
+// Grid spacing shared by the dot background, snapping, and paste offset.
+// Must match <Background gap={GRID_SIZE}> in GraphEditor.tsx.
+export const GRID_SIZE = 24;
+
+// Snap a flow-space position to the nearest grid intersection. Because nodes
+// use origin [0.5, 0.5], so we need to add GRID_SIZE/2.
+// -0.5 makes sure it round to the nearest intger.
+// The offest and width of the grid is passes a prop to <ReactFlow/> in GraphEditor.tsx
+// ReactFlow does have a snapToGrid prop, but this adds to some complexities with offset.
+export function snapPosition(position: { x: number; y: number }): {
+  x: number;
+  y: number;
+} {
+  return {
+    x: GRID_SIZE * Math.round(position.x / GRID_SIZE - 0.5) + GRID_SIZE / 2,
+    y: GRID_SIZE * Math.round(position.y / GRID_SIZE - 0.5) + GRID_SIZE / 2,
+  };
+}
+
 // ---- Click dispatch (add-edge mode) --------------------------------------
 //
 // Pure function for the six mutually-exclusive vertex-click cases (modifier,
