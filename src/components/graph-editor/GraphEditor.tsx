@@ -20,7 +20,7 @@ import { GraphToolbar } from "./GraphToolbar";
 import { VertexTypeMenu } from "./VertexTypeMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
-import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { HelpDialog } from "./HelpDialog";
 import { IntroGuideDialog } from "./IntroGuideDialog";
 import { ComputeResultDialog } from "./ComputeResultDialog";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
@@ -220,7 +220,7 @@ function GraphEditorInner() {
         onCancel={closeConfirm}
       />
 
-      <KeyboardShortcutsDialog
+      <HelpDialog
         isOpen={isHelpOpen}
         onClose={closeHelp}
         onShowIntro={openIntro}

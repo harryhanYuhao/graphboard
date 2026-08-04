@@ -1,2 +1,5 @@
 [build]
   command = "pnpm run build:wasm; pnpm run build"
+  publish = ".next/"
+  base = "./"
+

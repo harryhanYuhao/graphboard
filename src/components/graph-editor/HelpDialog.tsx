@@ -1,4 +1,4 @@
-// src/components/graph-editor/KeyboardShortcutsDialog.tsx
+// src/components/graph-editor/HelpDialogue.tsx
 //
 // Modal listing every editor shortcut. Sibling shape to `ConfirmationDialog`
 // (backdrop/Escape close, close button auto-focused, scrollable body). The
@@ -11,18 +11,18 @@ import { useEffect, useRef } from "react";
 import { GraduationCap, X } from "lucide-react";
 import { getShortcutGroups } from "@/lib/keyboard/shortcuts";
 
-interface KeyboardShortcutsDialogProps {
+interface HelpDialogProps {
   isOpen: boolean;
   onClose: () => void;
   /** Opens the intro guide; this dialog closes first so they don't stack. */
   onShowIntro?: () => void;
 }
 
-export function KeyboardShortcutsDialog({
+export function HelpDialog({
   isOpen,
   onClose,
   onShowIntro,
-}: KeyboardShortcutsDialogProps) {
+}: HelpDialogProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Focus the close button on open so Esc-to-close is one keypress away.

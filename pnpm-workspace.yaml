@@ -7,3 +7,7 @@ allowBuilds:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+packages:
+  - "**"
+  - "!doc"
+  - "!doc/**"

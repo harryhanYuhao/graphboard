@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     // wasm-pack output (Phase 2+). Generated JS/TS bindings — not
     // hand-written, not lint-worthy.
     "public/wasm/**",
+    "doc/**",
   ]),
 ]);
 
