@@ -20,6 +20,7 @@
 use crate::graph::VertexType;
 use crate::tensor::{Cplx, Tensor};
 use std::f64::consts::FRAC_1_SQRT_2; // 1/√2
+use std::f64::consts::SQRT_2;
 
 /// The 2×2 Hadamard matrix; used to build `h_box` and to derive X-basis tensors from Z-basis ones.
 fn hadamard() -> [[Cplx; 2]; 2] {
@@ -58,6 +59,7 @@ pub fn x_spider(arity: usize, phase: f64) -> Tensor {
     for axis in 0..arity {
         t.apply_2x2_to_axis(axis, h);
     }
+    t = t * Cplx::new(SQRT_2, 0.0).powi(arity as i32 - 2);
     t
 }
 

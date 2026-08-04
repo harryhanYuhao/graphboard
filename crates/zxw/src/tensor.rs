@@ -13,6 +13,7 @@
 use ndarray::{ArrayD, IxDyn};
 use num_complex::Complex;
 use std::fmt;
+use std::ops::{Add, Mul};
 
 pub type Cplx = Complex<f64>;
 
@@ -195,8 +196,7 @@ impl Tensor {
             .expect("outer_product: flatten b")
             .to_owned();
 
-        let mut out_flat =
-            ndarray::Array1::from_elem(a_total * b_total, Cplx::new(0.0, 0.0));
+        let mut out_flat = ndarray::Array1::from_elem(a_total * b_total, Cplx::new(0.0, 0.0));
         for i in 0..a_total {
             for j in 0..b_total {
                 out_flat[i * b_total + j] = a_flat[i] * b_flat[j];
@@ -215,7 +215,9 @@ impl Tensor {
     /// wrapper so callers in `contraction.rs` avoid pulling ndarray into scope.
     pub fn permuted_axes(self, perm: &[usize]) -> Tensor {
         let perm_dyn = IxDyn(perm);
-        Tensor { data: self.data.permuted_axes(perm_dyn) }
+        Tensor {
+            data: self.data.permuted_axes(perm_dyn),
+        }
     }
 
     /// Apply a 2×2 matrix `m` in place to one length-2 axis. Used by
@@ -263,13 +265,29 @@ impl Tensor {
     }
 }
 
-    /// Permutation moving `axis` to last, preserving relative order of the
-    /// others. E.g. ndim=4, axis=1 → `[0, 2, 3, 1]`.
+/// Permutation moving `axis` to last, preserving relative order of the
+/// others. E.g. ndim=4, axis=1 → `[0, 2, 3, 1]`.
 fn move_axis_to_last(ndim: usize, axis: usize) -> Vec<usize> {
     assert!(axis < ndim);
     let mut perm: Vec<usize> = (0..ndim).filter(|&i| i != axis).collect();
     perm.push(axis);
     perm
+}
+
+impl Mul<Cplx> for Tensor {
+    type Output = Self;
+    fn mul(self, rhs: Cplx) -> Self::Output {
+        let data = self.data.clone() * rhs;
+        Self { data }
+    }
+}
+
+impl Add<Tensor> for Tensor {
+    type Output = Self;
+    fn add(self, rhs: Tensor) -> Self::Output {
+        let data = self.data.clone() + rhs.data.clone();
+        Self { data }
+    }
 }
 
 #[cfg(test)]
@@ -286,12 +304,11 @@ mod tests {
     fn outer_product_shape_is_concatenation() {
         // (2,3) ⊗ (4,) → (2,3,4). Confirms the shape contract before
         // checking values.
-        let a = Tensor::from_array(
-            ndarray::ArrayD::from_elem(IxDyn(&[2, 3]), Cplx::new(1.0, 0.0)),
-        );
-        let b = Tensor::from_array(
-            ndarray::ArrayD::from_elem(IxDyn(&[4]), Cplx::new(2.0, 0.0)),
-        );
+        let a = Tensor::from_array(ndarray::ArrayD::from_elem(
+            IxDyn(&[2, 3]),
+            Cplx::new(1.0, 0.0),
+        ));
+        let b = Tensor::from_array(ndarray::ArrayD::from_elem(IxDyn(&[4]), Cplx::new(2.0, 0.0)));
         let r = a.outer_product(b);
         assert_eq!(r.shape(), &[2, 3, 4]);
     }
@@ -299,12 +316,8 @@ mod tests {
     #[test]
     fn outer_product_entries_are_pairwise_products() {
         // out[i, j] = a[i] * b[j].
-        let a = Tensor::from_array(
-            ndarray::arr1(&[c(1.0, 0.0), c(2.0, 0.0)]).into_dyn(),
-        );
-        let b = Tensor::from_array(
-            ndarray::arr1(&[c(3.0, 0.0), c(4.0, 0.0)]).into_dyn(),
-        );
+        let a = Tensor::from_array(ndarray::arr1(&[c(1.0, 0.0), c(2.0, 0.0)]).into_dyn());
+        let b = Tensor::from_array(ndarray::arr1(&[c(3.0, 0.0), c(4.0, 0.0)]).into_dyn());
         let r = a.outer_product(b);
         assert_eq!(r.shape(), &[2, 2]);
         assert_eq!(r.get(&[0, 0]), c(3.0, 0.0)); // 1·3
@@ -536,9 +549,8 @@ mod tests {
                 }
             }
         }
-        let t = Tensor::from_array(
-            ndarray::ArrayD::from_shape_vec(IxDyn(&[2, 3, 2]), values).unwrap(),
-        );
+        let t =
+            Tensor::from_array(ndarray::ArrayD::from_shape_vec(IxDyn(&[2, 3, 2]), values).unwrap());
         let r = t.trace(0, 2);
         assert_eq!(r.shape(), &[3], "rank-3 trace over two axes → rank-1");
         assert_eq!(r.get(&[0]), c(323., 0.));
@@ -579,9 +591,7 @@ mod tests {
     fn permuted_axes_on_rank_3_cycles_axes() {
         // (2,3,4) with perm [2,0,1] → shape (4,2,3). Shape-only check;
         // values are covered end-to-end by the contraction tests.
-        let t = Tensor::from_array(
-            ndarray::ArrayD::from_elem(IxDyn(&[2, 3, 4]), c(0., 0.)),
-        );
+        let t = Tensor::from_array(ndarray::ArrayD::from_elem(IxDyn(&[2, 3, 4]), c(0., 0.)));
         let r = t.permuted_axes(&[2, 0, 1]);
         assert_eq!(r.shape(), &[4, 2, 3]);
     }

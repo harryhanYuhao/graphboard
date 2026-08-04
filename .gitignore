@@ -51,3 +51,6 @@ public/wasm/
 
 # Local Netlify folder
 .netlify
+
+# Deepseek ai agents app
+.reasonix
