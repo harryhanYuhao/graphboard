@@ -6,13 +6,16 @@
 // `CURRENT_SCHEMA_VERSION` and updating `tests/tensor_correctness.rs`.
 //
 //   - spiders (`z`, `x`): `(0,…,0) → 1`, `(1,…,1) → e^{i·phase}`, mixed → 0. Unnormalized.
-//   - h_box: unitary `1/√2 · [[1,1],[1,-1]]`; the only v1 builder with a normalization factor.
+//   - h_box: unitary `1/√2 · [[1,1],[1,-1]]`.
+//   - x_spider: z_spider conjugated per leg by H, times `(√2)^(arity-2)`
+//     (standardized normalization; arity 2 is unchanged, arity 0 → half).
 //   - w_node: directional — axis 0 = input, axes 1..N = outputs. `|0⟩ → |00…0⟩`,
 //     `|1⟩ → single-hot superposition over outputs`. Unnormalized.
 //   - and_gate: unnormalized indicator (all-1s → 1, else 0).
 //   - z_box / x_box (v1): two-corner — `T[0,…,0] = 1`, `T[1,…,1] = phase`
 //     (the raw phase VALUE, not `e^{i·phase}`), else 0. Multi-phase deferred to Phase 6.
-//   - empty: scalar `1`.
+//   - empty: scalar `1` when isolated (0 legs); the 2×2 identity when wired
+//     with 2 legs (see `build_vertex_tensor`).
 //
 // X-basis builders (`x_spider`, `x_box`) derive from their Z-basis
 // counterparts by applying the Hadamard to each leg.
@@ -133,7 +136,9 @@ pub fn x_box(arity: usize, phase: f64) -> Tensor {
     t
 }
 
-/// The empty node: a 2-leg identity weight (multiplicative identity under contraction).
+/// The empty node: a 2-leg identity weight (multiplicative identity under
+/// contraction). An isolated empty node (0 legs) is the scalar `1` instead —
+/// see the arity-0 branch in `build_vertex_tensor`.
 pub fn empty() -> Tensor {
     let mut t = Tensor::zeros(&[2, 2]);
     *t.get_mut(&[0, 0]) = Cplx::new(1.0, 0.0);
@@ -163,7 +168,14 @@ pub fn build_vertex_tensor(vertex_type: VertexType, arity: usize, phase: f64) ->
         W => Some(w_node(arity.saturating_sub(1))),
         H => Some(h_box()),
         And => Some(and_gate(arity)),
-        Empty => Some(empty()),
+        // Wired (2 legs) → identity weight; isolated (0 legs) → scalar 1
+        // (plan §4.3 D3). Other arities mismatch the rank/degree check in
+        // contraction.rs and surface as `DegreeOverflow`.
+        Empty => Some(if arity == 0 {
+            Tensor::scalar(Cplx::new(1.0, 0.0))
+        } else {
+            empty()
+        }),
         Input | Output => None,
     }
 }
@@ -220,7 +232,7 @@ mod tests {
             (W, Some(2)),
             (H, Some(2)), // h_box always shape (2,2) regardless of arity
             (And, Some(2)),
-            (Empty, Some(2)), // scalar → rank
+            (Empty, Some(2)), // arity 2 → identity weight
             (Input, None),    // boundary, no tensor
             (Output, None),
         ];

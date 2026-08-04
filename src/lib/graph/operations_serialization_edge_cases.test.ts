@@ -507,9 +507,9 @@ describe("projectDocument / hydrateDocument (round-trip)", () => {
       { label: "AND", vertexType: "and" },
     ]);
     expect(hydrated.nodes.map((n) => n.position)).toEqual([
-      { x: 0, y: 24 },
-      { x: 24, y: 48 },
-      { x: 48, y: 72 },
+      { x: 12, y: 36 },
+      { x: 36, y: 60 },
+      { x: 60, y: 84 },
     ]);
     expect(hydrated.edges.map((e) => `${e.source}->${e.target}`)).toEqual([
       "a->b",

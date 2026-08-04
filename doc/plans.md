@@ -446,24 +446,25 @@ uniform contraction semantics.
   form (Hadamard applied per leg). Multi-phase boxes (one phase per
   diagonal corner, 2^arity independent values) are Phase 6; the label
   carries one expression today, so one corner value it is.
-- **empty:** scalar `1` (0 legs).
+- **empty:** scalar `1` when isolated (0 legs); the 2×2 identity when wired
+  with 2 legs (an identity "wire"). Other degrees are `DegreeOverflow`.
 
 | Builder | Tensor shape | Non-zero entries |
 |---|---|---|
 | `z_spider(arity, phase)` | `(2,)*arity` | `(0,0,…,0) → 1`, `(1,1,…,1) → e^{i·phase}` |
-| `x_spider(arity, phase)` | `(2,)*arity` | Same as Z but in X basis (H⊗…⊗H applied to Z spider). |
+| `x_spider(arity, phase)` | `(2,)*arity` | Same as Z but in X basis (H⊗…⊗H applied to Z spider), times `(√2)^(arity-2)` — standardized normalization (arity 2 unchanged; arity 0 → half). |
 | `w_node(num_outputs)` | `(2,)*(1+num_outputs)` | Directional: axis 0 = input, axes 1..N = outputs. `T[0,0,…,0]=1` (input \|0⟩→all outputs \|0⟩); `T[1, single-hot at output axis k]=1` for each k. Else 0. |
 | `h_box()` | `(2, 2)` | `1/√2 · [[1,1],[1,-1]]`. Fixed arity 2; for larger circuits the user chains H-boxes. |
 | `z_box(arity, phase: f64)` | `(2,)*arity` | Two-corner: `T[0,…,0]=1`, `T[1,…,1]=phase` (raw value, **not** `e^{i·phase}`), every other entry 0. |
 | `x_box(arity, phase: f64)` | `(2,)*arity` | Same but X basis (H⊗…⊗H applied to z_box). |
-| `empty()` | `[]` (scalar) | 1. Constant. |
+| `empty()` | `[]` (scalar) at arity 0; `(2, 2)` identity when wired | 1 (isolated) / I₂ (2 legs). Constant. |
 | `and_gate(arity)` | `(2,)*arity` | All-1s index → 1, else 0. |
 
 **Edge cases / decisions to surface:**
 
-- **Empty vertex** — see D3. Default plan: treat as scalar `1` (0 legs).
-  If you want it to be a 1-leg identity (i.e. a wire), say so and we'll
-  change it.
+- **Empty vertex** — decided: scalar `1` (0 legs) when isolated, 2×2
+  identity when wired with 2 legs. The 1-leg-wire alternative was not
+  chosen.
 - **H-box arity** — fixed at 2 today; if we want general Hadamards
   (n-arity controls) we'd add an `h_general(arity)`. Not for v1.
 - **Directional vertices (W, AND)** — the renderer draws them with a

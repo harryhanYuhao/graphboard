@@ -442,14 +442,15 @@ fn build_vertex_tensor_returns_some_for_every_generator() {
 // =====================================================================
 
 #[test]
-fn x_spider_arity0_equals_z_spider_arity0() {
-    // The per-leg Hadamard loop is empty at arity 0, so
-    // x_spider(0, φ) == z_spider(0, φ) == 1 + e^{iφ}.
+fn x_spider_arity0_scalar_is_half_z_spider_arity0() {
+    // No legs to Hadamard, so x_spider(0, φ) = z_spider(0, φ) · (√2)^(-2)
+    // = (1 + e^{iφ}) / 2 (the standardized normalization).
     let t = x_spider(0, FRAC_PI_2);
     assert_eq!(t.rank(), 0);
-    assert_eq_cplx!(c(1.0, 1.0), t.get(&[]));
+    assert_eq_cplx!(c(0.5, 0.5), t.get(&[]));
 
     let t_pi = x_spider(0, PI);
+    assert_eq!(t_pi.rank(), 0);
     assert_eq_cplx!(c(0.0, 0.0), t_pi.get(&[]));
 }
 

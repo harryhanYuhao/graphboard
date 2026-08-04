@@ -135,7 +135,7 @@ describe("drag gesture snapshot counting", () => {
 
     useGraphStore.getState().onNodeDragStart();
     // Several intermediate position ticks — all visual, all paused.
-    // (Grid-aligned so snapping is a no-op; this test is about undo counting.)
+    // (Snapped to dots as they land; this test is about undo counting.)
     useGraphStore.getState().onNodesChange([
       { id: "a", type: "position", position: { x: 24, y: 24 } },
     ]);
@@ -159,10 +159,10 @@ describe("drag gesture snapshot counting", () => {
         useGraphStore.temporal.getState().pastStates.length - 1
       ]!;
     expect(last.nodes![0].position).toEqual({ x: 0, y: 0 });
-    // The live node reflects the final drag position.
+    // The live node reflects the final drag position (96,96 → dot 108,108).
     expect(useGraphStore.getState().nodes[0].position).toEqual({
-      x: 96,
-      y: 96,
+      x: 108,
+      y: 108,
     });
   });
 
@@ -193,8 +193,9 @@ describe("drag gesture snapshot counting", () => {
       useGraphStore.temporal.getState().pastStates[
         useGraphStore.temporal.getState().pastStates.length - 1
       ]!;
-    // The snapshot is the second begin's pre-state (24,24), not the original.
-    expect(last.nodes![0].position).toEqual({ x: 24, y: 24 });
+    // The snapshot is the second begin's pre-state (36,36) — the first
+    // tick {24,24} snapped to the dot at 36 — not the original {0,0}.
+    expect(last.nodes![0].position).toEqual({ x: 36, y: 36 });
   });
 });
 
@@ -583,8 +584,8 @@ describe("addVertexAt / selectedVertexType", () => {
     const nodes = useGraphStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0].data.vertexType).toBe("x");
-    // Non-aligned positions snap to the grid on creation.
-    expect(nodes[0].position).toEqual({ x: 0, y: 0 });
+    // Non-aligned positions snap to the dots on creation ({1,2} → {12,12}).
+    expect(nodes[0].position).toEqual({ x: 12, y: 12 });
   });
 
   it("undo after addVertexAt restores the pre-add state", () => {
@@ -861,9 +862,9 @@ describe("save → hydrate round-trip preserves nodes/edges/title", () => {
       title: "Round Trip",
       createdAt: "2020-03-03T03:03:03.000Z",
       nodes: [
-        // Grid-aligned positions so the round-trip is exact.
-        makeVertex("a", { position: { x: 0, y: 24 } }),
-        makeVertex("b", { position: { x: 24, y: 48 }, rotation: 45 }),
+        // Dot-aligned positions so the round-trip is exact.
+        makeVertex("a", { position: { x: 12, y: 36 } }),
+        makeVertex("b", { position: { x: 36, y: 60 }, rotation: 45 }),
       ],
       edges: [makeEdge("e1", "a", "b")],
     });
@@ -879,8 +880,8 @@ describe("save → hydrate round-trip preserves nodes/edges/title", () => {
     expect(state.nodes.map((n) => n.id).sort()).toEqual(["a", "b"]);
     const a = state.nodes.find((n) => n.id === "a")!;
     const b = state.nodes.find((n) => n.id === "b")!;
-    expect(a.position).toEqual({ x: 0, y: 24 });
-    expect(b.position).toEqual({ x: 24, y: 48 });
+    expect(a.position).toEqual({ x: 12, y: 36 });
+    expect(b.position).toEqual({ x: 36, y: 60 });
     expect(b.rotation).toBe(45);
     expect(state.edges).toHaveLength(1);
     expect(state.hasHydrated).toBe(true);

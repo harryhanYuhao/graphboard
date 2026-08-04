@@ -144,8 +144,8 @@ describe("projectDocument ↔ hydrateDocument", () => {
     const hydrated = hydrateDocument(doc);
     expect(hydrated.title).toBe(baseInput.title);
     expect(hydrated.nodes.map((n) => n.position)).toEqual([
-      { x: 0, y: 24 },
-      { x: 0, y: 0 },
+      { x: 12, y: 36 },
+      { x: 12, y: 12 },
     ]);
     expect(hydrated.nodes.map((n) => n.data.label)).toEqual(["", ""]);
     expect(hydrated.edges.map((e) => `${e.source}->${e.target}`)).toEqual([
@@ -201,13 +201,15 @@ describe("projectDocument ↔ hydrateDocument", () => {
     };
     const hydrated = hydrateDocument(doc);
     expect(hydrated.nodes[0].rotation).toBe(0);
-    // The {1,2} disk position snaps to {0,0} on hydrate.
-    expect(hydrated.nodes[0].position).toEqual({ x: 0, y: 0 });
+    // The {1,2} disk position snaps to the first dot {12,12} on hydrate.
+    expect(hydrated.nodes[0].position).toEqual({ x: 12, y: 12 });
   });
 
-  it("snaps non-aligned disk positions to the grid on hydrate (migration)", () => {
+  it("snaps non-aligned disk positions to the dots on hydrate (migration)", () => {
     // An old document written before snap-to-grid can carry arbitrary float
-    // positions; loading it should bring every vertex onto the lattice.
+    // positions; loading it should bring every vertex onto a dot. Dots sit
+    // at GRID_SIZE/2 + k·GRID_SIZE (positions are top-left corners, so the
+    // GRID_SIZE/2 offset centers the body on a dot).
     const doc: GraphDocument = {
       schemaVersion: 1,
       id: "local-document",
@@ -230,9 +232,11 @@ describe("projectDocument ↔ hydrateDocument", () => {
       updatedAt: "2025-01-01T00:00:00.000Z",
     };
     const hydrated = hydrateDocument(doc);
+    // {11,13} → nearest dot {12,12}; {50,-36} → {60,-36} (50 is closest to
+    // the dot at 60, -36 is a dot itself).
     expect(hydrated.nodes.map((n) => n.position)).toEqual([
-      { x: 0, y: 24 },
-      { x: 48, y: -24 },
+      { x: 12, y: 12 },
+      { x: 60, y: -36 },
     ]);
   });
 

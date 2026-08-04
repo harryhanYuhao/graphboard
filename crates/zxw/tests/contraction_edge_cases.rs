@@ -9,18 +9,12 @@
 
 use approx::assert_relative_eq;
 use std::cell::RefCell;
-use zxw::{compute_tensor, ComputeError, FrontendGraphSlice};
+use zxw::{compute_tensor, FrontendGraphSlice};
 
 /// Parse JSON, run `compute_tensor`, return the result. Panics on error.
 fn compute(json: &str) -> zxw::TensorResult {
     let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
     compute_tensor(&graph, None).expect("compute_tensor should succeed")
-}
-
-/// Like `compute`, but expects a `ComputeError`.
-fn compute_err(json: &str) -> ComputeError {
-    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
-    compute_tensor(&graph, None).expect_err("compute_tensor should error")
 }
 
 /// Assert the tensor's complex entries match the expected `(re, im)` pairs
@@ -181,30 +175,23 @@ fn self_loop_plus_regular_edge_consumes_correct_leg_count() {
 }
 
 // ============================================================================
-// 6b. Self-loop on an arity-0 builder (empty) — rank/degree mismatch guard
+// 6b. Self-loop on the empty node — traces the 2-leg identity to scalar 2
 // ============================================================================
 //
-// `empty()` is always rank-0; a self-loop pushes its degree to 2 while the
-// tensor stays rank 0. The mismatch is caught at build time and surfaced as
-// `DegreeOverflow` rather than panicking in `Tensor::trace`.
+// `empty()` is the 2×2 identity when wired; a self-loop gives it degree 2,
+// so the build-time rank check passes and the self-loop traces: Tr(I₂) = 2,
+// the closed-loop value. Must not panic.
 
 #[test]
-fn self_loop_on_empty_node_is_rejected_not_panicked() {
+fn self_loop_on_empty_node_traces_to_dimension_two() {
     let json = r#"{
         "nodes": [{"id":"e","data":{"label":"","vertexType":"empty"}}],
         "edges": [{"id":"s","source":"e","target":"e"}]
     }"#;
-    let err = compute_err(json);
-    let ComputeError::DegreeOverflow {
-        vertex_id,
-        vertex_type,
-        degree,
-        max,
-    } = err;
-    assert_eq!(vertex_id, "e");
-    assert_eq!(vertex_type, zxw::VertexType::Empty);
-    assert_eq!(degree, 2, "self-loop → degree 2");
-    assert_eq!(max, 0, "empty() builder has rank 0");
+    let r = compute(json);
+    assert_eq!(r.shape, Vec::<usize>::new());
+    assert_relative_eq!(r.data[0].0, 2.0, epsilon = 1e-10);
+    assert_relative_eq!(r.data[0].1, 0.0, epsilon = 1e-10);
 }
 
 // ============================================================================

@@ -59,11 +59,12 @@ describe("setMode", () => {
 });
 
 describe("addVertexAt", () => {
-  it("appends a new node at the given position, snapped to the grid", () => {
+  it("appends a new node at the given position, snapped to the dots", () => {
     useGraphStore.getState().addVertexAt({ x: 50, y: 75 });
     const nodes = useGraphStore.getState().nodes;
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].position).toEqual({ x: 48, y: 72 });
+    // {50,75} → nearest dots {60,84} (dots at GRID_SIZE/2 + k·GRID_SIZE).
+    expect(nodes[0].position).toEqual({ x: 60, y: 84 });
   });
 
   it("uses the currently selected vertex type", () => {
@@ -466,8 +467,8 @@ describe("save / hydrate round-trip via localStorage", () => {
     expect(state.title).toBe("From disk");
     expect(state.nodes).toHaveLength(1);
     expect(state.nodes[0].id).toBe("x");
-    // Non-aligned disk positions snap to the grid on load.
-    expect(state.nodes[0].position).toEqual({ x: 0, y: 0 });
+    // Non-aligned disk positions snap to the dots on load.
+    expect(state.nodes[0].position).toEqual({ x: 12, y: 12 });
     expect(state.hasHydrated).toBe(true);
   });
 
@@ -619,22 +620,22 @@ describe("onNodesChange / onEdgesChange (visual vs structural split)", () => {
   it("applies a 'position' change without recording it in the undo stack", () => {
     useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
     const pastBefore = useGraphStore.temporal.getState().pastStates.length;
-    // Grid-aligned target so the snap is a no-op; the point of this test is
-    // the undo-stack behavior, not the snap.
+    // Dot-aligned target ({108,108} = 12 + 4·24) so the snap is a no-op;
+    // the point of this test is the undo-stack behavior, not the snap.
     useGraphStore
       .getState()
-      .onNodesChange([{ id: "a", type: "position", position: { x: 96, y: 96 } }]);
-    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 96, y: 96 });
+      .onNodesChange([{ id: "a", type: "position", position: { x: 108, y: 108 } }]);
+    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 108, y: 108 });
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(pastBefore);
   });
 
-  it("snaps a 'position' change to the nearest grid intersection", () => {
+  it("snaps a 'position' change to the nearest dot", () => {
     useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
-    // {50, 30} snaps to {48, 24}.
+    // {50, 30} snaps to {60, 36} (nearest dots).
     useGraphStore
       .getState()
       .onNodesChange([{ id: "a", type: "position", position: { x: 50, y: 30 } }]);
-    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 48, y: 24 });
+    expect(useGraphStore.getState().nodes[0].position).toEqual({ x: 60, y: 36 });
   });
 
   it("leaves non-position changes (select, dimensions) untouched by snapping", () => {

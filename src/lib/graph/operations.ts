@@ -218,11 +218,11 @@ export const PASTE_OFFSET_STEP = 24;
 // Must match <Background gap={GRID_SIZE}> in GraphEditor.tsx.
 export const GRID_SIZE = 24;
 
-// Snap a flow-space position to the nearest grid intersection. Because nodes
-// use origin [0.5, 0.5], so we need to add GRID_SIZE/2.
-// -0.5 makes sure it round to the nearest intger.
-// The offest and width of the grid is passes a prop to <ReactFlow/> in GraphEditor.tsx
-// ReactFlow does have a snapToGrid prop, but this adds to some complexities with offset.
+// Snap a flow-space position to the nearest grid dot. React Flow positions
+// nodes by their top-left corner (default origin [0,0]) while the vertex
+// body is ~GRID_SIZE across, so the GRID_SIZE/2 offset centers the node on
+// a Background dot (dots render at multiples of `gap` with default offset
+// 0). Snap targets are GRID_SIZE/2 + k·GRID_SIZE.
 export function snapPosition(position: { x: number; y: number }): {
   x: number;
   y: number;

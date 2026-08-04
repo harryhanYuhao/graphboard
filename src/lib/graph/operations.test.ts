@@ -436,27 +436,29 @@ describe("computeVertexClick", () => {
   });
 });
 describe("snapPosition", () => {
-  it("leaves grid-aligned positions unchanged (incl. the origin)", () => {
-    expect(snapPosition({ x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
-    expect(snapPosition({ x: GRID_SIZE, y: GRID_SIZE })).toEqual({
-      x: GRID_SIZE,
-      y: GRID_SIZE,
-    });
-    expect(snapPosition({ x: 48, y: 72 })).toEqual({ x: 48, y: 72 });
+  // Dots render at multiples of GRID_SIZE (Background dot pattern, default
+  // offset 0). Positions are the node's top-left corner, so snap targets
+  // GRID_SIZE/2 + k·GRID_SIZE center a ~GRID_SIZE node body on the dots.
+  it("leaves dot-aligned positions unchanged (incl. the origin)", () => {
+    expect(snapPosition({ x: 12, y: 12 })).toEqual({ x: 12, y: 12 });
+    expect(snapPosition({ x: 36, y: 36 })).toEqual({ x: 36, y: 36 });
+    expect(snapPosition({ x: 60, y: 84 })).toEqual({ x: 60, y: 84 });
+    // The origin itself sits between dots and snaps to the first dot.
+    expect(snapPosition({ x: 0, y: 0 })).toEqual({ x: 12, y: 12 });
   });
 
-  it("rounds to the nearest grid intersection", () => {
-    // 12 is exactly half of 24 → rounds up.
-    expect(snapPosition({ x: 12, y: 12 })).toEqual({ x: 24, y: 24 });
-    // 11 rounds down to 0.
-    expect(snapPosition({ x: 11, y: 13 })).toEqual({ x: 0, y: 24 });
+  it("rounds to the nearest dot", () => {
+    // 23 is closest to the dot at 12; 25 to the one at 36.
+    expect(snapPosition({ x: 23, y: 25 })).toEqual({ x: 12, y: 36 });
+    // Exactly on a dot already.
+    expect(snapPosition({ x: 12, y: 36 })).toEqual({ x: 12, y: 36 });
   });
 
-  it("rounds negatives to the nearest intersection (-0 normalized to +0)", () => {
-    // -12/24 = -0.5 → Math.round(-0.5) = -0 ≡ +0; -36/24 = -1.5 → -1.
-    expect(snapPosition({ x: -12, y: -36 })).toEqual({ x: 0, y: -24 });
-    // -5/24 = -0.21 → 0.
-    expect(snapPosition({ x: -5, y: -5 })).toEqual({ x: 0, y: 0 });
+  it("rounds negatives to the nearest dot", () => {
+    // -12 and -36 are dots themselves.
+    expect(snapPosition({ x: -12, y: -36 })).toEqual({ x: -12, y: -36 });
+    // -5 is closer to the dot at -12 than to the one at 12.
+    expect(snapPosition({ x: -5, y: -5 })).toEqual({ x: -12, y: -12 });
   });
 
   it("does not mutate the input", () => {

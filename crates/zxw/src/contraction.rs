@@ -316,8 +316,9 @@ fn build_initial_groups(
         let tensor =
             build_vertex_tensor(vt, deg, phase).expect("non-boundary type must build a tensor");
         // Builder rank must match degree so free_axes lines up with the
-        // tensor's axes. Some builders return fixed rank (`empty` → 0,
-        // `h_box` → 2); a mismatch here would panic a later trace.
+        // tensor's axes. Fixed-rank builders (`empty` → 0 when isolated,
+        // 2 when wired; `h_box` → 2) mismatch other degrees and surface
+        // as `DegreeOverflow` here.
         let rank = tensor.rank();
         if rank != deg {
             return Err(ComputeError::DegreeOverflow {

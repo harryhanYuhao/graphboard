@@ -2,7 +2,7 @@
 
 Guidance for AI agents. 
 
-## THIS SECTION IS WRITTEN BY HUMAN. DO NOT REMOVE
+## THIS SECTION IS WRITTEN BY HUMANS. DO NOT TOUCH
 
 Here are the general guidelines
 
@@ -35,6 +35,14 @@ Uses **pnpm** (see `pnpm-workspace.yaml`).
   Pure-function helpers and store actions are covered; renderer
   components have a thin test surface (snapshotting a styled body
   pixel-for-pixel isn't worth the maintenance burden today).
+- `pnpm build:wasm` — `wasm-pack` build of `crates/zxw` →
+  `public/wasm/zxw/` (gitignored). Run before `pnpm build` and after any
+  Rust change.
+- `pnpm ping:wasm` — smoke test of the WASM pipeline
+  (`scripts/ping-wasm.mts`).
+- `cargo test -p zxw` — Rust compute-layer tests (native, no WASM).
+- Deploy (manual): `pnx netlify deploy --prod`; `netlify.toml` runs
+  `build:wasm` + `build`.
 
 Typecheck runs through `next build` and the VS Code TS SDK
 (`.vscode/settings.json`); no dedicated `typecheck` script.
@@ -47,7 +55,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
   Flow `<Handle>`s), `VertexLabelEditor.tsx` (inline phase/text edit), plus
   `VertexPropertyPanel.tsx`, `VertexSwatch.tsx`, `VertexTypeMenu.tsx`,
   `GraphToolbar.tsx`, dialog components (`ConfirmationDialog`,
-  `KeyboardShortcutsDialog` — the Help page, with a button that reopens the
+  `HelpDialog.tsx` — the Help page, with a button that reopens the
   `IntroGuideDialog` first-run stepper, `ComputeResultDialog`).
 - `src/lib/graph/edge-geometry.ts` — pure edge-endpoint math (rotation-aware)
   for `StraightCenterEdge`. Keep geometry here, not in the component, so it
@@ -60,8 +68,12 @@ Typecheck runs through `next build` and the VS Code TS SDK
   (e.g. `selectSelectedNodeIds`, `hasSelection`).
 - `src/lib/graph/` — pure graph logic: `types.ts`, `operations.ts`
   (create/delete), `serialization.ts` (document + `localStorage`),
-  `vertex-types.ts` (ZXW generator metadata).
-- `src/lib/hooks/` — small reusable React hooks (e.g. `useTrackedDraft`).
+  `vertex-types.ts` (ZXW generator metadata), `validate.ts`
+  (pre-compute structural checks ported from the Rust `ComputeError`s).
+- `src/lib/hooks/` — small reusable React hooks: `useCompute` (compute
+  lifecycle — the toolbar button and Cmd/Ctrl+Enter call `requestCompute`,
+  which surfaces progress + result-dialog state), `useTrackedDraft`,
+  `useKatexReady`.
 - `src/lib/onboarding/intro.ts` — first-run gate for the intro guide
   (`hasSeenIntro` / `markIntroSeen` / `shouldShowIntro`). SSR-guarded
   localStorage helpers mirroring `serialization.ts`; the store's
@@ -72,7 +84,9 @@ Typecheck runs through `next build` and the VS Code TS SDK
   `computeTensor(graph, callbacks)` (the single entry point components
   call); `worker.ts` is the worker that lazy-loads the wasm; `types.ts`
   is the main↔worker message protocol; `result-types.ts` mirrors the
-  Rust `TensorResult`. See §"Rust compute layer" below before touching it.
+  Rust `TensorResult`; `errors.ts` classifies WASM error messages into
+  `ComputeErrorKind`; `matrix-format.ts` is pure reshape/format math for
+  the result dialog. See §"Rust compute layer" below before touching it.
 - `crates/zxw/` — Rust compute layer (ZXW calculus tensor evaluation).
   See `doc/plans.md` for the full plan; the
   short version is below.
