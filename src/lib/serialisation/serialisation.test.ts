@@ -1,7 +1,8 @@
-// The persistence boundary. Bugs here corrupt saved graphs and break the WASM
-// compute boundary, so coverage is broad: rotation normalization, the runtime
-// ↔ persisted round trip, and the importer's failure modes. localStorage comes
-// from jsdom; save/load are tested against it so the format round-trips cleanly.
+// The persistence boundary (`src/lib/serialisation/`). Bugs here corrupt saved
+// graphs and break the WASM compute boundary, so coverage is broad: rotation
+// normalization, the runtime ↔ persisted round trip, and the importer's
+// failure modes. localStorage comes from jsdom; save/load are tested against
+// it so the format round-trips cleanly.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -13,7 +14,7 @@ import {
   normalizeRotation,
   projectDocument,
   saveGraphDocument,
-} from "./serialization";
+} from "./index";
 import {
   CURRENT_SCHEMA_VERSION,
   EDGE_TYPES,
@@ -22,7 +23,7 @@ import {
   type GraphDocument,
   type GraphEdge,
   type VertexNode,
-} from "./types";
+} from "../graph/types";
 import { makeEdge, makeVertex } from "@/test-utils/factories";
 
 describe("normalizeRotation", () => {

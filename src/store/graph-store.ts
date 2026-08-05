@@ -38,13 +38,14 @@ import {
 import { selectSelectedNodeIds } from "@/store/selectors";
 import {
   createEmptyGraphDocument,
+  getExportFormat,
   hydrateDocument,
-  loadGraphDocument,
-  saveGraphDocument,
-  exportGraphJson,
   importGraphJson,
+  loadGraphDocument,
   normalizeRotation,
-} from "@/lib/graph/serialization";
+  saveGraphDocument,
+  type ExportFormatId,
+} from "@/lib/serialisation";
 
 import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 
@@ -92,6 +93,9 @@ type GraphStore = {
   // time so the intro never reappears on reload.
   isIntroOpen: boolean;
 
+  // Export-format chooser dialog. Opened by the toolbar Export button.
+  isExportOpen: boolean;
+
   // Per-vertex validation errors from the last compute. Keyed by vertex
   // id so a node's renderer selects only its own slice. Ephemeral — not
   // persisted, not on the undo stack (`partialize` snapshots only
@@ -135,6 +139,7 @@ type GraphStore = {
   clearSelection: () => void;
   save: () => void;
   exportJson: () => Promise<void>;
+  exportGraph: (formatId: ExportFormatId) => Promise<void>;
   importJson: () => Promise<void>;
   reset: () => void;
 
@@ -154,6 +159,9 @@ type GraphStore = {
 
   openIntro: () => void;
   closeIntro: () => void;
+
+  openExport: () => void;
+  closeExport: () => void;
 
 
   isStateEmpty: () => boolean;
@@ -283,6 +291,8 @@ export const useGraphStore = create<GraphStore>()(
       isHelpOpen: false,
 
       isIntroOpen: false,
+
+      isExportOpen: false,
 
       validationErrors: {},
 
@@ -527,10 +537,10 @@ export const useGraphStore = create<GraphStore>()(
         persistLocal(state);
       },
 
-      exportJson: async () => {
+      exportGraph: async (formatId) => {
         const state = get();
-
-        const contents = exportGraphJson({
+        const format = getExportFormat(formatId);
+        const contents = format.serialize({
           title: state.title,
           nodes: state.nodes,
           edges: state.edges,
@@ -539,11 +549,15 @@ export const useGraphStore = create<GraphStore>()(
         const filename = toSafeFilename(state.title || "graph-board");
 
         await saveTextFileWithPicker({
-          suggestedName: `${filename}.json`,
+          suggestedName: `${filename}${format.extension}`,
           contents,
-          mimeType: "application/json",
-          extension: ".json",
+          mimeType: format.mimeType,
+          extension: format.extension,
         });
+      },
+
+      exportJson: async () => {
+        await get().exportGraph("json");
       },
 
       // Import replaces the editor state; if the canvas is non-empty the
@@ -570,6 +584,7 @@ export const useGraphStore = create<GraphStore>()(
             pendingEdgeSources: [],
             clipboard: null,
             isHelpOpen: false,
+            isExportOpen: false,
             validationErrors: {},
             // Refit now that the graph replaced.
             fitViewNonce: get().fitViewNonce + 1,
@@ -666,6 +681,7 @@ export const useGraphStore = create<GraphStore>()(
           mode: EDITOR_MODES.select,
           confirmDialogue: null,
           isHelpOpen: false,
+          isExportOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
           validationErrors: {},
@@ -717,6 +733,14 @@ export const useGraphStore = create<GraphStore>()(
 
       closeIntro: () => {
         set({ isIntroOpen: false });
+      },
+
+      openExport: () => {
+        set({ isExportOpen: true });
+      },
+
+      closeExport: () => {
+        set({ isExportOpen: false });
       },
 
       // Group the flat error list by vertex id into a Record. Errors

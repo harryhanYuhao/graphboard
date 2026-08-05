@@ -9,7 +9,6 @@ import {
   createGraphEdge,
   createVertexNode,
   deleteSelectedElements,
-  GRID_SIZE,
   getSelectedSubgraph,
   PASTE_OFFSET_STEP,
   pasteSubgraph,

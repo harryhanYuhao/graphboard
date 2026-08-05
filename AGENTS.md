@@ -67,8 +67,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
 - `src/store/selectors.ts` — pure selector functions over `GraphStore` state
   (e.g. `selectSelectedNodeIds`, `hasSelection`).
 - `src/lib/graph/` — pure graph logic: `types.ts`, `operations.ts`
-  (create/delete), `serialization.ts` (document + `localStorage`),
-  `vertex-types.ts` (ZXW generator metadata), `validate.ts`
+  (create/delete), `vertex-types.ts` (ZXW generator metadata), `validate.ts`
   (pre-compute structural checks ported from the Rust `ComputeError`s).
 - `src/lib/hooks/` — small reusable React hooks: `useCompute` (compute
   lifecycle — the toolbar button and Cmd/Ctrl+Enter call `requestCompute`,
@@ -76,9 +75,19 @@ Typecheck runs through `next build` and the VS Code TS SDK
   `useKatexReady`.
 - `src/lib/onboarding/intro.ts` — first-run gate for the intro guide
   (`hasSeenIntro` / `markIntroSeen` / `shouldShowIntro`). SSR-guarded
-  localStorage helpers mirroring `serialization.ts`; the store's
+  localStorage helpers mirroring `src/lib/serialisation/storage.ts`; the store's
   `hydrate()` stamps the flag at open time so the guide shows exactly once.
-- `src/lib/download.ts`, `src/lib/filename.ts` — JSON export helpers.
+- `src/lib/download.ts`, `src/lib/filename.ts` — file picker + filename helpers.
+- `src/lib/serialisation/` — the persistence + export boundary. `document.ts`
+  is the runtime ↔ v1-doc projection/hydration (`projectDocument` /
+  `hydrateDocument` + handle index translation); `parse.ts` validates imported
+  JSON (`parseDocument` / `importGraphJson`); `storage.ts` is the `localStorage`
+  save/load; export serializers live one file per format (`export-json.ts`
+  implemented; `export-tikz.ts`, `export-zxlive.ts`, `export-qasm.ts` marked
+  placeholders until their specs land), wired together by `formats.ts`
+  (registry + `getExportFormat`). `index.ts` is the public API — import from
+  `@/lib/serialisation`, not the internals. The store's `exportGraph(formatId)`
+  + `ExportDialog` are the export UI entry points.
 - `src/lib/compute/` — browser-side wrapper around the Rust/WASM compute
   layer. `index.ts` owns the Web Worker lifecycle and exposes
   `computeTensor(graph, callbacks)` (the single entry point components
@@ -142,7 +151,8 @@ Typecheck runs through `next build` and the VS Code TS SDK
   `vertex-types.ts`) selects the W / And-gate layout (visible `top` target
   dot + centered source) vs the symmetric layout (centered target + source).
   Persisted handle ids are **numeric indices** (0 = top, 1 = bottom),
-  translated by `handleIdToIndex` / `indexToHandleId` in `serialization.ts`.
+  translated by `handleIdToIndex` / `indexToHandleId` in
+  `src/lib/serialisation/document.ts`.
 - **Vertex rotation** is a **view-slice** concern: the runtime `VertexNode`
   carries `rotation` as a top-level field (outside `data`), persisted under
   `view.nodes[].rotation`. It is CSS-only — the compute layer never sees it.
@@ -261,7 +271,7 @@ Persisted documents (`GraphDocument`, see `src/lib/graph/types.ts`) are
 
 The runtime store still holds React Flow's own `Node`/`Edge` objects
 (`VertexNode` / `GraphEdge`) because that's what React Flow consumes.
-Conversion happens at the persistence boundary in `serialization.ts`:
+Conversion happens at the persistence boundary in `src/lib/serialisation/`:
 
 - `projectDocument(runtime)` → v1 doc (called from `saveGraphDocument`
   and `exportGraphJson`).

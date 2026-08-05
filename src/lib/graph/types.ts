@@ -20,8 +20,8 @@ export type VertexType =
 // ---- React Flow handle & edge identifiers ---------------------------------
 //
 // Centralized string constants — the shared contract between edge creation
-// (operations.ts), serialization (serialization.ts), and the renderer. Don't
-// sprinkle the literals elsewhere.
+// (operations.ts), serialisation (src/lib/serialisation/document.ts), and the
+// renderer. Don't sprinkle the literals elsewhere.
 //
 // React Flow handle ids on VertexNode: `center-source` / `center-target` are
 // the transparent overlays at the body center; `top` is the visible dot that
@@ -45,7 +45,7 @@ export type EdgeType = (typeof EDGE_TYPES)[keyof typeof EDGE_TYPES];
 // ---- Persisted document identifiers ----------------------------------------
 //
 // Stable ids for `createEmptyGraphDocument` and export, keeping literals
-// out of serialization.ts.
+// out of the serialisation module.
 export const PERSISTED_IDS = {
   localDocument: "local-document",
   exportedDocument: "exported-document",
@@ -99,7 +99,8 @@ export type GraphNodeRecord = {
 // `sourceHandle` / `targetHandle` are indices into the vertex's handle slots
 // (0 = top, 1 = bottom) — indexed not id-based so future vertex types with
 // more than two handles can extend the scheme without schema churn. Absent on
-// legacy documents; `serialization.ts` applies defaults at hydration.
+// legacy documents; `src/lib/serialisation/document.ts` applies defaults at
+// hydration.
 export type GraphEdgeRecord = {
   id: string;
   source: string;

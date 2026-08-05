@@ -97,6 +97,21 @@ describe("saveTextFileWithPicker", () => {
       expect(fake.isClosed()).toBe(true);
     });
 
+    it("is a silent no-op when the user cancels the picker (AbortError)", async () => {
+      const picker = mockPicker("showSaveFilePicker");
+      picker.mockRejectedValue(
+        new DOMException("user canceled", "AbortError"),
+      );
+
+      await expect(
+        saveTextFileWithPicker({
+          suggestedName: "graph.json",
+          contents: "{}",
+        }),
+      ).resolves.toBeUndefined();
+      expect(picker).toHaveBeenCalledOnce();
+    });
+
     it("defaults mimeType to application/json and extension to .json", async () => {
       const fake = makeFakeFileHandle();
       const picker = mockPicker("showSaveFilePicker");

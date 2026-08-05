@@ -4,7 +4,7 @@
 // The flag is stamped when `hydrate()` first opens the guide (not on
 // close), so it never reappears even if the tab closes mid-tour.
 //
-// SSR-guarded and fail-soft, matching `src/lib/graph/serialization.ts`.
+// SSR-guarded and fail-soft, matching `src/lib/serialisation/`.
 
 export const INTRO_LOCAL_STORAGE_KEY = "graph-board-seen-intro";
 

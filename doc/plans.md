@@ -306,7 +306,7 @@ pub struct GraphEdgeRecord {
     pub source: String,
     pub target: String,
     // None = field absent in JSON = "use role default".
-    // 0 = top, 1 = bottom (see src/lib/graph/serialization.ts).
+    // 0 = top, 1 = bottom (see src/lib/serialisation/document.ts).
     // The compute layer treats all legs of a symmetric tensor as
     // equivalent and ignores the index for v1; it must still
     // deserialize cleanly, hence Option rather than a required u32.
@@ -317,7 +317,7 @@ pub struct GraphEdgeRecord {
 
 **Cross-references to keep in sync:**
 - TS shapes: `src/lib/graph/types.ts`
-- Handle-index semantics + role defaults: `src/lib/graph/serialization.ts`
+- Handle-index semantics + role defaults: `src/lib/serialisation/document.ts`
   (`handleIdToIndex` / `indexToHandleId` — module-private; Rust does not
   call these, but the numeric meaning is defined there).
 

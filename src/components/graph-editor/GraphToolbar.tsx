@@ -55,7 +55,7 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
   const mode = useGraphStore((state) => state.mode);
   const setMode = useGraphStore((state) => state.setMode);
   const save = useGraphStore((state) => state.save);
-  const exportJson = useGraphStore((state) => state.exportJson);
+  const openExport = useGraphStore((state) => state.openExport);
   const importJson = useGraphStore((state) => state.importJson);
   const openResetConfirm = useGraphStore((state) => state.openConfirmDialogue);
   const closeResetConfirm = useGraphStore((state) => state.closeConfirmDialogue);
@@ -163,9 +163,9 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
         </ToolbarButton>
 
         <ToolbarButton
-          title="Export JSON"
+          title="Export…"
           onClick={() => {
-            void exportJson();
+            openExport();
           }}
         >
           <FolderOutput size={18} />

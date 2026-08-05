@@ -1,8 +1,9 @@
-// Edge-case probes for `operations.ts` and `serialization.ts`, deliberately
-// non-overlapping with their main suites. Each test pins a corner they don't:
-// empty inputs, the `createGraphEdge` no-`nodes` asymmetry, directional
-// handle-index round-trips, `parseDocument` shape rejection, and fragile-but-
-// documented behaviors. Latent bugs are pinned with `it.skip` plus a comment.
+// Edge-case probes for `operations.ts` and the serialisation module,
+// deliberately non-overlapping with their main suites. Each test pins a corner
+// they don't: empty inputs, the `createGraphEdge` no-`nodes` asymmetry,
+// directional handle-index round-trips, `parseDocument` shape rejection, and
+// fragile-but-documented behaviors. Latent bugs are pinned with `it.skip` plus
+// a comment.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -27,7 +28,7 @@ import {
   parseDocument,
   projectDocument,
   saveGraphDocument,
-} from "./serialization";
+} from "@/lib/serialisation";
 import {
   CURRENT_SCHEMA_VERSION,
   HANDLE_IDS,

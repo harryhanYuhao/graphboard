@@ -4,7 +4,7 @@
 // rotation math is unit-testable without React Flow internals.
 
 import { isDirectionalVertex } from "./vertex-types";
-import { normalizeRotation } from "./serialization";
+import { normalizeRotation } from "@/lib/serialisation";
 import type { VertexType } from "./types";
 
 // Inputs to a single edge endpoint. Mirrors React Flow's `useInternalNode`,

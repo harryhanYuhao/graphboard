@@ -11,7 +11,7 @@ import { useGraphStore } from "@/store/graph-store";
 import { computeTensor, type ComputeCallbacks } from "@/lib/compute";
 import { ComputeError } from "@/lib/compute/errors";
 import type { TensorResult } from "@/lib/compute/result-types";
-import { projectDocument } from "@/lib/graph/serialization";
+import { projectDocument } from "@/lib/serialisation";
 import { PERSISTED_IDS } from "@/lib/graph/types";
 import { validateGraphForCompute } from "@/lib/graph/validate";
 

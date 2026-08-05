@@ -14,7 +14,7 @@ import {
   isBoundaryVertex,
   isSpiderType,
 } from "@/lib/graph/vertex-types";
-import { normalizeRotation } from "@/lib/graph/serialization";
+import { normalizeRotation } from "@/lib/serialisation";
 import type { VertexType } from "@/lib/graph/types";
 import { useTrackedDraft } from "@/lib/hooks/useTrackedDraft";
 import { useKatexReady } from "@/lib/hooks/useKatexReady";

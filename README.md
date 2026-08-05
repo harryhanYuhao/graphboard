@@ -37,7 +37,7 @@ Its detailed documentation is in a separate repository and can be found at
     * Zustand for statge management, and zundo for undo/redo
     * Stage management is the core of the frontend
   * **Graph logic** in `graph/operations.ts` `vertex-types.ts`
-  * **Serialization** `graph/serialization.ts`
+  * **Serialization** `lib/serialisation/` (document, parse, storage, export-*)
     * The view slice (for visual) and graph slice (for all graph theoretic properties) are serialized in two different objects
   * **Project document**
     * `projectDocument`

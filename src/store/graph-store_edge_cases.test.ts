@@ -15,7 +15,7 @@ vi.mock("@/lib/download", () => ({
   saveTextFileWithPicker: vi.fn(),
 }));
 
-import { openTextFileWithPicker } from "@/lib/download";
+import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 
 function resetStore() {
   useGraphStore.setState({
@@ -29,6 +29,7 @@ function resetStore() {
     selectedVertexType: "z",
     confirmDialogue: null,
     isHelpOpen: false,
+    isExportOpen: false,
     clipboard: null,
     fitViewNonce: 0,
   });
@@ -36,6 +37,7 @@ function resetStore() {
   useGraphStore.temporal.getState().clear();
   // Reset the picker mock between tests.
   vi.mocked(openTextFileWithPicker).mockReset();
+  vi.mocked(saveTextFileWithPicker).mockReset();
 }
 
 beforeEach(resetStore);
@@ -966,5 +968,66 @@ describe("temporal history limit", () => {
       useGraphStore.getState().addVertexAt({ x: i, y: i });
     }
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// exportGraph / export dialog state.
+// ---------------------------------------------------------------------------
+
+describe("exportGraph / export dialog state", () => {
+  it("openExport / closeExport flip the dialog flag", () => {
+    expect(useGraphStore.getState().isExportOpen).toBe(false);
+    useGraphStore.getState().openExport();
+    expect(useGraphStore.getState().isExportOpen).toBe(true);
+    useGraphStore.getState().closeExport();
+    expect(useGraphStore.getState().isExportOpen).toBe(false);
+  });
+
+  it("exportGraph('json') writes a JSON document with the .json extension", async () => {
+    useGraphStore.setState({
+      title: "Round Trip",
+      createdAt: "2025-01-01T00:00:00.000Z",
+      nodes: [makeVertex("a", { position: { x: 12, y: 12 } })],
+      edges: [],
+    });
+
+    await useGraphStore.getState().exportGraph("json");
+
+    const params = vi.mocked(saveTextFileWithPicker).mock.calls[0]?.[0];
+    expect(params?.suggestedName).toBe("Round Trip.json");
+    expect(params?.extension).toBe(".json");
+    expect(params?.mimeType).toBe("application/json");
+    const parsed = JSON.parse(params?.contents ?? "") as {
+      title: string;
+      schemaVersion: number;
+      createdAt: string;
+    };
+    expect(parsed.title).toBe("Round Trip");
+    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.createdAt).toBe("2025-01-01T00:00:00.000Z");
+  });
+
+  it("exportGraph('tikz') writes a placeholder with the .tikz extension", async () => {
+    useGraphStore.setState({ title: "Graph A", nodes: [], edges: [] });
+
+    await useGraphStore.getState().exportGraph("tikz");
+
+    const params = vi.mocked(saveTextFileWithPicker).mock.calls[0]?.[0];
+    expect(params?.suggestedName).toBe("Graph A.tikz");
+    expect(params?.extension).toBe(".tikz");
+    expect(params?.contents).toContain("Graph Board TikZ export (placeholder)");
+    expect(params?.contents).toContain("Title: Graph A");
+  });
+
+  it("exportGraph('zxlive') writes a placeholder with the .zxlive extension", async () => {
+    useGraphStore.setState({ title: "Graph B", nodes: [], edges: [] });
+
+    await useGraphStore.getState().exportGraph("zxlive");
+
+    const params = vi.mocked(saveTextFileWithPicker).mock.calls[0]?.[0];
+    expect(params?.suggestedName).toBe("Graph B.zxlive");
+    expect(params?.extension).toBe(".zxlive");
+    expect(params?.contents).toContain("ZXLive export (placeholder)");
   });
 });

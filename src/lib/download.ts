@@ -16,17 +16,27 @@ export async function saveTextFileWithPicker(params: {
   const saveFilePicker = window.showSaveFilePicker;
 
   if (typeof saveFilePicker === "function") {
-    const fileHandle = await saveFilePicker.call(window, {
-      suggestedName: params.suggestedName,
-      types: [
-        {
-          description: "JSON file",
-          accept: {
-            [mimeType]: [extension],
+    let fileHandle;
+    try {
+      fileHandle = await saveFilePicker.call(window, {
+        suggestedName: params.suggestedName,
+        types: [
+          {
+            description: "JSON file",
+            accept: {
+              [mimeType]: [extension],
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+    } catch (err) {
+      // FSA rejects with AbortError when the user cancels the save dialog —
+      // treat it as a no-op (mirrors the open path's cancel contract).
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+      throw err;
+    }
 
     const writable = await fileHandle.createWritable();
     await writable.write(params.contents);

@@ -1,6 +1,6 @@
-// src/lib/graph/serialization.ts
+// src/lib/serialisation/document.ts
 //
-// Persistence boundary across the document's two slices (`./types.ts`):
+// Persistence boundary across the document's two slices (`../graph/types.ts`):
 // `graph` (graph-theoretic data, what the compute backend sees) and `view`
 // (visual data, what the backend never sees). Entry points: `projectDocument`
 // (runtime → v1 doc) and `hydrateDocument` (v1 doc → runtime).
@@ -8,7 +8,6 @@ import {
   CURRENT_SCHEMA_VERSION,
   EDGE_TYPES,
   HANDLE_IDS,
-  PERSISTED_IDS,
   type EdgeView,
   type GraphDocument,
   type GraphEdge,
@@ -17,11 +16,9 @@ import {
   type NodeView,
   type VertexNode,
   type VertexType,
-} from "./types";
-import { snapPosition } from "./operations";
-import { VERTEX_TYPE_MAP } from "./vertex-types";
-
-const LOCAL_STORAGE_KEY = "graph-board-document";
+} from "../graph/types";
+import { snapPosition } from "../graph/operations";
+import { VERTEX_TYPE_MAP } from "../graph/vertex-types";
 
 // Wrap an angle into canonical [0, 360) and round to 6 dp. The rounding
 // prevents `%` float drift from accumulating across save/load and making
@@ -45,7 +42,7 @@ export type ProjectInput = {
   updatedAt: string;
 };
 
-export function projectDocument(input: ProjectInput): GraphDocument {
+export function projectToDocument(input: ProjectInput): GraphDocument {
   const graphNodes: GraphNodeRecord[] = [];
   const viewNodes: NodeView[] = [];
   for (const node of input.nodes) {
@@ -196,175 +193,4 @@ function indexToHandleId(
     return isDirectional ? HANDLE_IDS.top : HANDLE_IDS.centerTarget;
   }
   return HANDLE_IDS.centerTarget;
-}
-
-// ---- Public API ------------------------------------------------------------
-
-export function createEmptyGraphDocument(): GraphDocument {
-  const now = new Date().toISOString();
-
-  return {
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-    id: PERSISTED_IDS.localDocument,
-    title: "Untitled Graph",
-    graph: { nodes: [], edges: [] },
-    view: { nodes: [], edges: [] },
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-export function saveGraphDocument(params: {
-  id: string;
-  title: string;
-  nodes: VertexNode[];
-  edges: GraphEdge[];
-  createdAt?: string;
-}): void {
-  if (typeof window === "undefined") return;
-
-  // Always project to the current schema so older documents upgrade implicitly on save.
-  const document = projectDocument({
-    id: params.id,
-    title: params.title,
-    nodes: params.nodes,
-    edges: params.edges,
-    createdAt: params.createdAt ?? new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
-
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(document));
-}
-
-export function loadGraphDocument(): GraphDocument {
-  if (typeof window === "undefined") {
-    return createEmptyGraphDocument();
-  }
-
-  const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-
-  if (!raw) {
-    return createEmptyGraphDocument();
-  }
-
-  // Load fails soft: corrupt/future-schema docs warn and fall back to empty
-  // rather than throwing into `hydrateDocument` (which would crash the editor).
-  const result = parseDocument(raw);
-  if (!result.ok) {
-    console.warn(`graph-board: ${result.error}; loading empty document.`);
-    return createEmptyGraphDocument();
-  }
-
-  return result.document;
-}
-
-export function exportGraphJson(params: {
-  title: string;
-  nodes: VertexNode[];
-  edges: GraphEdge[];
-  // Preserved from the store so exports keep the original creation time;
-  // defaults to "now" for callers without a store (e.g. tests).
-  createdAt?: string;
-}): string {
-  const now = new Date().toISOString();
-
-  const document = projectDocument({
-    id: PERSISTED_IDS.exportedDocument,
-    title: params.title,
-    nodes: params.nodes,
-    edges: params.edges,
-    createdAt: params.createdAt ?? now,
-    updatedAt: now,
-  });
-
-  return JSON.stringify(document, null, 2);
-}
-
-// ---- Document parsing (shared by load + import) ----------------------------
-//
-// Parse + validate a JSON string against the v1 `{ graph, view }` shape
-// (`./types.ts`). Shared by `loadGraphDocument` and `importGraphJson` so the two
-// paths can't drift in robustness. Returns a discriminated result rather than
-// throwing so callers pick their failure policy (load = soft, import = loud).
-
-export type ParseResult =
-  | { ok: true; document: GraphDocument }
-  | { ok: false; error: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isGraphSlice(
-  value: unknown,
-): value is { nodes: unknown[]; edges: unknown[] } {
-  if (!isRecord(value)) return false;
-  if (!Array.isArray(value.nodes)) return false;
-  if (!Array.isArray(value.edges)) return false;
-  return true;
-}
-
-// Parse + validate a JSON string against the v1 shape. Stamps
-// `schemaVersion` to `CURRENT_SCHEMA_VERSION` on success so downstream
-// consumers don't handle the missing-field case.
-export function parseDocument(contents: string): ParseResult {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(contents);
-  } catch {
-    return { ok: false, error: "Document is not valid JSON." };
-  }
-
-  if (!isRecord(parsed)) {
-    return { ok: false, error: "Document must be a JSON object." };
-  }
-
-  if (!isGraphSlice(parsed.graph)) {
-    return {
-      ok: false,
-      error: "Document is missing a valid 'graph' slice (v1 shape required).",
-    };
-  }
-
-  if (!isGraphSlice(parsed.view)) {
-    return {
-      ok: false,
-      error: "Document is missing a valid 'view' slice (v1 shape required).",
-    };
-  }
-
-  // Forward-compat: reject files from a future build so the user knows to upgrade.
-  if (
-    typeof parsed.schemaVersion === "number" &&
-    parsed.schemaVersion > CURRENT_SCHEMA_VERSION
-  ) {
-    return {
-      ok: false,
-      error: `Document schemaVersion ${parsed.schemaVersion} is newer than supported (${CURRENT_SCHEMA_VERSION}).`,
-    };
-  }
-
-  // Stamp v1 if absent; the validated shape above is what determines validity.
-  const document: GraphDocument = {
-    ...(parsed as unknown as GraphDocument),
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-  };
-
-  return { ok: true, document };
-}
-
-// ---- Import ----------------------------------------------------------------
-//
-// Thin wrapper over `parseDocument` for the file-picker path; only difference
-// from the shared validator is friendlier "File is not valid JSON" wording.
-
-export type ImportResult = ParseResult;
-
-export function importGraphJson(contents: string): ImportResult {
-  const result = parseDocument(contents);
-  if (!result.ok && /not valid JSON/i.test(result.error)) {
-    return { ok: false, error: "File is not valid JSON." };
-  }
-  return result;
 }

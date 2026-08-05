@@ -20,6 +20,7 @@ import { GraphToolbar } from "./GraphToolbar";
 import { VertexTypeMenu } from "./VertexTypeMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
+import { ExportDialog } from "./ExportDialog";
 import { HelpDialog } from "./HelpDialog";
 import { IntroGuideDialog } from "./IntroGuideDialog";
 import { ComputeResultDialog } from "./ComputeResultDialog";
@@ -47,13 +48,15 @@ function GraphEditorInner() {
       hasHydrated: state.hasHydrated,
     })),
   );
-  const { confirmDialogue, isHelpOpen, isIntroOpen } = useGraphStore(
-    useShallow((state) => ({
-      confirmDialogue: state.confirmDialogue,
-      isHelpOpen: state.isHelpOpen,
-      isIntroOpen: state.isIntroOpen,
-    })),
-  );
+  const { confirmDialogue, isHelpOpen, isIntroOpen, isExportOpen } =
+    useGraphStore(
+      useShallow((state) => ({
+        confirmDialogue: state.confirmDialogue,
+        isHelpOpen: state.isHelpOpen,
+        isIntroOpen: state.isIntroOpen,
+        isExportOpen: state.isExportOpen,
+      })),
+    );
 
   const hydrate = useGraphStore((state) => state.hydrate);
   const onNodesChange = useGraphStore((state) => state.onNodesChange);
@@ -72,6 +75,7 @@ function GraphEditorInner() {
   const closeHelp = useGraphStore((state) => state.closeHelp);
   const openIntro = useGraphStore((state) => state.openIntro);
   const closeIntro = useGraphStore((state) => state.closeIntro);
+  const closeExport = useGraphStore((state) => state.closeExport);
   // Bumps whenever the store replaces the graph (import, hydrate). The store
   // can't call `fitView()` itself (React Flow hooks only work under the
   // provider), so the view layer watches this nonce.
@@ -227,6 +231,8 @@ function GraphEditorInner() {
       />
 
       <IntroGuideDialog isOpen={isIntroOpen} onClose={closeIntro} />
+
+      <ExportDialog isOpen={isExportOpen} onClose={closeExport} />
 
       <ComputeResultDialog
         key={`compute-${compute.computeSeq}`}
