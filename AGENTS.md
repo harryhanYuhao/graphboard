@@ -82,8 +82,8 @@ Typecheck runs through `next build` and the VS Code TS SDK
   is the runtime ↔ v1-doc projection/hydration (`projectDocument` /
   `hydrateDocument` + handle index translation); `parse.ts` validates imported
   JSON (`parseDocument` / `importGraphJson`); `storage.ts` is the `localStorage`
-  save/load; export serializers live one file per format (`export-json.ts`
-  implemented; `export-tikz.ts`, `export-zxlive.ts`, `export-qasm.ts` marked
+  save/load; export serializers live one file per format (`export-json.ts` +
+  `export-tikz.ts` implemented; `export-zxlive.ts`, `export-qasm.ts` marked
   placeholders until their specs land), wired together by `formats.ts`
   (registry + `getExportFormat`). `index.ts` is the public API — import from
   `@/lib/serialisation`, not the internals. The store's `exportGraph(formatId)`

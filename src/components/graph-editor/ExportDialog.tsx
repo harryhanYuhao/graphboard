@@ -3,12 +3,13 @@
 // Export-format chooser. The store owns the open/close state (`isExportOpen`);
 // this is a presentational modal listing the registered export formats
 // (JSON / TikZ / ZXLive / QASM) as radio cards. Picking a format and hitting Export
-// calls the store's `exportGraph(formatId)`.
+// calls the store's `exportGraph(formatId)`. Each card has a documentation
+// icon button (per-format `doc_url`, opens in a new tab).
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { BookOpen, X } from "lucide-react";
 import { EXPORT_FORMATS, type ExportFormatId } from "@/lib/serialisation";
 import { useGraphStore } from "@/store/graph-store";
 
@@ -94,36 +95,47 @@ export function ExportDialog({ isOpen, onClose }: ExportDialogProps) {
           </h2>
 
           <p className="text-slate-600">
-            Choose a file format for the export.
+            Choose a file format for the export. Click book button to check documentation.
           </p>
 
           <div className="space-y-2" role="radiogroup" aria-label="Export format">
             {EXPORT_FORMATS.map((format) => (
-              <label
+              <div
                 key={format.id}
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
-                  selected === format.id
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-slate-200 hover:bg-slate-50"
-                }`}
+                className={`flex items-start gap-2 rounded-md border p-3 transition-colors ${selected === format.id
+                  ? "border-blue-500 bg-blue-50"
+                  : "border-slate-200 hover:bg-slate-50"
+                  }`}
               >
-                <input
-                  type="radio"
-                  name="export-format"
-                  value={format.id}
-                  checked={selected === format.id}
-                  onChange={() => setSelected(format.id)}
-                  className="mt-1"
-                />
-                <span className="flex flex-col">
-                  <span className="font-medium text-slate-900">
-                    {format.label}
+                <label className="flex flex-1 cursor-pointer items-start gap-3">
+                  <input
+                    type="radio"
+                    name="export-format"
+                    value={format.id}
+                    checked={selected === format.id}
+                    onChange={() => setSelected(format.id)}
+                    className="mt-1"
+                  />
+                  <span className="flex flex-col">
+                    <span className="font-medium text-slate-900">
+                      {format.label}
+                    </span>
+                    <span className="text-sm text-slate-500">
+                      {format.description}
+                    </span>
                   </span>
-                  <span className="text-sm text-slate-500">
-                    {format.description}
-                  </span>
-                </span>
-              </label>
+                </label>
+                <a
+                  href={format.doc_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Documentation: ${format.label} export (opens in a new tab)`}
+                  title={`How the ${format.label} export works`}
+                  className="mt-0.5 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
+                >
+                  <BookOpen size={16} />
+                </a>
+              </div>
             ))}
           </div>
         </div>

@@ -1,9 +1,9 @@
 // src/lib/serialisation/formats.test.ts
 //
-// Pins the export-format registry: the four registered formats (JSON
-// implemented, TikZ / ZXLive / QASM placeholders), their picker metadata, and
-// the serializer contracts (JSON → valid GraphDocument; placeholders → clearly
-// marked, non-empty files).
+// Pins the export-format registry: the four registered formats (JSON + TikZ
+// implemented, ZXLive / QASM placeholders), their picker metadata, and the
+// serializer contracts (JSON → valid GraphDocument; TikZ → LaTeX picture;
+// placeholders → clearly marked, non-empty files).
 
 import { describe, expect, it } from "vitest";
 import { EXPORT_FORMATS, getExportFormat } from "./formats";
@@ -45,12 +45,16 @@ describe("EXPORT_FORMATS", () => {
     expect(parsed.graph.nodes[0].data.vertexType).toBe("z");
   });
 
-  it("tikz serializes to a clearly-marked placeholder", () => {
+  it("tikz serializes to a LaTeX TikZ picture", () => {
     const contents = getExportFormat("tikz").serialize(params);
-    expect(contents).toContain("% Graph Board TikZ export (placeholder)");
-    expect(contents).toContain("The TikZ format is not defined yet");
+    expect(contents).toContain("% Graph Board TikZ export");
     expect(contents).toContain("Title: My Graph");
     expect(contents).toContain("Nodes: 2, Edges: 1");
+    expect(contents).toContain("\\begin{tikzpicture}");
+    expect(contents).toContain("\\node [GREEN_DOT] (1) at (0.25, -0.25) {};");
+    expect(contents).toContain("\\node [GREEN_DOT] (2) at (0.75, -1.25) {};");
+    expect(contents).toContain("\\draw[EDGE] (1) to (2);");
+    expect(contents).not.toContain("(placeholder)");
   });
 
   it("zxlive serializes to a clearly-marked placeholder", () => {
@@ -66,6 +70,18 @@ describe("EXPORT_FORMATS", () => {
     expect(contents).toContain("The QASM format is not defined yet");
     expect(contents).toContain("Title: My Graph");
     expect(contents).toContain("Nodes: 2, Edges: 1");
+  });
+
+  it("pins doc_url: tikz links to the TikZ section, the rest share the general page", () => {
+    const byId = Object.fromEntries(EXPORT_FORMATS.map((f) => [f.id, f]));
+    const general =
+      "https://zxwgraphboard-doc.netlify.app/user-guides/saving-and-loading/";
+    expect(byId.tikz.doc_url).toBe(`${general}#using-a-tikz-export-in-latex`);
+    // Same general page for now; they will diverge as each format's
+    // documentation lands.
+    for (const id of ["json", "zxlive", "QASM"]) {
+      expect(byId[id].doc_url).toBe(general);
+    }
   });
 
   it("getExportFormat throws on an unknown id", () => {

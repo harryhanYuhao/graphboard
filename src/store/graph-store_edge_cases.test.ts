@@ -1008,7 +1008,7 @@ describe("exportGraph / export dialog state", () => {
     expect(parsed.createdAt).toBe("2025-01-01T00:00:00.000Z");
   });
 
-  it("exportGraph('tikz') writes a placeholder with the .tikz extension", async () => {
+  it("exportGraph('tikz') writes a TikZ picture with the .tikz extension", async () => {
     useGraphStore.setState({ title: "Graph A", nodes: [], edges: [] });
 
     await useGraphStore.getState().exportGraph("tikz");
@@ -1016,7 +1016,8 @@ describe("exportGraph / export dialog state", () => {
     const params = vi.mocked(saveTextFileWithPicker).mock.calls[0]?.[0];
     expect(params?.suggestedName).toBe("Graph A.tikz");
     expect(params?.extension).toBe(".tikz");
-    expect(params?.contents).toContain("Graph Board TikZ export (placeholder)");
+    expect(params?.contents).toContain("Graph Board TikZ export");
+    expect(params?.contents).toContain("\\begin{tikzpicture}");
     expect(params?.contents).toContain("Title: Graph A");
   });
 

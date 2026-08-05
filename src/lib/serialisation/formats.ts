@@ -6,8 +6,8 @@
 // format's logic stays contained; this module only wires them together.
 // Pure module — no store, no window — so it's unit-testable.
 //
-// TikZ, ZXLive, and QASM formats are NOT defined yet (spec TBD); their
-// serializers emit a clearly-marked placeholder.
+// ZXLive and QASM formats are NOT defined yet (spec TBD); their serializers
+// emit a clearly-marked placeholder. TikZ is implemented (`./export-tikz.ts`).
 
 import type { GraphEdge, VertexNode } from "@/lib/graph/types";
 import { exportGraphJson } from "./export-json";
@@ -30,6 +30,7 @@ export interface ExportFormat {
   id: ExportFormatId;
   label: string;
   description: string;
+  doc_url: string;
   extension: string;
   mimeType: string;
   serialize: (params: ExportParams) => string;
@@ -40,6 +41,7 @@ export const EXPORT_FORMATS: ExportFormat[] = [
     id: "json",
     label: "JSON",
     description: "Graph Board's native document format (graph + view slices).",
+    doc_url: "https://zxwgraphboard-doc.netlify.app/user-guides/saving-and-loading/",
     extension: ".json",
     mimeType: "application/json",
     serialize: (params) => exportGraphJson(params),
@@ -47,7 +49,8 @@ export const EXPORT_FORMATS: ExportFormat[] = [
   {
     id: "tikz",
     label: "TikZ",
-    description: "LaTeX TikZ picture (Placeholder only).",
+    description: "LaTeX TikZ picture.",
+    doc_url: "https://zxwgraphboard-doc.netlify.app/user-guides/saving-and-loading/#using-a-tikz-export-in-latex",
     extension: ".tikz",
     mimeType: "text/plain",
     serialize: (params) => exportTikz(params),
@@ -56,6 +59,7 @@ export const EXPORT_FORMATS: ExportFormat[] = [
     id: "zxlive",
     label: "ZXLive",
     description: "ZXLive-compatible graph (Placeholder only).",
+    doc_url: "https://zxwgraphboard-doc.netlify.app/user-guides/saving-and-loading/",
     extension: ".zxlive",
     mimeType: "text/plain",
     serialize: (params) => exportZxLive(params),
@@ -64,6 +68,7 @@ export const EXPORT_FORMATS: ExportFormat[] = [
     id: "QASM",
     label: "QASM",
     description: "Quantum Assembly (Placeholder only)",
+    doc_url: "https://zxwgraphboard-doc.netlify.app/user-guides/saving-and-loading/",
     extension: ".qasm",
     mimeType: "text/plain",
     serialize: (params) => exportQasm(params),
