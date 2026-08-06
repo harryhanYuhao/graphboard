@@ -19,6 +19,7 @@ import {
   CircleQuestionMark,
   Calculator,
   Bug,
+  Smile,
 } from "lucide-react";
 import { useStore } from "zustand";
 import { useGraphStore } from "@/store/graph-store";
@@ -65,6 +66,7 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
   const cutSelected = useGraphStore((state) => state.cutSelected);
   const paste = useGraphStore((state) => state.paste);
   const openHelp = useGraphStore((state) => state.openHelp);
+  const openProperties = useGraphStore((state) => state.openProperties);
   const hasClipboard = useGraphStore(
     (state) => state.clipboard !== null && state.clipboard.nodes.length > 0,
   );
@@ -178,6 +180,12 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
           <Calculator size={18} />
         </ToolbarButton>
 
+        <div className="mx-1 h-6 w-px bg-slate-200" />
+        <ToolbarButton
+          title="Graph Properties (Smiles!)"
+          onClick={openProperties}>
+          <Smile size={18} />
+        </ToolbarButton>
         <div className="mx-1 h-6 w-px bg-slate-200" />
 
         <ToolbarButton

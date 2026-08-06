@@ -96,6 +96,9 @@ type GraphStore = {
   // Export-format chooser dialog. Opened by the toolbar Export button.
   isExportOpen: boolean;
 
+  // Graph-properties dialog. Opened by the toolbar smile button.
+  isPropertiesOpen: boolean;
+
   // Per-vertex validation errors from the last compute. Keyed by vertex
   // id so a node's renderer selects only its own slice. Ephemeral — not
   // persisted, not on the undo stack (`partialize` snapshots only
@@ -163,6 +166,8 @@ type GraphStore = {
   openExport: () => void;
   closeExport: () => void;
 
+  openProperties: () => void;
+  closeProperties: () => void;
 
   isStateEmpty: () => boolean;
 
@@ -293,6 +298,8 @@ export const useGraphStore = create<GraphStore>()(
       isIntroOpen: false,
 
       isExportOpen: false,
+
+      isPropertiesOpen: false,
 
       validationErrors: {},
 
@@ -585,6 +592,7 @@ export const useGraphStore = create<GraphStore>()(
             clipboard: null,
             isHelpOpen: false,
             isExportOpen: false,
+            isPropertiesOpen: false,
             validationErrors: {},
             // Refit now that the graph replaced.
             fitViewNonce: get().fitViewNonce + 1,
@@ -682,6 +690,7 @@ export const useGraphStore = create<GraphStore>()(
           confirmDialogue: null,
           isHelpOpen: false,
           isExportOpen: false,
+          isPropertiesOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
           validationErrors: {},
@@ -741,6 +750,14 @@ export const useGraphStore = create<GraphStore>()(
 
       closeExport: () => {
         set({ isExportOpen: false });
+      },
+
+      openProperties: () => {
+        set({ isPropertiesOpen: true });
+      },
+
+      closeProperties: () => {
+        set({ isPropertiesOpen: false });
       },
 
       // Group the flat error list by vertex id into a Record. Errors

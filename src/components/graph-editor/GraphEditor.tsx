@@ -24,6 +24,7 @@ import { ExportDialog } from "./ExportDialog";
 import { HelpDialog } from "./HelpDialog";
 import { IntroGuideDialog } from "./IntroGuideDialog";
 import { ComputeResultDialog } from "./ComputeResultDialog";
+import { GraphPropertiesDialog } from "./GraphPropertiesDialog";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useCompute } from "@/lib/hooks/useCompute";
 import { useGraphStore } from "@/store/graph-store";
@@ -48,13 +49,14 @@ function GraphEditorInner() {
       hasHydrated: state.hasHydrated,
     })),
   );
-  const { confirmDialogue, isHelpOpen, isIntroOpen, isExportOpen } =
+  const { confirmDialogue, isHelpOpen, isIntroOpen, isExportOpen, isPropertiesOpen } =
     useGraphStore(
       useShallow((state) => ({
         confirmDialogue: state.confirmDialogue,
         isHelpOpen: state.isHelpOpen,
         isIntroOpen: state.isIntroOpen,
         isExportOpen: state.isExportOpen,
+        isPropertiesOpen: state.isPropertiesOpen,
       })),
     );
 
@@ -76,6 +78,7 @@ function GraphEditorInner() {
   const openIntro = useGraphStore((state) => state.openIntro);
   const closeIntro = useGraphStore((state) => state.closeIntro);
   const closeExport = useGraphStore((state) => state.closeExport);
+  const closeProperties = useGraphStore((state) => state.closeProperties);
   // Bumps whenever the store replaces the graph (import, hydrate). The store
   // can't call `fitView()` itself (React Flow hooks only work under the
   // provider), so the view layer watches this nonce.
@@ -233,6 +236,11 @@ function GraphEditorInner() {
       <IntroGuideDialog isOpen={isIntroOpen} onClose={closeIntro} />
 
       <ExportDialog isOpen={isExportOpen} onClose={closeExport} />
+
+      <GraphPropertiesDialog
+        isOpen={isPropertiesOpen}
+        onClose={closeProperties}
+      />
 
       <ComputeResultDialog
         key={`compute-${compute.computeSeq}`}
