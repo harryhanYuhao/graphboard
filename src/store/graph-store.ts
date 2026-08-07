@@ -272,8 +272,7 @@ function emptyValidationErrors(): Record<string, ValidationError[]> {
 const LOCAL_STORAGE_BACKUP_KEY = "graph-board-document-backup";
 
 // Save the graph to localStorage under the stable local-doc id. Shared
-// by `save`, `importJson.applyImport`, and `reset` so the field list
-// lives in one place.
+// by `save` and `reset` so the field list lives in one place.
 function persistLocal(doc: {
   title: string;
   nodes: VertexNode[];
