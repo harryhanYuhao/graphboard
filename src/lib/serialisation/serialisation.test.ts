@@ -12,11 +12,13 @@ import {
   importGraphJson,
   loadGraphDocument,
   normalizeRotation,
+  parseDocument,
   projectDocument,
   saveGraphDocument,
 } from "./index";
 import {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_LABEL_LOCATION,
   EDGE_TYPES,
   HANDLE_IDS,
   PERSISTED_IDS,
@@ -104,7 +106,7 @@ describe("projectDocument ↔ hydrateDocument", () => {
     // rotation lives in the view slice; the graph entry carries identity
     // + label + vertex type only.
     const graphA = doc.graph.nodes.find((n) => n.id === "a");
-    expect(graphA?.data).toEqual({ label: "", vertexType: "z" });
+    expect(graphA?.data).toEqual({ phase: "", vertexType: "z" });
     expect((graphA as unknown as { rotation?: number }).rotation).toBeUndefined();
     const viewA = doc.view.nodes.find((n) => n.id === "a");
     expect(viewA?.rotation).toBe(45);
@@ -148,7 +150,7 @@ describe("projectDocument ↔ hydrateDocument", () => {
       { x: 12, y: 36 },
       { x: 12, y: 12 },
     ]);
-    expect(hydrated.nodes.map((n) => n.data.label)).toEqual(["", ""]);
+    expect(hydrated.nodes.map((n) => n.data.phase)).toEqual(["", ""]);
     expect(hydrated.edges.map((e) => `${e.source}->${e.target}`)).toEqual([
       "a->b",
       "b->a",
@@ -186,6 +188,79 @@ describe("projectDocument ↔ hydrateDocument", () => {
     expect(hydrated.nodes[0].rotation).toBe(137);
   });
 
+  it("round-trips the visual label + labelLocation through the view slice", () => {
+    const nodes: VertexNode[] = [
+      {
+        ...makeVertex("a", { x: 0, y: 0 }),
+        label: "$\\alpha$",
+        labelLocation: "left",
+      },
+      makeVertex("b", { x: 0, y: 0 }),
+    ];
+    const doc = projectDocument({
+      ...baseInput,
+      nodes,
+      edges: [],
+    });
+    const viewA = doc.view.nodes.find((n) => n.id === "a");
+    expect(viewA?.label).toBe("$\\alpha$");
+    expect(viewA?.labelLocation).toBe("left");
+    // The visual label is view-only: the graph slice (compute boundary)
+    // must never see it.
+    expect(
+      (doc.graph.nodes[0].data as unknown as { label?: string }).label,
+    ).toBeUndefined();
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.nodes[0].label).toBe("$\\alpha$");
+    expect(hydrated.nodes[0].labelLocation).toBe("left");
+  });
+
+  it("defaults label '' and labelLocation 'top' when the view entry omits them", () => {
+    const doc: GraphDocument = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      id: "doc-1",
+      title: "Pre-label doc",
+      graph: {
+        nodes: [{ id: "a", data: { phase: "", vertexType: "z" } }],
+        edges: [],
+      },
+      view: { nodes: [{ id: "a", position: { x: 0, y: 0 } }], edges: [] },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.nodes[0].label).toBe("");
+    expect(hydrated.nodes[0].labelLocation).toBe(DEFAULT_LABEL_LOCATION);
+  });
+
+  it("coerces non-string label/phase from a crafted doc instead of crashing", () => {
+    // parse only checks array-ness, so a hand-edited file can carry a
+    // non-string label/phase; hydration must degrade it to "" rather than
+    // let renderLabel's `.trim()` / the phase parser crash the editor.
+    const doc: GraphDocument = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      id: "doc-1",
+      title: "Crafted",
+      graph: {
+        nodes: [
+          { id: "a", data: { phase: 123, vertexType: "z" } as never },
+        ],
+        edges: [],
+      },
+      view: {
+        nodes: [
+          { id: "a", position: { x: 0, y: 0 }, label: {} as never },
+        ],
+        edges: [],
+      },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.nodes[0].label).toBe("");
+    expect(hydrated.nodes[0].data.phase).toBe("");
+  });
+
   it("defaults rotation to 0 when the view entry is missing", () => {
     // Pre-rotation documents hydrate cleanly without losing data.
     const doc: GraphDocument = {
@@ -193,7 +268,7 @@ describe("projectDocument ↔ hydrateDocument", () => {
       id: "doc-1",
       title: "Pre-rotation doc",
       graph: {
-        nodes: [{ id: "a", data: { label: "", vertexType: "z" } }],
+        nodes: [{ id: "a", data: { phase: "", vertexType: "z" } }],
         edges: [],
       },
       view: { nodes: [{ id: "a", position: { x: 1, y: 2 } }], edges: [] },
@@ -217,8 +292,8 @@ describe("projectDocument ↔ hydrateDocument", () => {
       title: "Legacy",
       graph: {
         nodes: [
-          { id: "a", data: { label: "", vertexType: "z" } },
-          { id: "b", data: { label: "", vertexType: "z" } },
+          { id: "a", data: { phase: "", vertexType: "z" } },
+          { id: "b", data: { phase: "", vertexType: "z" } },
         ],
         edges: [],
       },
@@ -248,7 +323,7 @@ describe("projectDocument ↔ hydrateDocument", () => {
         makeVertex("a", { x: 0, y: 0 }),
         {
           ...makeVertex("b", { x: 0, y: 0 }),
-          data: { label: "", vertexType: "w" },
+          data: { phase: "", vertexType: "w" },
         },
       ],
       edges: [
@@ -276,8 +351,83 @@ describe("projectDocument ↔ hydrateDocument", () => {
   });
 });
 
+describe("parseDocument — v1 → v2 migration", () => {
+  it("migrates data.label to data.phase and stamps schemaVersion 2", () => {
+    const v1Doc = {
+      schemaVersion: 1,
+      id: "local-document",
+      title: "Legacy v1",
+      graph: {
+        nodes: [
+          { id: "a", data: { label: "\\pi", vertexType: "z" } },
+          {
+            id: "b",
+            data: { label: "", vertexType: "output", order: 2 },
+          },
+        ],
+        edges: [],
+      },
+      view: { nodes: [], edges: [] },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+
+    const result = parseDocument(JSON.stringify(v1Doc));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(result.document.graph.nodes.map((n) => n.data)).toEqual([
+      { phase: "\\pi", vertexType: "z" },
+      // Boundary `order` survives the rename — it drives the tensor's axis
+      // order, so silently dropping it would change compute results.
+      { phase: "", vertexType: "output", order: 2 },
+    ]);
+    // A migrated doc hydrates normally.
+    const hydrated = hydrateDocument(result.document);
+    expect(hydrated.nodes.map((n) => n.data.phase)).toEqual(["\\pi", ""]);
+  });
+
+  it("keeps data.phase when a v2 doc already carries it", () => {
+    const v2Doc = {
+      schemaVersion: 2,
+      id: "local-document",
+      title: "Current",
+      graph: {
+        nodes: [{ id: "a", data: { phase: "\\pi/2", vertexType: "z" } }],
+        edges: [],
+      },
+      view: { nodes: [], edges: [] },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const result = parseDocument(JSON.stringify(v2Doc));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.graph.nodes[0].data.phase).toBe("\\pi/2");
+  });
+
+  it("passes malformed nodes through untouched so hydration still fails loudly", () => {
+    // Element-shape validation happens at hydration; the migration must not
+    // throw inside parseDocument (load/import catch hydration errors, not
+    // parse errors).
+    const v1Doc = {
+      schemaVersion: 1,
+      id: "local-document",
+      title: "Broken",
+      graph: { nodes: [null], edges: [] },
+      view: { nodes: [], edges: [] },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const result = parseDocument(JSON.stringify(v1Doc));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(() => hydrateDocument(result.document)).toThrow();
+  });
+});
+
 describe("createEmptyGraphDocument", () => {
-  it("returns a v1-shape empty document", () => {
+  it("returns a v2-shape empty document", () => {
     const doc = createEmptyGraphDocument();
     expect(doc.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(doc.id).toBe(PERSISTED_IDS.localDocument);

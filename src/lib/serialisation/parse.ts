@@ -1,11 +1,15 @@
 // src/lib/serialisation/parse.ts
 //
-// Parse + validate a JSON string against the v1 `{ graph, view }` shape
+// Parse + validate a JSON string against the current `{ graph, view }` shape
 // (`../graph/types.ts`). Shared by `loadGraphDocument` (in `./storage.ts`) and
 // `importGraphJson` so the two paths can't drift in robustness. Returns a
 // discriminated result rather than throwing so callers pick their failure
 // policy (load = soft, import = loud).
-import { CURRENT_SCHEMA_VERSION, type GraphDocument } from "../graph/types";
+import {
+  CURRENT_SCHEMA_VERSION,
+  type GraphDocument,
+  type VertexType,
+} from "../graph/types";
 
 export type ParseResult =
   | { ok: true; document: GraphDocument }
@@ -43,14 +47,14 @@ export function parseDocument(contents: string): ParseResult {
   if (!isGraphSlice(parsed.graph)) {
     return {
       ok: false,
-      error: "Document is missing a valid 'graph' slice (v1 shape required).",
+      error: "Document is missing a valid 'graph' slice (v2 shape required).",
     };
   }
 
   if (!isGraphSlice(parsed.view)) {
     return {
       ok: false,
-      error: "Document is missing a valid 'view' slice (v1 shape required).",
+      error: "Document is missing a valid 'view' slice (v2 shape required).",
     };
   }
 
@@ -65,13 +69,70 @@ export function parseDocument(contents: string): ParseResult {
     };
   }
 
-  // Stamp v1 if absent; the validated shape above is what determines validity.
-  const document: GraphDocument = {
-    ...(parsed as unknown as GraphDocument),
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-  };
+  // Migrate older schema versions, then stamp the current version. The
+  // validated shape above determines validity; migration only rewrites known
+  // old shapes (v1 → v2 today).
+  const document: GraphDocument = migrateDocument(
+    parsed as unknown as GraphDocument,
+  );
 
-  return { ok: true, document };
+  return { ok: true, document: { ...document, schemaVersion: CURRENT_SCHEMA_VERSION } };
+}
+
+// ---- Schema migrations ------------------------------------------------------
+//
+// Each version's migration rewrites a parsed doc into the next shape. Runs
+// inside `parseDocument` so both the load and import paths get migrated docs
+// before hydration. Idempotent: a doc already at the target version passes
+// through unchanged.
+
+function migrateDocument(doc: GraphDocument): GraphDocument {
+  // v1 → v2: the vertex phase moved from `data.label` to `data.phase`; the
+  // view slice gains optional `label` / `labelLocation` (absent hydrates to
+  // defaults, so no view rewrite is needed).
+  if (doc.schemaVersion !== undefined && doc.schemaVersion > 1) {
+    return doc;
+  }
+
+  return {
+    ...doc,
+    graph: {
+      ...doc.graph,
+      nodes: doc.graph.nodes.map((node) => {
+        // Defensive: element-shape validation happens at hydration, not here.
+        // Pass malformed entries (null / non-object) through untouched so
+        // hydration still fails softly exactly as before the migration ran.
+        if (node == null || typeof node !== "object") {
+          return node as never;
+        }
+        const data = (node as { data?: unknown }).data as
+          | {
+            phase?: string;
+            label?: string;
+            vertexType: VertexType;
+            order?: number;
+          }
+          | null
+          | undefined;
+        if (data == null || typeof data !== "object") {
+          return node as never;
+        }
+        // Preserve everything else on `data` (e.g. boundary `order`, which
+        // sets the contracted tensor's axis order) — only the phase key is
+        // renamed. Spreading the old data first keeps `order` and any
+        // future optional fields.
+        const { phase, label, ...rest } = data;
+        return {
+          ...node,
+          data: {
+            ...rest,
+            vertexType: data.vertexType,
+            phase: phase ?? label ?? "",
+          },
+        };
+      }),
+    },
+  };
 }
 
 // ---- Import ----------------------------------------------------------------

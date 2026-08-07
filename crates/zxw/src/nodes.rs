@@ -168,6 +168,9 @@ pub fn build_vertex_tensor(vertex_type: VertexType, arity: usize, phase: f64) ->
         W => Some(w_node(arity.saturating_sub(1))),
         H => Some(h_box()),
         And => Some(and_gate(arity)),
+        // A filled black dot is a phaseless Z spider. Hardcode phase 0 so
+        // the builder stays correct even if a caller ever passes a phase.
+        BlackDot => Some(z_spider(arity, 0.0)),
         // Wired (2 legs) → identity weight; isolated (0 legs) → scalar 1
         // (plan §4.3 D3). Other arities mismatch the rank/degree check in
         // contraction.rs and surface as `DegreeOverflow`.
@@ -224,7 +227,7 @@ mod tests {
         // Pins the dispatch table; a new `VertexType` variant without a
         // match arm fails loudly (Rust's exhaustiveness check would too).
         use crate::graph::VertexType::*;
-        let cases: [(VertexType, Option<usize>); 10] = [
+        let cases: [(VertexType, Option<usize>); 11] = [
             (Z, Some(2)), // arity-2 z_spider → shape (2,2)
             (X, Some(2)),
             (Zbox, Some(2)),
@@ -233,7 +236,8 @@ mod tests {
             (H, Some(2)), // h_box always shape (2,2) regardless of arity
             (And, Some(2)),
             (Empty, Some(2)), // arity 2 → identity weight
-            (Input, None),    // boundary, no tensor
+            (BlackDot, Some(2)), // phaseless z spider → shape (2,2)
+            (Input, None),       // boundary, no tensor
             (Output, None),
         ];
         for (vt, expected_rank) in cases {
@@ -247,6 +251,23 @@ mod tests {
                     panic!("dispatch for {vt:?}: got rank {got:?}, expected rank {want:?}")
                 }
             }
+        }
+    }
+
+    #[test]
+    fn black_dot_is_a_phaseless_z_spider() {
+        // Pins the chosen semantics: BlackDot ≡ z_spider(arity, 0), and the
+        // passed `phase` is deliberately ignored (hardcoded 0 in the builder).
+        use crate::graph::VertexType::BlackDot;
+        let with_pi = build_vertex_tensor(BlackDot, 3, std::f64::consts::PI).unwrap();
+        let with_zero = build_vertex_tensor(BlackDot, 3, 0.0).unwrap();
+        let z_phaseless = z_spider(3, 0.0);
+        assert_eq!(with_pi.shape(), z_phaseless.shape());
+        // `Tensor` has no PartialEq; compare entry-by-entry.
+        for bits in 0..8usize {
+            let idx = bits_to_index(bits, 3);
+            assert_eq!(with_pi.get(&idx), with_zero.get(&idx));
+            assert_eq!(with_pi.get(&idx), z_phaseless.get(&idx));
         }
     }
 

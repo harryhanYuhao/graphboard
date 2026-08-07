@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { useGraphStore } from "@/store/graph-store";
 import { makeVertexWith } from "@/test-utils/factories";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
@@ -86,5 +86,58 @@ describe("VertexPropertyPanel — error block", () => {
     render(<VertexPropertyPanel />);
     expect(screen.getByText(/input problem/i)).toBeInTheDocument();
     expect(screen.getByText(/output problem/i)).toBeInTheDocument();
+  });
+});
+
+describe("VertexPropertyPanel — phase / visual label / location commit wiring", () => {
+  beforeEach(() => {
+    useGraphStore.getState().reset();
+    useGraphStore.setState({ validationErrors: {} });
+  });
+
+  it("commits the phase input to data.phase on blur", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("a", {
+          selected: true,
+          data: { phase: "old", vertexType: "z" },
+        }),
+      ],
+    });
+    render(<VertexPropertyPanel />);
+    const phaseInput = screen.getByPlaceholderText("Phase expression");
+    fireEvent.change(phaseInput, { target: { value: "\\pi/2" } });
+    fireEvent.blur(phaseInput);
+    expect(useGraphStore.getState().nodes[0].data.phase).toBe("\\pi/2");
+  });
+
+  it("commits the visual label input to the view slice on blur", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("a", {
+          selected: true,
+          label: "old",
+          data: { vertexType: "z" },
+        }),
+      ],
+    });
+    render(<VertexPropertyPanel />);
+    const labelInput = screen.getByPlaceholderText("Label ($...$ for math)");
+    fireEvent.change(labelInput, { target: { value: "$\\alpha$" } });
+    fireEvent.blur(labelInput);
+    expect(useGraphStore.getState().nodes[0].label).toBe("$\\alpha$");
+    // View-only: the graph slice is untouched.
+    expect(useGraphStore.getState().nodes[0].data.phase).toBe("");
+  });
+
+  it("commits the label location select to the view slice", () => {
+    useGraphStore.setState({
+      nodes: [makeVertexWith("a", { selected: true, data: { vertexType: "z" } })],
+    });
+    render(<VertexPropertyPanel />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "right" },
+    });
+    expect(useGraphStore.getState().nodes[0].labelLocation).toBe("right");
   });
 });

@@ -3,13 +3,15 @@
 // than across every test file at once.
 
 import {
+  DEFAULT_LABEL_LOCATION,
   EDGE_TYPES,
   type GraphEdge,
+  type LabelLocation,
   type VertexData,
   type VertexNode,
 } from "@/lib/graph/types";
 
-const DEFAULT_VERTEX_DATA: VertexData = { label: "", vertexType: "z" };
+const DEFAULT_VERTEX_DATA: VertexData = { phase: "", vertexType: "z" };
 
 export function makeVertex(
   id: string,
@@ -23,6 +25,8 @@ export function makeVertex(
     origin: [0.5, 0.5],
     selected,
     rotation: 0,
+    label: "",
+    labelLocation: DEFAULT_LABEL_LOCATION,
     data: { ...DEFAULT_VERTEX_DATA },
   };
 }
@@ -31,6 +35,8 @@ export type VertexWithOptions = {
   position?: { x: number; y: number };
   selected?: boolean;
   rotation?: number;
+  label?: string;
+  labelLocation?: LabelLocation;
   data?: Partial<VertexData>;
 };
 
@@ -45,6 +51,8 @@ export function makeVertexWith(
     origin: [0.5, 0.5],
     selected: options.selected ?? false,
     rotation: options.rotation ?? 0,
+    label: options.label ?? "",
+    labelLocation: options.labelLocation ?? DEFAULT_LABEL_LOCATION,
     data: { ...DEFAULT_VERTEX_DATA, ...options.data },
   };
 }

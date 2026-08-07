@@ -281,13 +281,13 @@ describe("addSelectedToPendingSources", () => {
   });
 });
 
-describe("updateVertexLabel / updateVertexType", () => {
-  it("updateVertexLabel changes only the targeted node", () => {
+describe("updateVertexPhase / updateVertexType", () => {
+  it("updateVertexPhase changes only the targeted node", () => {
     useGraphStore.setState({
-      nodes: [makeVertex("a", { data: { label: "", vertexType: "z" } })],
+      nodes: [makeVertex("a", { data: { phase: "", vertexType: "z" } })],
     });
-    useGraphStore.getState().updateVertexLabel("a", "hello");
-    expect(useGraphStore.getState().nodes[0].data.label).toBe("hello");
+    useGraphStore.getState().updateVertexPhase("a", "hello");
+    expect(useGraphStore.getState().nodes[0].data.phase).toBe("hello");
   });
 
   it("updateVertexType changes only the targeted vertex type", () => {
@@ -298,6 +298,28 @@ describe("updateVertexLabel / updateVertexType", () => {
     const nodes = useGraphStore.getState().nodes;
     expect(nodes[0].data.vertexType).toBe("x");
     expect(nodes[1].data.vertexType).toBe("z");
+  });
+
+  it("updateVertexVisualLabel changes only the targeted node's view label", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { label: "" }), makeVertex("b")],
+    });
+    useGraphStore.getState().updateVertexVisualLabel("a", "$\\alpha$");
+    const nodes = useGraphStore.getState().nodes;
+    expect(nodes[0].label).toBe("$\\alpha$");
+    expect(nodes[1].label).toBe("");
+    // The visual label never touches the graph slice.
+    expect(nodes[0].data.phase).toBe("");
+  });
+
+  it("updateVertexLabelLocation changes only the targeted node's location", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a"), makeVertex("b")],
+    });
+    useGraphStore.getState().updateVertexLabelLocation("a", "right");
+    const nodes = useGraphStore.getState().nodes;
+    expect(nodes[0].labelLocation).toBe("right");
+    expect(nodes[1].labelLocation).toBe("top");
   });
 });
 
@@ -356,11 +378,11 @@ describe("updateVertexRotation", () => {
 
   it("leaves other vertex fields untouched", () => {
     useGraphStore.setState({
-      nodes: [makeVertex("a", { rotation: 10, data: { label: "hi", vertexType: "z" } })],
+      nodes: [makeVertex("a", { rotation: 10, data: { phase: "hi", vertexType: "z" } })],
     });
     useGraphStore.getState().updateVertexRotation("a", 90);
     const node = useGraphStore.getState().nodes[0];
-    expect(node.data).toEqual({ label: "hi", vertexType: "z" });
+    expect(node.data).toEqual({ phase: "hi", vertexType: "z" });
     expect(node.position).toEqual({ x: 0, y: 0 });
   });
 });
@@ -453,7 +475,7 @@ describe("save / hydrate round-trip via localStorage", () => {
         id: "local-document",
         title: "From disk",
         graph: {
-          nodes: [{ id: "x", data: { label: "lbl", vertexType: "z" } }],
+          nodes: [{ id: "x", data: { phase: "lbl", vertexType: "z" } }],
           edges: [],
         },
         view: { nodes: [{ id: "x", position: { x: 5, y: 7 } }], edges: [] },
@@ -482,7 +504,7 @@ describe("save / hydrate round-trip via localStorage", () => {
         id: "local-document",
         title: "Non-empty",
         graph: {
-          nodes: [{ id: "x", data: { label: "lbl", vertexType: "z" } }],
+          nodes: [{ id: "x", data: { phase: "lbl", vertexType: "z" } }],
           edges: [],
         },
         view: { nodes: [{ id: "x", position: { x: 5, y: 7 } }], edges: [] },

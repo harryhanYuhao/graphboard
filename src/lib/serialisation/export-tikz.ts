@@ -88,9 +88,9 @@ function nodeLine(node: VertexNode, idx: number): string {
   // tikz and reactflow's y coordinates are reversed
   const locationY = roundToFiveDecimal(-node.position.y / locationRatio);
 
-  const style = nodeStyle(node.data.vertexType, node.data.label !== "");
+  const style = nodeStyle(node.data.vertexType, node.data.phase !== "");
 
-  return `\\node [${style}] (${idx}) at (${locationX}, ${locationY}) {${tikzLabel(node.data.label)}};`;
+  return `\\node [${style}] (${idx}) at (${locationX}, ${locationY}) {${tikzLabel(node.data.phase)}};`;
 }
 
 function edgeLine(edge: GraphEdge, nodeIndexById: Map<string, number>): string {

@@ -13,6 +13,7 @@ import {
   PERSISTED_IDS,
   type EditorMode,
   type GraphEdge,
+  type LabelLocation,
   type VertexNode,
   type VertexType,
 } from "@/lib/graph/types";
@@ -133,7 +134,12 @@ type GraphStore = {
   ) => void;
   clearPendingEdgeSources: () => void;
   addSelectedToPendingSources: () => void;
-  updateVertexLabel: (nodeId: string, label: string) => void;
+  updateVertexPhase: (nodeId: string, phase: string) => void;
+  updateVertexVisualLabel: (nodeId: string, label: string) => void;
+  updateVertexLabelLocation: (
+    nodeId: string,
+    labelLocation: LabelLocation,
+  ) => void;
   updateVertexType: (nodeId: string, vertexType: VertexType) => void;
   updateVertexOrder: (nodeId: string, targetOrder: number) => void;
   updateVertexRotation: (nodeId: string, rotation: number) => void;
@@ -654,12 +660,30 @@ export const useGraphStore = create<GraphStore>()(
         // which replace the document and clear history).
       },
 
-      updateVertexLabel: (nodeId, label) => {
+      updateVertexPhase: (nodeId, phase) => {
         set({
           nodes: get().nodes.map((node) =>
             node.id === nodeId
-              ? { ...node, data: { ...node.data, label } }
+              ? { ...node, data: { ...node.data, phase } }
               : node,
+          ),
+        });
+      },
+
+      // Visual label + location live in the view slice, like `rotation`:
+      // purely visual, never sent to the compute layer.
+      updateVertexVisualLabel: (nodeId, label) => {
+        set({
+          nodes: get().nodes.map((node) =>
+            node.id === nodeId ? { ...node, label } : node,
+          ),
+        });
+      },
+
+      updateVertexLabelLocation: (nodeId, labelLocation) => {
+        set({
+          nodes: get().nodes.map((node) =>
+            node.id === nodeId ? { ...node, labelLocation } : node,
           ),
         });
       },

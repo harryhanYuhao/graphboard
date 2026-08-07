@@ -3,7 +3,7 @@ import { validateGraphForCompute } from "./validate";
 import type { GraphSlice, GraphNodeRecord, GraphEdgeRecord } from "./types";
 
 function node(id: string, vertexType: string): GraphNodeRecord {
-  return { id, data: { label: "", vertexType: vertexType as never } };
+  return { id, data: { phase: "", vertexType: vertexType as never } };
 }
 
 function edge(id: string, source: string, target: string): GraphEdgeRecord {

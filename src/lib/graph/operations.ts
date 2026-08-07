@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import {
+  DEFAULT_LABEL_LOCATION,
   EDGE_TYPES,
   HANDLE_IDS,
   type GraphEdge,
@@ -27,8 +28,10 @@ export function createVertexNode(
     position,
     origin: [0.5, 0.5],
     rotation: 0,
+    label: "",
+    labelLocation: DEFAULT_LABEL_LOCATION,
     data: {
-      label: VERTEX_TYPE_MAP[vertexType]?.defaultText ?? "",
+      phase: VERTEX_TYPE_MAP[vertexType]?.defaultPhase ?? "",
       vertexType,
     },
   };

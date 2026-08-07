@@ -4,7 +4,7 @@
 // truth for the TS side: `src/lib/graph/types.ts`.
 //
 // `#[serde(rename_all = "camelCase")]` is load-bearing: the persisted
-// field names must match the TS `GraphNodeRecord { id, data: { label,
+// field names must match the TS `GraphNodeRecord { id, data: { phase,
 // vertexType } }` or the wasm boundary fails to deserialize.
 //
 // Edge handles are `Option<u32>`: absent in JSON means "use the role
@@ -25,7 +25,8 @@ pub struct FrontendGraphSlice {
 }
 
 /// A persisted vertex: id + the data the compute layer consumes. The
-/// `data: { label, vertexType }` nesting matches the TS contract exactly.
+/// `data: { phase, vertexType }` nesting matches the TS contract exactly.
+/// (`phase` was `label` in schema v1; the TS side migrates old docs.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrontendGraphNodeRecord {
     pub id: String,
@@ -35,7 +36,7 @@ pub struct FrontendGraphNodeRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontendVertexData {
-    pub label: String,
+    pub phase: String,
     pub vertex_type: VertexType,
     /// 0-indexed ordering of `Input` / `Output` boundary vertices within
     /// their own group; drives the final axis order of the contracted
@@ -46,13 +47,19 @@ pub struct FrontendVertexData {
     pub order: Option<u32>,
 }
 
-/// The ten vertex types: eight ZXW generators plus two boundary markers
-/// (`Input`, `Output`). Boundary types aren't tensors — they declare open
-/// legs (each dimension 2), so n inputs + m outputs → 2^m × 2^n matrix;
-/// no boundaries → scalar. Serialized lowercase to match the TS union.
-/// `Copy` so dispatch is borrow-free.
+/// The eleven vertex types: nine ZXW generators (incl. the black dot) plus
+/// two boundary markers (`Input`, `Output`). Boundary types aren't tensors —
+/// they declare open legs (each dimension 2), so n inputs + m outputs → 2^m ×
+/// 2^n matrix; no boundaries → scalar. Serialized snake_case to match the TS
+/// union. `Copy` so dispatch is borrow-free.
+///
+/// `rename_all = "snake_case"` is load-bearing: it serializes every variant
+/// to its TS spelling — `Zbox` → `zbox`, `Xbox` → `xbox`, and crucially
+/// `BlackDot` → `black_dot` (`rename_all = "lowercase"` would produce
+/// `blackdot`, which the frontend never sends). For the other ten variants
+/// snake_case is byte-identical to lowercase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum VertexType {
     Z,
     Empty,
@@ -64,6 +71,8 @@ pub enum VertexType {
     And,
     Input,
     Output,
+    /// A filled black dot: a phaseless Z spider (`z_spider(arity, 0)`).
+    BlackDot,
 }
 
 /// A persisted edge: endpoints plus optional handle indices. Handles are

@@ -53,7 +53,11 @@ export const PERSISTED_IDS = {
 } as const;
 
 export type VertexData = {
-  label: string;
+  // The vertex's phase expression — the compute input for spider/box types
+  // (`z`/`x`/`zbox`/`xbox`); decoration only for other types. Empty = phase 0
+  // (identity). Renamed from `label` in schema v2 so the name matches its
+  // semantics; the visual label now lives in the view slice (`NodeView.label`).
+  phase: string;
   vertexType: VertexType;
   // 0-indexed ordering of `input` / `output` boundary vertices, sets the final
   // axis order of the contracted tensor (Rust compute layer §5.4). Inputs and
@@ -62,16 +66,34 @@ export type VertexData = {
   order?: number;
 };
 
+// ---- Visual vertex label (view slice) ------------------------------------
+//
+// A purely visual annotation shown near a vertex (KaTeX-enabled, see
+// `src/lib/label/renderLabel.ts`). Lives in the view slice alongside
+// `rotation` — the graph slice / compute layer never sees it.
+
+export const LABEL_LOCATIONS = ["top", "bottom", "left", "right", "none"] as const;
+
+export type LabelLocation = (typeof LABEL_LOCATIONS)[number];
+
+// Where an unset label location defaults to: above the node.
+export const DEFAULT_LABEL_LOCATION: LabelLocation = "top";
+
 // ---- Runtime layer (in-memory, what the store + React Flow hold) -----------
 //
 // React Flow's own object types: renderer data (position, plumbing, ephemeral
 // `selected`); React Flow injects `measured`, `internals.positionAbsolute`, etc.
 // at render time. Never persisted — see the persistence layer below.
 
-// `rotation` lives outside `data` deliberately — it's a visual concern that
-// belongs in the view slice (`NodeView`), not in the graph-slice `VertexData`.
+// `rotation`, `label`, and `labelLocation` live outside `data` deliberately —
+// they are visual concerns that belong in the view slice (`NodeView`), not in
+// the graph-slice `VertexData`.
 export type VertexNode = Node<VertexData, "vertex"> & {
   rotation: number;
+  // Visual annotation (KaTeX-enabled) shown near the node; "" = not shown.
+  label: string;
+  // Where the visual label sits relative to the node body.
+  labelLocation: LabelLocation;
 };
 
 export type GraphEdge = Edge;
@@ -115,15 +137,21 @@ export type GraphSlice = {
   edges: GraphEdgeRecord[];
 };
 
-// View entry for a node — position and rotation today; more visual fields later.
+// View entry for a node — position, rotation, and the visual label today;
+// more visual fields later.
 //
-// `rotation` is degrees, applied via CSS transform. Visual only — the compute
-// layer reads `graph` and never sees this. Optional for backward compat with
-// pre-rotation saves; missing values hydrate to 0.
+// `rotation` is degrees, applied via CSS transform. `label` is a KaTeX-enabled
+// annotation shown near the node (see `src/lib/label/renderLabel.ts`);
+// `labelLocation` picks which side it sits on. All visual only — the compute
+// layer reads `graph` and never sees these. Optional for backward compat with
+// pre-rotation/pre-label saves; missing values hydrate to defaults (rotation
+// 0, label "", labelLocation "top").
 export type NodeView = {
   id: string;
   position: { x: number; y: number };
   rotation?: number;
+  label?: string;
+  labelLocation?: LabelLocation;
 };
 
 // View entry for an edge — placeholder for future curvature/label/style. Empty for now.
@@ -136,7 +164,7 @@ export type ViewSlice = {
   edges: EdgeView[];
 };
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export type GraphDocument = {
   schemaVersion: number;

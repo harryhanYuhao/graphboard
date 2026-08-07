@@ -12,12 +12,12 @@ use zxw::{FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendGraphSlice, 
 /// absent-field case deserializes to `None`, not `Some(0)`).
 const FRONTEND_PAYLOAD: &str = r#"{
   "nodes": [
-    { "id": "z1",   "data": { "label": "\\pi/4", "vertexType": "z" } },
-    { "id": "h1",   "data": { "label": "",        "vertexType": "h" } },
-    { "id": "w1",   "data": { "label": "W",       "vertexType": "w" } },
-    { "id": "and1", "data": { "label": "",        "vertexType": "and" } },
-    { "id": "zb1",  "data": { "label": "0",       "vertexType": "zbox" } },
-    { "id": "xb1",  "data": { "label": "$\\pi$",  "vertexType": "xbox" } }
+    { "id": "z1",   "data": { "phase": "\\pi/4", "vertexType": "z" } },
+    { "id": "h1",   "data": { "phase": "",        "vertexType": "h" } },
+    { "id": "w1",   "data": { "phase": "W",       "vertexType": "w" } },
+    { "id": "and1", "data": { "phase": "",        "vertexType": "and" } },
+    { "id": "zb1",  "data": { "phase": "0",       "vertexType": "zbox" } },
+    { "id": "xb1",  "data": { "phase": "$\\pi$",  "vertexType": "xbox" } }
   ],
   "edges": [
     { "id": "e1", "source": "z1", "target": "h1" },
@@ -32,10 +32,10 @@ fn deserializes_frontend_payload_with_camel_case_and_nested_data() {
 
     assert_eq!(slice.nodes.len(), 6);
     assert_eq!(slice.nodes[0].id, "z1");
-    assert_eq!(slice.nodes[0].data.label, "\\pi/4");
+    assert_eq!(slice.nodes[0].data.phase, "\\pi/4");
     assert_eq!(slice.nodes[0].data.vertex_type, VertexType::Z);
 
-    // Every vertex-type spelling round-trips through the lowercase rename.
+    // Every vertex-type spelling round-trips through the snake_case rename.
     let types: Vec<VertexType> = slice.nodes.iter().map(|n| n.data.vertex_type).collect();
     assert_eq!(
         types,
@@ -76,7 +76,7 @@ fn reserialize_round_trips_through_the_struct() {
     assert_eq!(once.nodes.len(), twice.nodes.len());
     for (a, b) in once.nodes.iter().zip(twice.nodes.iter()) {
         assert_eq!(a.id, b.id);
-        assert_eq!(a.data.label, b.data.label);
+        assert_eq!(a.data.phase, b.data.phase);
         assert_eq!(a.data.vertex_type, b.data.vertex_type);
     }
     for (a, b) in once.edges.iter().zip(twice.edges.iter()) {
@@ -114,7 +114,7 @@ fn struct_can_be_built_and_named_directly() {
     let _node = FrontendGraphNodeRecord {
         id: "n".into(),
         data: zxw::FrontendVertexData {
-            label: "label".into(),
+            phase: "phase".into(),
             vertex_type: VertexType::Empty,
             order: None,
         },
@@ -128,7 +128,7 @@ fn rejects_unknown_vertex_type() {
     // Only the lowercase spellings are valid; an unknown type ("t") must
     // error, not fall back to a default variant.
     let bad =
-        r#"{ "nodes": [{ "id": "x", "data": { "label": "", "vertexType": "t" } }], "edges": [] }"#;
+        r#"{ "nodes": [{ "id": "x", "data": { "phase": "", "vertexType": "t" } }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(
         result.is_err(),
@@ -146,7 +146,7 @@ fn rejects_unknown_vertex_type() {
 fn rejects_snake_case_vertex_type_field() {
     // The wire contract is camelCase; snake_case `vertex_type` must be
     // rejected (else a stale schema silently gives every node an empty label).
-    let bad = r#"{ "nodes": [{ "id": "x", "data": { "label": "hi", "vertex_type": "z" } }], "edges": [] }"#;
+    let bad = r#"{ "nodes": [{ "id": "x", "data": { "phase": "hi", "vertex_type": "z" } }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(
         result.is_err(),
@@ -159,7 +159,7 @@ fn rejects_snake_case_vertex_type_field() {
 fn rejects_missing_data_wrapper() {
     // The nested `data` wrapper is load-bearing. A flat node must fail,
     // else a refactor flattening `data` silently loses every label.
-    let flat = r#"{ "nodes": [{ "id": "x", "label": "hi", "vertexType": "z" }], "edges": [] }"#;
+    let flat = r#"{ "nodes": [{ "id": "x", "phase": "hi", "vertexType": "z" }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(flat);
     assert!(result.is_err(), "flat node (no `data`) must be rejected");
 }
@@ -167,7 +167,7 @@ fn rejects_missing_data_wrapper() {
 #[test]
 fn rejects_node_missing_id() {
     // `id` is required (the contraction algorithm's edge join key).
-    let bad = r#"{ "nodes": [{ "data": { "label": "", "vertexType": "z" } }], "edges": [] }"#;
+    let bad = r#"{ "nodes": [{ "data": { "phase": "", "vertexType": "z" } }], "edges": [] }"#;
     let result: Result<FrontendGraphSlice, _> = serde_json::from_str(bad);
     assert!(result.is_err(), "node without id must be rejected");
 }
@@ -198,26 +198,27 @@ fn empty_graph_slice_round_trips() {
 }
 
 #[test]
-fn all_ten_vertex_types_round_trip() {
-    // Every `VertexType` variant (8 generators + input/output) in one
+fn all_vertex_types_round_trip() {
+    // Every `VertexType` variant (9 generators + input/output) in one
     // payload; a rename regression surfaces here with a clear name.
     let json = r#"{
       "nodes": [
-        { "id": "n1", "data": { "label": "", "vertexType": "z" } },
-        { "id": "n2", "data": { "label": "", "vertexType": "empty" } },
-        { "id": "n3", "data": { "label": "", "vertexType": "x" } },
-        { "id": "n4", "data": { "label": "", "vertexType": "w" } },
-        { "id": "n5", "data": { "label": "", "vertexType": "h" } },
-        { "id": "n6", "data": { "label": "", "vertexType": "zbox" } },
-        { "id": "n7", "data": { "label": "", "vertexType": "xbox" } },
-        { "id": "n8", "data": { "label": "", "vertexType": "and" } },
-        { "id": "n9", "data": { "label": "", "vertexType": "input" } },
-        { "id": "n10", "data": { "label": "", "vertexType": "output" } }
+        { "id": "n1", "data": { "phase": "", "vertexType": "z" } },
+        { "id": "n2", "data": { "phase": "", "vertexType": "empty" } },
+        { "id": "n3", "data": { "phase": "", "vertexType": "x" } },
+        { "id": "n4", "data": { "phase": "", "vertexType": "w" } },
+        { "id": "n5", "data": { "phase": "", "vertexType": "h" } },
+        { "id": "n6", "data": { "phase": "", "vertexType": "zbox" } },
+        { "id": "n7", "data": { "phase": "", "vertexType": "xbox" } },
+        { "id": "n8", "data": { "phase": "", "vertexType": "and" } },
+        { "id": "n9", "data": { "phase": "", "vertexType": "input" } },
+        { "id": "n10", "data": { "phase": "", "vertexType": "output" } },
+        { "id": "n11", "data": { "phase": "", "vertexType": "black_dot" } }
       ],
       "edges": []
     }"#;
     let slice: FrontendGraphSlice = serde_json::from_str(json).unwrap();
-    assert_eq!(slice.nodes.len(), 10);
+    assert_eq!(slice.nodes.len(), 11);
     let got: Vec<VertexType> = slice.nodes.iter().map(|n| n.data.vertex_type).collect();
     assert_eq!(
         got,
@@ -232,6 +233,7 @@ fn all_ten_vertex_types_round_trip() {
             VertexType::And,
             VertexType::Input,
             VertexType::Output,
+            VertexType::BlackDot,
         ]
     );
 }
@@ -242,11 +244,11 @@ fn unicode_label_round_trips_intact() {
     // round-trip byte-for-byte so the parser sees the same string.
     let label = r#"$\pi \times 2 \div 4 - \alpha$"#;
     let json = format!(
-        r#"{{"nodes":[{{"id":"x","data":{{"label":{lbl},"vertexType":"z"}}}}],"edges":[]}}"#,
+        r#"{{"nodes":[{{"id":"x","data":{{"phase":{lbl},"vertexType":"z"}}}}],"edges":[]}}"#,
         lbl = serde_json::to_string(label).unwrap()
     );
     let slice: FrontendGraphSlice = serde_json::from_str(&json).unwrap();
-    assert_eq!(slice.nodes[0].data.label, label);
+    assert_eq!(slice.nodes[0].data.phase, label);
 }
 
 #[test]
@@ -254,7 +256,7 @@ fn negative_and_large_handle_indices_deserialize() {
     // Handles are `Option<u32>`: 0/1 works, negatives are rejected (u32
     // won't parse "-1") at deserialize time.
     let valid = r#"{
-        "nodes": [{"id":"a","data":{"label":"","vertexType":"z"}},{"id":"b","data":{"label":"","vertexType":"z"}}],
+        "nodes": [{"id":"a","data":{"phase":"","vertexType":"z"}},{"id":"b","data":{"phase":"","vertexType":"z"}}],
         "edges": [{"id":"e","source":"a","target":"b","sourceHandle":0,"targetHandle":1}]
     }"#;
     let slice: FrontendGraphSlice = serde_json::from_str(valid).unwrap();
@@ -277,9 +279,9 @@ fn vertex_order_field_round_trips_and_defaults_to_none() {
     // (back-compat), and `None` re-serializes with the field omitted.
     let json = r#"{
         "nodes": [
-            {"id":"i0","data":{"label":"","vertexType":"input","order":0}},
-            {"id":"i1","data":{"label":"","vertexType":"input","order":1}},
-            {"id":"z","data":{"label":"","vertexType":"z"}}
+            {"id":"i0","data":{"phase":"","vertexType":"input","order":0}},
+            {"id":"i1","data":{"phase":"","vertexType":"input","order":1}},
+            {"id":"z","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": []
     }"#;
@@ -302,7 +304,7 @@ fn vertex_order_field_round_trips_and_defaults_to_none() {
 
     // Absent field → None (old documents load unchanged).
     let legacy = r#"{
-        "nodes": [{"id":"i","data":{"label":"","vertexType":"input"}}],
+        "nodes": [{"id":"i","data":{"phase":"","vertexType":"input"}}],
         "edges": []
     }"#;
     let legacy_slice: FrontendGraphSlice = serde_json::from_str(legacy).unwrap();

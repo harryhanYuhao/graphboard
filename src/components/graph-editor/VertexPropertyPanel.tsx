@@ -1,9 +1,9 @@
 // src/components/graph-editor/VertexPropertyPanel.tsx
 //
-// Popover shown when exactly one vertex is selected — edit type, label, and
-// rotation without double-clicking the body. Docked top-right below the
-// toolbar so it doesn't occlude placed vertices. Auto-dismisses (returns
-// null) when selection count leaves 1.
+// Popover shown when exactly one vertex is selected — edit type, phase,
+// visual label (with location), and rotation without double-clicking the
+// body. Docked top-right below the toolbar so it doesn't occlude placed
+// vertices. Auto-dismisses (returns null) when selection count leaves 1.
 
 "use client";
 
@@ -15,7 +15,11 @@ import {
   isSpiderType,
 } from "@/lib/graph/vertex-types";
 import { normalizeRotation } from "@/lib/serialisation";
-import type { VertexType } from "@/lib/graph/types";
+import {
+  LABEL_LOCATIONS,
+  type LabelLocation,
+  type VertexType,
+} from "@/lib/graph/types";
 import { useTrackedDraft } from "@/lib/hooks/useTrackedDraft";
 import { useKatexReady } from "@/lib/hooks/useKatexReady";
 import { renderLabel } from "@/lib/label/renderLabel";
@@ -24,7 +28,13 @@ import { VertexSwatch } from "./VertexSwatch";
 
 export function VertexPropertyPanel() {
   const nodes = useGraphStore((state) => state.nodes);
-  const updateVertexLabel = useGraphStore((state) => state.updateVertexLabel);
+  const updateVertexPhase = useGraphStore((state) => state.updateVertexPhase);
+  const updateVertexVisualLabel = useGraphStore(
+    (state) => state.updateVertexVisualLabel,
+  );
+  const updateVertexLabelLocation = useGraphStore(
+    (state) => state.updateVertexLabelLocation,
+  );
   const updateVertexType = useGraphStore((state) => state.updateVertexType);
   const updateVertexRotation = useGraphStore(
     (state) => state.updateVertexRotation,
@@ -52,10 +62,16 @@ export function VertexPropertyPanel() {
   // Local drafts avoid pushing every keystroke/tick into the store (which
   // would clutter the undo stack). `trackKey` is the selected vertex id, so
   // switching vertices resets each draft.
-  const [labelDraft, setLabelDraft, labelDidReset] = useTrackedDraft({
-    source: selectedVertex?.data.label ?? "",
+  const [phaseDraft, setPhaseDraft, phaseDidReset] = useTrackedDraft({
+    source: selectedVertex?.data.phase ?? "",
     trackKey: selectedVertex?.id ?? null,
   });
+
+  const [visualLabelDraft, setVisualLabelDraft, visualLabelDidReset] =
+    useTrackedDraft({
+      source: selectedVertex?.label ?? "",
+      trackKey: selectedVertex?.id ?? null,
+    });
 
   // True during a slider drag so the drift check below doesn't reset the
   // draft on every tick (which would also cause a one-frame panel flicker).
@@ -78,12 +94,26 @@ export function VertexPropertyPanel() {
 
   // A draft just queued a reset this render — bail to avoid flashing stale
   // data for one frame before the reset applies.
-  if (labelDidReset || rotationDidReset || orderDidReset) return null;
+  if (phaseDidReset || visualLabelDidReset || rotationDidReset || orderDidReset)
+    return null;
 
-  const commitLabel = () => {
-    const trimmed = labelDraft.trim();
-    if (trimmed !== selectedVertex.data.label) {
-      updateVertexLabel(selectedVertex.id, trimmed);
+  const commitPhase = () => {
+    const trimmed = phaseDraft.trim();
+    if (trimmed !== selectedVertex.data.phase) {
+      updateVertexPhase(selectedVertex.id, trimmed);
+    }
+  };
+
+  const commitVisualLabel = () => {
+    const trimmed = visualLabelDraft.trim();
+    if (trimmed !== selectedVertex.label) {
+      updateVertexVisualLabel(selectedVertex.id, trimmed);
+    }
+  };
+
+  const commitLabelLocation = (next: LabelLocation) => {
+    if (next !== selectedVertex.labelLocation) {
+      updateVertexLabelLocation(selectedVertex.id, next);
     }
   };
 
@@ -212,35 +242,78 @@ export function VertexPropertyPanel() {
           </div>
         )}
 
-        {/* Label input — commits on blur/Enter, reverts on Escape. */}
+        {/* Phase input — the vertex's phase expression (spider/box types).
+            Commits on blur/Enter, reverts on Escape. */}
         <div>
-          <label className="mb-1 block text-xs text-slate-600">Label</label>
+          <label className="mb-1 block text-xs text-slate-600">Phase</label>
           <input
             type="text"
-            value={labelDraft}
-            onChange={(event) => setLabelDraft(event.target.value)}
-            onBlur={commitLabel}
+            value={phaseDraft}
+            onChange={(event) => setPhaseDraft(event.target.value)}
+            onBlur={commitPhase}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
                 (event.target as HTMLInputElement).blur();
               } else if (event.key === "Escape") {
                 event.preventDefault();
-                setLabelDraft(selectedVertex.data.label);
+                setPhaseDraft(selectedVertex.data.phase);
                 (event.target as HTMLInputElement).blur();
               }
             }}
-            placeholder="Label"
+            placeholder="Phase expression"
             className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
           />
 
-          {/* Live preview: how the label renders (KaTeX or plain text), and
+          {/* Live preview: how the phase renders (KaTeX or plain text), and
               the parsed phase value/error for spider types. Driven off the
               draft so feedback shows as the user types. */}
           <LabelPreview
-            label={labelDraft}
+            label={phaseDraft}
             vertexType={selectedVertex.data.vertexType}
           />
+        </div>
+
+        {/* Visual annotation label (view slice). KaTeX-enabled: a label that
+            is exactly `$...$` / `$$...$$` renders as math. Purely visual —
+            never sent to the compute layer. */}
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <label className="mb-1 block text-xs text-slate-600">Label</label>
+          <input
+            type="text"
+            value={visualLabelDraft}
+            onChange={(event) => setVisualLabelDraft(event.target.value)}
+            onBlur={commitVisualLabel}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                (event.target as HTMLInputElement).blur();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setVisualLabelDraft(selectedVertex.label);
+                (event.target as HTMLInputElement).blur();
+              }
+            }}
+            placeholder="Label ($...$ for math)"
+            className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
+          />
+
+          <label className="mb-1 mt-2 block text-xs text-slate-600">
+            Label location
+          </label>
+          <select
+            value={selectedVertex.labelLocation}
+            onChange={(event) =>
+              commitLabelLocation(event.target.value as LabelLocation)
+            }
+            className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-slate-900"
+          >
+            {LABEL_LOCATIONS.map((location) => (
+              <option key={location} value={location}>
+                {location === "none" ? "Hidden" : location}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Rotation: precise number input + gestural slider + reset. Stored in

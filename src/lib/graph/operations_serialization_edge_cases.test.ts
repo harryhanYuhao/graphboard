@@ -51,7 +51,7 @@ describe("createVertexNode (edge cases)", () => {
   it("default data is label '', vertexType 'z', rotation 0, origin [0.5,0.5], type 'vertex'", () => {
     const node = createVertexNode({ x: 3, y: 4 });
     expect(node.type).toBe("vertex");
-    expect(node.data).toEqual({ label: "", vertexType: "z" });
+    expect(node.data).toEqual({ phase: "", vertexType: "z" });
     expect(node.rotation).toBe(0);
     expect(node.origin).toEqual([0.5, 0.5]);
     expect(node.position).toEqual({ x: 3, y: 4 });
@@ -63,10 +63,10 @@ describe("createVertexNode (edge cases)", () => {
     expect(node.data.vertexType).toBe("and");
   });
 
-  it("uses the type's defaultText as the initial label when present", () => {
-    // No shipped type has a non-empty defaultText today, but the helper reads
-    // `VERTEX_TYPE_MAP[type].defaultText ?? ""` — pin the empty-string fallback.
-    expect(createVertexNode({ x: 0, y: 0 }, "w").data.label).toBe("");
+  it("uses the type's defaultPhase as the initial phase when present", () => {
+    // No shipped type has a non-empty defaultPhase today, but the helper reads
+    // `VERTEX_TYPE_MAP[type].defaultPhase ?? ""` — pin the empty-string fallback.
+    expect(createVertexNode({ x: 0, y: 0 }, "w").data.phase).toBe("");
   });
 });
 
@@ -273,7 +273,7 @@ describe("cloneSubgraphForClipboard (edge cases)", () => {
       makeVertexWith("a", {
         position: { x: 5, y: 6 },
         rotation: 42,
-        data: { label: "ph", vertexType: "x" },
+        data: { phase: "ph", vertexType: "x" },
       }),
     ];
     const edges = [
@@ -287,10 +287,10 @@ describe("cloneSubgraphForClipboard (edge cases)", () => {
   });
 
   it("produces a deep copy (mutating the clone does not affect the input)", () => {
-    const nodes = [makeVertexWith("a", { data: { label: "L", vertexType: "z" } })];
+    const nodes = [makeVertexWith("a", { data: { phase: "L", vertexType: "z" } })];
     const clone = cloneSubgraphForClipboard({ nodes, edges: [] });
-    clone.nodes[0].data.label = "changed";
-    expect(nodes[0].data.label).toBe("L");
+    clone.nodes[0].data.phase = "changed";
+    expect(nodes[0].data.phase).toBe("L");
   });
 
   it("strips `selected` from nodes and edges so the clipboard is selection-agnostic", () => {
@@ -473,11 +473,11 @@ describe("projectDocument / hydrateDocument (round-trip)", () => {
       makeVertexWith("b", {
         position: { x: 24, y: 48 },
         rotation: 90,
-        data: { label: "W0", vertexType: "w" },
+        data: { phase: "W0", vertexType: "w" },
       }),
       makeVertexWith("c", {
         position: { x: 48, y: 72 },
-        data: { label: "AND", vertexType: "and" },
+        data: { phase: "AND", vertexType: "and" },
       }),
     ];
     const edges: GraphEdge[] = [
@@ -503,9 +503,9 @@ describe("projectDocument / hydrateDocument (round-trip)", () => {
 
     expect(hydrated.nodes.map((n) => n.id)).toEqual(["a", "b", "c"]);
     expect(hydrated.nodes.map((n) => n.data)).toEqual([
-      { label: "", vertexType: "z" },
-      { label: "W0", vertexType: "w" },
-      { label: "AND", vertexType: "and" },
+      { phase: "", vertexType: "z" },
+      { phase: "W0", vertexType: "w" },
+      { phase: "AND", vertexType: "and" },
     ]);
     expect(hydrated.nodes.map((n) => n.position)).toEqual([
       { x: 12, y: 36 },
@@ -570,7 +570,7 @@ describe("projectDocument / hydrateDocument (round-trip)", () => {
     expect(viewNode.type).toBeUndefined();
     // Identity + the persisted fields are still there.
     expect(graphNode.id).toBe("a");
-    expect(graphNode.data).toEqual({ label: "", vertexType: "z" });
+    expect(graphNode.data).toEqual({ phase: "", vertexType: "z" });
     expect(viewNode.position).toEqual({ x: 1, y: 2 });
   });
 });
@@ -640,8 +640,8 @@ describe("handleIdToIndex / indexToHandleId (round-trip via project+hydrate)", (
       title: "legacy",
       graph: {
         nodes: [
-          { id: "a", data: { label: "", vertexType: "z" } },
-          { id: "b", data: { label: "", vertexType: "w" } },
+          { id: "a", data: { phase: "", vertexType: "z" } },
+          { id: "b", data: { phase: "", vertexType: "w" } },
         ],
         edges: [{ id: "e1", source: "a", target: "b" }],
       },

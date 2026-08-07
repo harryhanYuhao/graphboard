@@ -52,18 +52,19 @@ function shapeRadiusClass(shape: VertexShape): string {
 // can't drift from the entry.
 type VertexTypeMetaBase = {
   type: VertexType;
-  // Also the vertex's phase (for spider types).
+  // Display name shown in menus; not the vertex's phase.
   label: string;
 
   shape: VertexShape;
+
   // Body size; also determines handle anchor positions.
   size: number;
 
   // Tailwind classes for the shape body (fill + text + border color).
   className: string;
 
-  // Initial `VertexData.label` for a newly created vertex of this type.
-  defaultText: string,
+  // Initial `VertexData.phase` for a newly created vertex of this type.
+  defaultPhase: string,
 
   // Optional glyph (SVG) shown when the label is empty. Renders on top of
   // color/shape and inherits `className`'s text color via `currentColor`.
@@ -93,7 +94,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "circle",
     size: 4,
     className: "bg-lime-500 text-black border-lime-900 border-2 text-sm",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     type: "x",
@@ -101,7 +102,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "circle",
     size: 4,
     className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     type: "black_dot",
@@ -109,7 +110,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "circle",
     size: 2,
     className: "bg-black text-black text-sm",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     type: "empty",
@@ -117,7 +118,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "circle",
     size: 4.5,
     className: "border-2 border-dotted text-xs border-black/50",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     // Boundary marker: one open INPUT leg (see `isBoundaryVertex`).
@@ -126,7 +127,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "circle",
     size: 4.5,
     className: "border-2 border-dotted text-xs border-blue-500 text-blue-700",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     // Boundary marker: one open OUTPUT leg. Same shape as input; green border distinguishes it.
@@ -135,7 +136,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "circle",
     size: 4.5,
     className: "border-2 border-dotted text-xs border-green-500 text-green-700",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     type: "w",
@@ -143,7 +144,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "triangle",
     size: 5,
     className: "bg-slate-900 text-white pt-3 text-[10px]",
-    defaultText: "",
+    defaultPhase: "",
     // W is the "copy" generator: one input (top) fans out to many outputs (bottom).
     directional: true,
   },
@@ -153,7 +154,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "square",
     size: 4,
     className: "bg-yellow-300 text-slate-900 border-yellow-900 border-2 text-sm",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     type: "zbox",
@@ -161,7 +162,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "square",
     size: 4,
     className: "bg-lime-500 text-black border-lime-900 border-2 text-sm",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     type: "xbox",
@@ -169,7 +170,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "square",
     size: 4,
     className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
-    defaultText: ""
+    defaultPhase: ""
   },
   {
     type: "and",
@@ -177,7 +178,7 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "square",
     size: 4,
     className: "bg-white text-slate-900 border-grey-900 border-2 text-sm",
-    defaultText: "",
+    defaultPhase: "",
     // AND interior is drawn as an SVG (VertexGlyphs.tsx), not a font glyph.
     glyph: createElement(AndGateGlyph),
     // Directional like W: one input at the top, many outputs at the bottom.

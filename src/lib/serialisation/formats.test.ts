@@ -32,14 +32,14 @@ describe("EXPORT_FORMATS", () => {
     expect(byId.QASM.extension).toBe(".qasm");
   });
 
-  it("json serializes to a valid v1 GraphDocument", () => {
+  it("json serializes to a valid v2 GraphDocument", () => {
     const contents = getExportFormat("json").serialize(params);
     const parsed = JSON.parse(contents) as {
       schemaVersion: number;
       title: string;
       graph: { nodes: { id: string; data: { vertexType: string } }[] };
     };
-    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.schemaVersion).toBe(2);
     expect(parsed.title).toBe("My Graph");
     expect(parsed.graph.nodes.map((n) => n.id)).toEqual(["a", "b"]);
     expect(parsed.graph.nodes[0].data.vertexType).toBe("z");

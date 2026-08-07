@@ -6,6 +6,7 @@
 // (runtime → v1 doc) and `hydrateDocument` (v1 doc → runtime).
 import {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_LABEL_LOCATION,
   EDGE_TYPES,
   HANDLE_IDS,
   type EdgeView,
@@ -52,6 +53,8 @@ export function projectToDocument(input: ProjectInput): GraphDocument {
       id: node.id,
       position: node.position,
       rotation: normalizeRotation(node.rotation ?? 0),
+      label: node.label ?? "",
+      labelLocation: node.labelLocation ?? DEFAULT_LABEL_LOCATION,
     });
   }
 
@@ -100,6 +103,15 @@ function hydrateNode(
 ): VertexNode {
   const view = viewById.get(graphNode.id);
 
+  // Untrusted-import hardening: `view.nodes[].label` and `data.phase` are
+  // user-controlled and can be non-strings (parse only checks array-ness).
+  // Coerce at the boundary so renderLabel's `.trim()` / the phase parser
+  // never receive a non-string — a crafted doc otherwise crashes the whole
+  // editor tree (no error boundary). Non-strings degrade to the empty value.
+  const phase =
+    typeof graphNode.data?.phase === "string" ? graphNode.data.phase : "";
+  const label = typeof view?.label === "string" ? view.label : "";
+
   return {
     id: graphNode.id,
     type: "vertex",
@@ -108,7 +120,10 @@ function hydrateNode(
     position: snapPosition(view?.position ?? { x: 0, y: 0 }),
     // Absent `rotation` (pre-rotation docs) hydrates as 0.
     rotation: normalizeRotation(view?.rotation ?? 0),
-    data: graphNode.data,
+    // Absent visual-label fields (pre-v2 docs) hydrate to no label.
+    label,
+    labelLocation: view?.labelLocation ?? DEFAULT_LABEL_LOCATION,
+    data: { ...graphNode.data, phase },
     // Pins React Flow's handle anchor at the node center. Renderer detail, not persisted.
     origin: [0.5, 0.5],
   };

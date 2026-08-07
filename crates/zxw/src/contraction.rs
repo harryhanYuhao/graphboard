@@ -93,7 +93,7 @@ pub struct TensorResult {
 /// Read-only graph context built once and shared across every phase.
 struct GraphCtx<'a> {
     graph: &'a FrontendGraphSlice,
-    /// vertex id → (node_order, vertex_type, label). Duplicate ids rejected
+    /// vertex id → (node_order, vertex_type, phase). Duplicate ids rejected
     /// at build time.
     node_index: HashMap<String, (usize, VertexType, String)>,
     /// Per-vertex sort key: explicit `order`, else array position.
@@ -114,7 +114,7 @@ impl<'a> GraphCtx<'a> {
         for (i, node) in graph.nodes.iter().enumerate() {
             node_index.insert(
                 node.id.clone(),
-                (i, node.data.vertex_type, node.data.label.clone()),
+                (i, node.data.vertex_type, node.data.phase.clone()),
             );
         }
 
@@ -278,7 +278,7 @@ fn build_initial_groups(
     for (i, node) in ctx.graph.nodes.iter().enumerate() {
         let id = &node.id;
         let vt = node.data.vertex_type;
-        let label = &node.data.label;
+        let phase_str = &node.data.phase;
         let deg = *ctx.degree.get(id).unwrap_or(&0);
 
         // Boundary — no tensor. (Degree validated frontend-side.)
@@ -300,11 +300,11 @@ fn build_initial_groups(
             vt,
             VertexType::Z | VertexType::X | VertexType::Zbox | VertexType::Xbox
         ) {
-            match parse_phase(label) {
+            match parse_phase(phase_str) {
                 Ok(p) => p,
                 Err(e) => {
                     warnings.push(format!(
-                        "vertex '{id}' label '{label}' parse failed ({e}); using phase 0"
+                        "vertex '{id}' phase '{phase_str}' parse failed ({e}); using phase 0"
                     ));
                     0.0
                 }
@@ -864,7 +864,7 @@ mod tests {
     use super::*;
     use crate::graph::{FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendVertexData};
 
-    /// Build a `GraphSlice` from `(id, type, label)` + `(id, src, tgt)` tuples.
+    /// Build a `GraphSlice` from `(id, type, phase)` + `(id, src, tgt)` tuples.
     fn graph(
         nodes: &[(&str, VertexType, &str)],
         edges: &[(&str, &str, &str)],
@@ -872,10 +872,10 @@ mod tests {
         FrontendGraphSlice {
             nodes: nodes
                 .iter()
-                .map(|(id, vt, label)| FrontendGraphNodeRecord {
+                .map(|(id, vt, phase)| FrontendGraphNodeRecord {
                     id: (*id).into(),
                     data: FrontendVertexData {
-                        label: (*label).into(),
+                        phase: (*phase).into(),
                         vertex_type: *vt,
                         order: None,
                     },

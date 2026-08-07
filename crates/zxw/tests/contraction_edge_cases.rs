@@ -45,8 +45,8 @@ fn boundary_to_boundary_edge_yields_identity_matrix() {
     // output). Axes [in, out], row-major: data = [1,0,0,1].
     let json = r#"{
         "nodes": [
-            {"id":"in","data":{"label":"","vertexType":"input"}},
-            {"id":"out","data":{"label":"","vertexType":"output"}}
+            {"id":"in","data":{"phase":"","vertexType":"input"}},
+            {"id":"out","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"in","target":"out"}
@@ -67,7 +67,7 @@ fn boundary_to_boundary_edge_yields_identity_matrix() {
 fn isolated_z_spider_phase_pi_over_2_is_one_plus_i() {
     // Degree 0 → scalar 1 + e^{iπ/2} = 1 + i. (Sibling test covers π and 0.)
     let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"\\pi/2","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"\\pi/2","vertexType":"z"}}],
         "edges": []
     }"#;
     let r = compute(json);
@@ -84,7 +84,7 @@ fn isolated_z_spider_phase_pi_over_2_is_one_plus_i() {
 fn self_loop_z_spider_phase_pi_is_zero() {
     // Self-loop → arity 2 → trace = 1 + e^{iπ} = 0.
     let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"\\pi","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"\\pi","vertexType":"z"}}],
         "edges": [{"id":"s","source":"z","target":"z"}]
     }"#;
     let r = compute(json);
@@ -97,7 +97,7 @@ fn self_loop_z_spider_phase_pi_is_zero() {
 fn self_loop_z_spider_phase_pi_over_2_is_one_plus_i() {
     // Same shape, φ=π/2 → trace = 1 + i.
     let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"\\pi/2","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"\\pi/2","vertexType":"z"}}],
         "edges": [{"id":"s","source":"z","target":"z"}]
     }"#;
     let r = compute(json);
@@ -117,7 +117,7 @@ fn self_loop_z_spider_phase_pi_over_2_is_one_plus_i() {
 fn two_self_loops_z_spider_phase_zero_is_two() {
     // z_spider(4, 0) double-traced → 1 + 1 = 2.
     let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"","vertexType":"z"}}],
         "edges": [
             {"id":"s1","source":"z","target":"z"},
             {"id":"s2","source":"z","target":"z"}
@@ -133,7 +133,7 @@ fn two_self_loops_z_spider_phase_zero_is_two() {
 fn two_self_loops_z_spider_phase_pi_is_zero() {
     // z_spider(4, π) double-traced → 1 + (-1) = 0.
     let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"\\pi","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"\\pi","vertexType":"z"}}],
         "edges": [
             {"id":"s1","source":"z","target":"z"},
             {"id":"s2","source":"z","target":"z"}
@@ -157,9 +157,9 @@ fn self_loop_plus_regular_edge_consumes_correct_leg_count() {
     // z2=I leaves the output axis → result [1, 1], shape [2].
     let json = r#"{
         "nodes": [
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}},
-            {"id":"o","data":{"label":"","vertexType":"output"}}
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}},
+            {"id":"o","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"s","source":"z1","target":"z1"},
@@ -185,7 +185,7 @@ fn self_loop_plus_regular_edge_consumes_correct_leg_count() {
 #[test]
 fn self_loop_on_empty_node_traces_to_dimension_two() {
     let json = r#"{
-        "nodes": [{"id":"e","data":{"label":"","vertexType":"empty"}}],
+        "nodes": [{"id":"e","data":{"phase":"","vertexType":"empty"}}],
         "edges": [{"id":"s","source":"e","target":"e"}]
     }"#;
     let r = compute(json);
@@ -204,10 +204,10 @@ fn two_parallel_edges_through_tensor_with_boundaries_computes() {
     // entry finite (the sibling test doesn't check finiteness uniformly).
     let json = r#"{
         "nodes": [
-            {"id":"i","data":{"label":"","vertexType":"input"}},
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}},
-            {"id":"o","data":{"label":"","vertexType":"output"}}
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}},
+            {"id":"o","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"i","target":"z1"},
@@ -237,9 +237,9 @@ fn duplicate_edge_ids_are_tolerated_by_compute() {
     // z1 — z2 — z3 with both edges named "dup" → fully contracted scalar 2.
     let json = r#"{
         "nodes": [
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}},
-            {"id":"z3","data":{"label":"","vertexType":"z"}}
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}},
+            {"id":"z3","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": [
             {"id":"dup","source":"z1","target":"z2"},
@@ -262,7 +262,7 @@ fn empty_string_node_id_computes_normally() {
     // "" is a legal id (HashMap key + diagnostics both accept it). An
     // isolated z-spider named "" computes like any other → scalar 2.
     let json = r#"{
-        "nodes": [{"id":"","data":{"label":"","vertexType":"z"}}],
+        "nodes": [{"id":"","data":{"phase":"","vertexType":"z"}}],
         "edges": []
     }"#;
     let r = compute(json);
@@ -282,10 +282,10 @@ fn empty_string_node_id_computes_normally() {
 fn z_spider_to_x_spider_with_boundaries_is_identity_matrix() {
     let json = r#"{
         "nodes": [
-            {"id":"i","data":{"label":"","vertexType":"input"}},
-            {"id":"z","data":{"label":"","vertexType":"z"}},
-            {"id":"x","data":{"label":"","vertexType":"x"}},
-            {"id":"o","data":{"label":"","vertexType":"output"}}
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"z","data":{"phase":"","vertexType":"z"}},
+            {"id":"x","data":{"phase":"","vertexType":"x"}},
+            {"id":"o","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"i","target":"z"},
@@ -308,7 +308,7 @@ fn z_spider_to_x_spider_with_boundaries_is_identity_matrix() {
 fn on_progress_fires_once_with_one_one_for_single_self_loop() {
     // A self-loop is one edge in `graph.edges` → callback fires once (1, 1).
     let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"","vertexType":"z"}}],
         "edges": [{"id":"s","source":"z","target":"z"}]
     }"#;
     let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
@@ -330,9 +330,9 @@ fn three_disconnected_z_spiders_zero_phase_is_eight() {
     // Each isolated z(0) = 2; three outer-producted → 2·2·2 = 8.
     let json = r#"{
         "nodes": [
-            {"id":"a","data":{"label":"","vertexType":"z"}},
-            {"id":"b","data":{"label":"","vertexType":"z"}},
-            {"id":"c","data":{"label":"","vertexType":"z"}}
+            {"id":"a","data":{"phase":"","vertexType":"z"}},
+            {"id":"b","data":{"phase":"","vertexType":"z"}},
+            {"id":"c","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": []
     }"#;
@@ -351,8 +351,8 @@ fn two_dangling_inputs_outer_product_to_basis_state_tensor() {
     // shape [2,2], only the (0,0) entry non-zero.
     let json = r#"{
         "nodes": [
-            {"id":"i1","data":{"label":"","vertexType":"input"}},
-            {"id":"i2","data":{"label":"","vertexType":"input"}}
+            {"id":"i1","data":{"phase":"","vertexType":"input"}},
+            {"id":"i2","data":{"phase":"","vertexType":"input"}}
         ],
         "edges": []
     }"#;
@@ -369,8 +369,8 @@ fn mixed_input_output_dangling_both_outer_product() {
     // data [1, 0, 0, 0].
     let json = r#"{
         "nodes": [
-            {"id":"i","data":{"label":"","vertexType":"input"}},
-            {"id":"o","data":{"label":"","vertexType":"output"}}
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"o","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": []
     }"#;

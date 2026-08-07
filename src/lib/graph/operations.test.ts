@@ -55,8 +55,8 @@ describe("createGraphEdge", () => {
 
   it("picks the directional 'top' handle for W / And gate targets", () => {
     const nodes: VertexNode[] = [
-      { ...makeVertex("a", { x: 0, y: 0 }), data: { label: "", vertexType: "w" } },
-      { ...makeVertex("b", { x: 0, y: 0 }), data: { label: "", vertexType: "and" } },
+      { ...makeVertex("a", { x: 0, y: 0 }), data: { phase: "", vertexType: "w" } },
+      { ...makeVertex("b", { x: 0, y: 0 }), data: { phase: "", vertexType: "and" } },
     ];
     const edge = createGraphEdge("a", "b", nodes);
     expect(edge.targetHandle).toBe(HANDLE_IDS.top);
@@ -65,7 +65,7 @@ describe("createGraphEdge", () => {
   it("falls back to the centered target handle for non-directional targets", () => {
     const nodes: VertexNode[] = [
       makeVertex("a", { x: 0, y: 0 }),
-      { ...makeVertex("b", { x: 0, y: 0 }), data: { label: "", vertexType: "x" } },
+      { ...makeVertex("b", { x: 0, y: 0 }), data: { phase: "", vertexType: "x" } },
     ];
     const edge = createGraphEdge("a", "b", nodes);
     expect(edge.targetHandle).toBe(HANDLE_IDS.centerTarget);
@@ -422,7 +422,7 @@ describe("computeVertexClick", () => {
         makeVertex("a", { x: 0, y: 0 }),
         {
           ...makeVertex("c", { x: 100, y: 0 }),
-          data: { label: "", vertexType: "w" },
+          data: { phase: "", vertexType: "w" },
         },
       ];
       const result = computeVertexClick({

@@ -46,7 +46,7 @@ fn assert_accepts(json: &str) -> FrontendGraphSlice {
 #[test]
 fn explicit_null_handle_deserializes_as_none() {
     let json = r#"{
-        "nodes": [{"id": "a", "data": {"label": "", "vertexType": "z"}}],
+        "nodes": [{"id": "a", "data": {"phase": "", "vertexType": "z"}}],
         "edges": [{"id": "e", "source": "a", "target": "a", "sourceHandle": null, "targetHandle": null}]
     }"#;
     let slice = assert_accepts(json);
@@ -87,11 +87,12 @@ fn fractional_handle_value_is_rejected() {
 // §2  VertexType case-sensitivity & spelling
 // ============================================================================
 
-// 6. `vertexType: "Z"` (uppercase). Lowercase-only per `rename_all =
-// "lowercase"`; serde reports an "unknown variant" error.
+// 6. `vertexType: "Z"` (uppercase). Exact lowercase spellings per
+// `rename_all = "snake_case"` (see graph.rs); serde reports an
+// "unknown variant" error.
 #[test]
 fn uppercase_vertex_type_z_is_rejected() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "Z"}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": "Z"}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
@@ -99,7 +100,7 @@ fn uppercase_vertex_type_z_is_rejected() {
 #[test]
 fn all_caps_vertex_type_zbox_is_rejected() {
     let json =
-        r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "ZBOX"}}], "edges": []}"#;
+        r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": "ZBOX"}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
@@ -107,7 +108,7 @@ fn all_caps_vertex_type_zbox_is_rejected() {
 #[test]
 fn dashed_vertex_type_is_rejected() {
     let json =
-        r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z-box"}}], "edges": []}"#;
+        r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": "z-box"}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
@@ -115,18 +116,18 @@ fn dashed_vertex_type_is_rejected() {
 #[test]
 fn fabricated_vertex_type_boundary_is_rejected() {
     let json =
-        r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "boundary"}}], "edges": []}"#;
+        r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": "boundary"}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
 // 10. `vertexType: ""` (empty string).
 #[test]
 fn empty_string_vertex_type_is_rejected() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": ""}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": ""}}], "edges": []}"#;
     assert_rejects(json, "unknown variant");
 }
 
-// 30. Case-sensitivity table for all 10 vertex types.
+// 30. Case-sensitivity table for all 11 vertex types.
 //
 // graph_serde.rs covers the lowercase happy path; this pins that every
 // uppercase/camelCase spelling is rejected.
@@ -144,12 +145,13 @@ fn all_vertex_types_are_lowercase_only() {
         ("and", &["And", "AND", "AND-gate"]),
         ("input", &["Input", "INPUT"]),
         ("output", &["Output", "OUTPUT"]),
+        ("black_dot", &["BlackDot", "Black_Dot", "BLACK_DOT"]),
     ];
 
     for (valid, rejected_spellings) in table {
         // Lowercase round-trips.
         let good = format!(
-            r#"{{"nodes":[{{"id":"n","data":{{"label":"","vertexType":"{}"}}}}],"edges":[]}}"#,
+            r#"{{"nodes":[{{"id":"n","data":{{"phase":"","vertexType":"{}"}}}}],"edges":[]}}"#,
             valid
         );
         assert_accepts(&good);
@@ -157,7 +159,7 @@ fn all_vertex_types_are_lowercase_only() {
         // Every rejected spelling fails.
         for bad in *rejected_spellings {
             let json = format!(
-                r#"{{"nodes":[{{"id":"n","data":{{"label":"","vertexType":"{}"}}}}],"edges":[]}}"#,
+                r#"{{"nodes":[{{"id":"n","data":{{"phase":"","vertexType":"{}"}}}}],"edges":[]}}"#,
                 bad
             );
             let result: Result<FrontendGraphSlice, _> = serde_json::from_str(&json);
@@ -182,7 +184,7 @@ fn all_vertex_types_are_lowercase_only() {
 // regression (a refactor flattening `data`).
 #[test]
 fn flat_node_without_data_wrapper_is_rejected() {
-    let json = r#"{"nodes": [{"id": "x", "label": "hi", "vertexType": "z"}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "x", "phase": "hi", "vertexType": "z"}], "edges": []}"#;
     assert_rejects(json, "data");
 }
 
@@ -193,7 +195,7 @@ fn null_data_wrapper_is_rejected() {
     assert_rejects(json, "vertexdata");
 }
 
-// 13. `data: {}` → "missing field `label`" (first missing required field).
+// 13. `data: {}` → "missing field `phase`" (first missing required field).
 #[test]
 fn empty_data_object_is_rejected() {
     let json = r#"{"nodes": [{"id": "a", "data": {}}], "edges": []}"#;
@@ -203,40 +205,40 @@ fn empty_data_object_is_rejected() {
 // 14. Extra field inside `data` → silently ignored (no deny_unknown_fields).
 #[test]
 fn extra_field_inside_data_is_ignored() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "l", "vertexType": "z", "extra": 42}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "a", "data": {"phase": "l", "vertexType": "z", "extra": 42}}], "edges": []}"#;
     let slice = assert_accepts(json);
-    assert_eq!(slice.nodes[0].data.label, "l");
+    assert_eq!(slice.nodes[0].data.phase, "l");
     assert_eq!(slice.nodes[0].data.vertex_type, VertexType::Z);
 }
 
 // 15. Extra field at node level → ignored (TS may carry `selected`, etc.).
 #[test]
 fn extra_field_at_node_level_is_ignored() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z"}, "selected": true, "position": {"x": 1, "y": 2}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": "z"}, "selected": true, "position": {"x": 1, "y": 2}}], "edges": []}"#;
     let slice = assert_accepts(json);
     assert_eq!(slice.nodes[0].id, "a");
 }
 
-// 16. Missing `label` → rejected (empty string is valid, absent is not).
+// 16. Missing `phase` → rejected (empty string is valid, absent is not).
 #[test]
-fn missing_label_field_is_rejected() {
+fn missing_phase_field_is_rejected() {
     let json = r#"{"nodes": [{"id": "a", "data": {"vertexType": "z"}}], "edges": []}"#;
-    assert_rejects(json, "missing field `label`");
+    assert_rejects(json, "missing field `phase`");
 }
 
-// 17. `label: null`.
+// 17. `phase: null`.
 #[test]
 fn null_label_is_rejected() {
     let json =
-        r#"{"nodes": [{"id": "a", "data": {"label": null, "vertexType": "z"}}], "edges": []}"#;
+        r#"{"nodes": [{"id": "a", "data": {"phase": null, "vertexType": "z"}}], "edges": []}"#;
     assert_rejects(json, "expected a string");
 }
 
-// 18. `label: 123` (number not string).
+// 18. `phase: 123` (number not string).
 #[test]
 fn numeric_label_is_rejected() {
     let json =
-        r#"{"nodes": [{"id": "a", "data": {"label": 123, "vertexType": "z"}}], "edges": []}"#;
+        r#"{"nodes": [{"id": "a", "data": {"phase": 123, "vertexType": "z"}}], "edges": []}"#;
     assert_rejects(json, "expected a string");
 }
 
@@ -247,7 +249,7 @@ fn numeric_label_is_rejected() {
 // 19. `id: 123` (number not string).
 #[test]
 fn numeric_id_is_rejected() {
-    let json = r#"{"nodes": [{"id": 123, "data": {"label": "", "vertexType": "z"}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": 123, "data": {"phase": "", "vertexType": "z"}}], "edges": []}"#;
     assert_rejects(json, "expected a string");
 }
 
@@ -255,7 +257,7 @@ fn numeric_id_is_rejected() {
 // whether the compute layer handles an empty join key is its concern).
 #[test]
 fn empty_string_id_deserializes() {
-    let json = r#"{"nodes": [{"id": "", "data": {"label": "", "vertexType": "z"}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "", "data": {"phase": "", "vertexType": "z"}}], "edges": []}"#;
     let slice = assert_accepts(json);
     assert_eq!(slice.nodes[0].id, "");
 }
@@ -265,8 +267,8 @@ fn empty_string_id_deserializes() {
 #[test]
 fn duplicate_node_ids_deserialize() {
     let json = r#"{"nodes": [
-        {"id": "a", "data": {"label": "", "vertexType": "z"}},
-        {"id": "a", "data": {"label": "", "vertexType": "x"}}
+        {"id": "a", "data": {"phase": "", "vertexType": "z"}},
+        {"id": "a", "data": {"phase": "", "vertexType": "x"}}
     ], "edges": []}"#;
     let slice = assert_accepts(json);
     assert_eq!(slice.nodes.len(), 2);
@@ -329,23 +331,23 @@ fn top_level_json_boolean_is_rejected() {
 // §6  String content round-trips
 // ============================================================================
 
-// 27. Empty `data.label` round-trips.
+// 27. Empty `data.phase` round-trips.
 #[test]
 fn empty_label_round_trips() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z"}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": "z"}}], "edges": []}"#;
     let slice = assert_accepts(json);
-    assert_eq!(slice.nodes[0].data.label, "");
+    assert_eq!(slice.nodes[0].data.phase, "");
     let back = serde_json::to_string(&slice).unwrap();
     assert!(
-        back.contains(r#""label":""#),
-        "empty label must survive, got: {back}"
+        back.contains(r#""phase":""#),
+        "empty phase must survive, got: {back}"
     );
 }
 
 // 28. Unicode in `id` (e.g. `"λ"`).
 #[test]
 fn unicode_id_round_trips_intact() {
-    let json = r#"{"nodes": [{"id": "λ", "data": {"label": "", "vertexType": "z"}}], "edges": []}"#;
+    let json = r#"{"nodes": [{"id": "λ", "data": {"phase": "", "vertexType": "z"}}], "edges": []}"#;
     let slice = assert_accepts(json);
     assert_eq!(slice.nodes[0].id, "λ");
     let back = serde_json::to_string(&slice).unwrap();
@@ -358,12 +360,12 @@ fn unicode_id_round_trips_intact() {
 fn very_long_label_round_trips_without_truncation() {
     let long = "x".repeat(10_000);
     let payload = format!(
-        r#"{{"nodes":[{{"id":"a","data":{{"label":{},"vertexType":"z"}}}}],"edges":[]}}"#,
+        r#"{{"nodes":[{{"id":"a","data":{{"phase":{},"vertexType":"z"}}}}],"edges":[]}}"#,
         serde_json::to_string(&long).unwrap()
     );
     let slice = assert_accepts(&payload);
-    assert_eq!(slice.nodes[0].data.label.len(), 10_000);
-    assert!(slice.nodes[0].data.label.chars().all(|c| c == 'x'));
+    assert_eq!(slice.nodes[0].data.phase.len(), 10_000);
+    assert!(slice.nodes[0].data.phase.chars().all(|c| c == 'x'));
 }
 
 // ============================================================================
@@ -373,7 +375,7 @@ fn very_long_label_round_trips_without_truncation() {
 // 31. `source == target` (self-loop) → accepted by serde; handles survive.
 #[test]
 fn self_loop_edge_deserializes() {
-    let json = r#"{"nodes": [{"id": "a", "data": {"label": "", "vertexType": "z"}}], "edges": [{"id": "e", "source": "a", "target": "a", "sourceHandle": 0, "targetHandle": 1}]}"#;
+    let json = r#"{"nodes": [{"id": "a", "data": {"phase": "", "vertexType": "z"}}], "edges": [{"id": "e", "source": "a", "target": "a", "sourceHandle": 0, "targetHandle": 1}]}"#;
     let slice = assert_accepts(json);
     assert_eq!(slice.edges[0].source, "a");
     assert_eq!(slice.edges[0].target, "a");
@@ -387,18 +389,18 @@ fn self_loop_edge_deserializes() {
 // caught here; two structurally-identical slices re-serialize byte-identically.
 #[test]
 fn serialization_key_order_is_stable() {
-    // Node: `id`, then `data` (`label`, then `vertexType`).
+    // Node: `id`, then `data` (`phase`, then `vertexType`).
     let node = FrontendGraphNodeRecord {
         id: "z".into(),
         data: FrontendVertexData {
-            label: "l".into(),
+            phase: "l".into(),
             vertex_type: VertexType::Z,
             order: None,
         },
     };
     assert_eq!(
         serde_json::to_string(&node).unwrap(),
-        r#"{"id":"z","data":{"label":"l","vertexType":"z"}}"#
+        r#"{"id":"z","data":{"phase":"l","vertexType":"z"}}"#
     );
 
     // Edge: `id`, `source`, `target`, then optional handles.

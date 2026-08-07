@@ -48,7 +48,7 @@ fn empty_graph_is_scalar_one() {
 fn single_z_spider_isolated_is_scalar_one_plus_exp_i_phi() {
     // Isolated Z spider: scalar `1 + e^{iφ}`. φ=π → 0, φ=0 → 2.
     let json_pi = r#"{
-        "nodes": [{"id":"z","data":{"label":"\\pi","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"\\pi","vertexType":"z"}}],
         "edges": []
     }"#;
     let r = compute(json_pi);
@@ -56,7 +56,7 @@ fn single_z_spider_isolated_is_scalar_one_plus_exp_i_phi() {
     assert_relative_eq!(r.data[0].0, 0.0, epsilon = 1e-10);
 
     let json_zero = r#"{
-        "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"","vertexType":"z"}}],
         "edges": []
     }"#;
     let r0 = compute(json_zero);
@@ -69,11 +69,11 @@ fn z_h_z_chain_with_boundaries_is_z_h_z_matrix() {
     // Result is the matrix Z(π/2)·H = (1/√2)·[[1, 1], [i, -i]], shape [2,2].
     let json = r#"{
         "nodes": [
-            {"id":"o1","data":{"label":"","vertexType":"output"}},
-            {"id":"z1","data":{"label":"\\pi/2","vertexType":"z"}},
-            {"id":"h","data":{"label":"","vertexType":"h"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}},
-            {"id":"o2","data":{"label":"","vertexType":"output"}}
+            {"id":"o1","data":{"phase":"","vertexType":"output"}},
+            {"id":"z1","data":{"phase":"\\pi/2","vertexType":"z"}},
+            {"id":"h","data":{"phase":"","vertexType":"h"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}},
+            {"id":"o2","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"o1","target":"z1"},
@@ -106,8 +106,8 @@ fn fully_contracted_two_z_spiders_scalar_is_two_plus_one() {
     // Both are I (φ=0); Σ z1·z2 over the shared indices = 2.
     let json = r#"{
         "nodes": [
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}}
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": [
             {"id":"e1","source":"z1","target":"z2"},
@@ -125,8 +125,8 @@ fn fully_contracted_z_pi_cancels_to_zero() {
     // z1 = diag(1,-1); the two contributions cancel → 0.
     let json = r#"{
         "nodes": [
-            {"id":"z1","data":{"label":"\\pi","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}}
+            {"id":"z1","data":{"phase":"\\pi","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": [
             {"id":"e1","source":"z1","target":"z2"},
@@ -146,7 +146,7 @@ fn self_loop_z_spider_yields_trace() {
     // φ=π/2 → 1+i.
     let json = r#"{
         "nodes": [
-            {"id":"z","data":{"label":"\\pi/2","vertexType":"z"}}
+            {"id":"z","data":{"phase":"\\pi/2","vertexType":"z"}}
         ],
         "edges": [
             {"id":"self","source":"z","target":"z"}
@@ -167,9 +167,9 @@ fn input_output_counts_flow_through() {
     // boundary legs remain as open axes → shape [2,2].
     let json = r#"{
         "nodes": [
-            {"id":"in","data":{"label":"","vertexType":"input"}},
-            {"id":"z","data":{"label":"","vertexType":"z"}},
-            {"id":"out","data":{"label":"","vertexType":"output"}}
+            {"id":"in","data":{"phase":"","vertexType":"input"}},
+            {"id":"z","data":{"phase":"","vertexType":"z"}},
+            {"id":"out","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"in","target":"z"},
@@ -184,6 +184,32 @@ fn input_output_counts_flow_through() {
     assert_data(&r.data, &[(1.0, 0.0), (0.0, 0.0), (0.0, 0.0), (1.0, 0.0)]);
 }
 
+#[test]
+fn black_dot_contracts_like_a_phaseless_z_spider() {
+    // Pinned semantics: black_dot ≡ z_spider(arity, 0). The same wire-up
+    // as `input_output_counts_flow_through` with a black dot in place of the
+    // phaseless Z must give the identity matrix.
+    let json = r#"{
+        "nodes": [
+            {"id":"in","data":{"phase":"","vertexType":"input"}},
+            {"id":"bd","data":{"phase":"ignored","vertexType":"black_dot"}},
+            {"id":"out","data":{"phase":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"in","target":"bd"},
+            {"id":"e2","source":"bd","target":"out"}
+        ]
+    }"#;
+    let r = compute(json);
+    assert_eq!(r.shape, vec![2, 2]);
+    assert_eq!(r.input_count, 1);
+    assert_eq!(r.output_count, 1);
+    // Identity, exactly like the phaseless Z case — and the (ignored)
+    // non-empty `phase` string proves black_dot never parses a phase.
+    assert_data(&r.data, &[(1.0, 0.0), (0.0, 0.0), (0.0, 0.0), (1.0, 0.0)]);
+    assert!(r.warnings.is_empty(), "phase on black_dot must be ignored");
+}
+
 // ---- Disconnected components -----------------------------------------------
 
 #[test]
@@ -191,8 +217,8 @@ fn disconnected_components_outer_producted() {
     // Two isolated Z spiders outer-producted; each scalar = 2 → product 4.
     let json = r#"{
         "nodes": [
-            {"id":"a","data":{"label":"","vertexType":"z"}},
-            {"id":"b","data":{"label":"","vertexType":"z"}}
+            {"id":"a","data":{"phase":"","vertexType":"z"}},
+            {"id":"b","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": []
     }"#;
@@ -206,7 +232,7 @@ fn dangling_boundary_contributes_identity_axis() {
     // A dangling `input` contributes a length-2 axis [1, 0] → shape [2].
     let json = r#"{
         "nodes": [
-            {"id":"in","data":{"label":"","vertexType":"input"}}
+            {"id":"in","data":{"phase":"","vertexType":"input"}}
         ],
         "edges": []
     }"#;
@@ -224,11 +250,11 @@ fn z_h_z_chain_with_zero_phase_is_identity() {
     // Chain with φ=0 → I·H·I = H. Result is the Hadamard matrix.
     let json = r#"{
         "nodes": [
-            {"id":"o1","data":{"label":"","vertexType":"output"}},
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"h","data":{"label":"","vertexType":"h"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}},
-            {"id":"o2","data":{"label":"","vertexType":"output"}}
+            {"id":"o1","data":{"phase":"","vertexType":"output"}},
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"h","data":{"phase":"","vertexType":"h"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}},
+            {"id":"o2","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"o1","target":"z1"},
@@ -252,10 +278,10 @@ fn bell_state_preparation_yields_phi_plus() {
     // (o1, o2) matrix = H = (1/√2)·[[1,1],[1,-1]] (the X-basis Bell state).
     let json = r#"{
         "nodes": [
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"h","data":{"label":"","vertexType":"h"}},
-            {"id":"o1","data":{"label":"","vertexType":"output"}},
-            {"id":"o2","data":{"label":"","vertexType":"output"}}
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"h","data":{"phase":"","vertexType":"h"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output"}},
+            {"id":"o2","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"z1","target":"h"},
@@ -277,8 +303,8 @@ fn fully_contracted_has_zero_boundaries() {
     // Fully-contracted graph → scalar; both boundary counts zero.
     let json = r#"{
         "nodes": [
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}}
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": [
             {"id":"e1","source":"z1","target":"z2"},
@@ -299,9 +325,9 @@ fn z_box_between_boundaries_is_diagonal_with_phase_value() {
     // (raw value, NOT e^{iφ}). Boundary legs become result axes.
     let json = r#"{
         "nodes": [
-            {"id":"o","data":{"label":"","vertexType":"output"}},
-            {"id":"zb","data":{"label":"\\pi","vertexType":"zbox"}},
-            {"id":"i","data":{"label":"","vertexType":"input"}}
+            {"id":"o","data":{"phase":"","vertexType":"output"}},
+            {"id":"zb","data":{"phase":"\\pi","vertexType":"zbox"}},
+            {"id":"i","data":{"phase":"","vertexType":"input"}}
         ],
         "edges": [
             {"id":"e1","source":"i","target":"zb"},
@@ -323,9 +349,9 @@ fn x_box_between_boundaries_is_basis_conjugate_of_z_box() {
     // (1/2)·all-ones.
     let json = r#"{
         "nodes": [
-            {"id":"o","data":{"label":"","vertexType":"output"}},
-            {"id":"xb","data":{"label":"","vertexType":"xbox"}},
-            {"id":"i","data":{"label":"","vertexType":"input"}}
+            {"id":"o","data":{"phase":"","vertexType":"output"}},
+            {"id":"xb","data":{"phase":"","vertexType":"xbox"}},
+            {"id":"i","data":{"phase":"","vertexType":"input"}}
         ],
         "edges": [
             {"id":"e1","source":"i","target":"xb"},
@@ -347,10 +373,10 @@ fn and_gate_two_inputs_is_logical_and() {
     // (reshape to a matrix is the frontend's concern).
     let json = r#"{
         "nodes": [
-            {"id":"i1","data":{"label":"","vertexType":"input"}},
-            {"id":"i2","data":{"label":"","vertexType":"input"}},
-            {"id":"a","data":{"label":"","vertexType":"and"}},
-            {"id":"o","data":{"label":"","vertexType":"output"}}
+            {"id":"i1","data":{"phase":"","vertexType":"input"}},
+            {"id":"i2","data":{"phase":"","vertexType":"input"}},
+            {"id":"a","data":{"phase":"","vertexType":"and"}},
+            {"id":"o","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"i1","target":"a"},
@@ -383,10 +409,10 @@ fn w_node_one_input_two_outputs_yields_directional_state() {
     // [2,2,2]. Non-zero at T[0,0,0], T[1,0,1], T[1,1,0] (index = in*4+out0*2+out1).
     let json = r#"{
         "nodes": [
-            {"id":"i","data":{"label":"","vertexType":"input"}},
-            {"id":"w","data":{"label":"","vertexType":"w"}},
-            {"id":"o0","data":{"label":"","vertexType":"output"}},
-            {"id":"o1","data":{"label":"","vertexType":"output"}}
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"w","data":{"phase":"","vertexType":"w"}},
+            {"id":"o0","data":{"phase":"","vertexType":"output"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"i","target":"w"},
@@ -422,10 +448,10 @@ fn z_z_parallel_path_multi_edge() {
     // Pins multi-edge contraction (two legs consumed between one pair).
     let json = r#"{
         "nodes": [
-            {"id":"i","data":{"label":"","vertexType":"input"}},
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}},
-            {"id":"o","data":{"label":"","vertexType":"output"}}
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}},
+            {"id":"o","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"i","target":"z1"},
@@ -457,11 +483,11 @@ fn two_inputs_two_outputs_basis_order_is_big_endian() {
     // only k=0 (0000) and k=15 (1111) are non-zero.
     let json = r#"{
         "nodes": [
-            {"id":"i1","data":{"label":"","vertexType":"input"}},
-            {"id":"i2","data":{"label":"","vertexType":"input"}},
-            {"id":"z","data":{"label":"","vertexType":"z"}},
-            {"id":"o1","data":{"label":"","vertexType":"output"}},
-            {"id":"o2","data":{"label":"","vertexType":"output"}}
+            {"id":"i1","data":{"phase":"","vertexType":"input"}},
+            {"id":"i2","data":{"phase":"","vertexType":"input"}},
+            {"id":"z","data":{"phase":"","vertexType":"z"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output"}},
+            {"id":"o2","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": [
             {"id":"e1","source":"i1","target":"z"},
@@ -501,12 +527,12 @@ fn boundary_order_field_drives_input_axis_order() {
     let baseline = compute(
         r#"{
         "nodes": [
-            {"id":"iA","data":{"label":"","vertexType":"input"}},
-            {"id":"oA","data":{"label":"","vertexType":"output"}},
-            {"id":"zA","data":{"label":"\\pi","vertexType":"z"}},
-            {"id":"iB","data":{"label":"","vertexType":"input"}},
-            {"id":"oB","data":{"label":"","vertexType":"output"}},
-            {"id":"zB","data":{"label":"0","vertexType":"z"}}
+            {"id":"iA","data":{"phase":"","vertexType":"input"}},
+            {"id":"oA","data":{"phase":"","vertexType":"output"}},
+            {"id":"zA","data":{"phase":"\\pi","vertexType":"z"}},
+            {"id":"iB","data":{"phase":"","vertexType":"input"}},
+            {"id":"oB","data":{"phase":"","vertexType":"output"}},
+            {"id":"zB","data":{"phase":"0","vertexType":"z"}}
         ],
         "edges": [
             {"id":"e1","source":"iA","target":"zA"},
@@ -529,12 +555,12 @@ fn boundary_order_field_drives_input_axis_order() {
     let reordered = compute(
         r#"{
         "nodes": [
-            {"id":"iA","data":{"label":"","vertexType":"input","order":1}},
-            {"id":"oA","data":{"label":"","vertexType":"output"}},
-            {"id":"zA","data":{"label":"\\pi","vertexType":"z"}},
-            {"id":"iB","data":{"label":"","vertexType":"input","order":0}},
-            {"id":"oB","data":{"label":"","vertexType":"output"}},
-            {"id":"zB","data":{"label":"0","vertexType":"z"}}
+            {"id":"iA","data":{"phase":"","vertexType":"input","order":1}},
+            {"id":"oA","data":{"phase":"","vertexType":"output"}},
+            {"id":"zA","data":{"phase":"\\pi","vertexType":"z"}},
+            {"id":"iB","data":{"phase":"","vertexType":"input","order":0}},
+            {"id":"oB","data":{"phase":"","vertexType":"output"}},
+            {"id":"zB","data":{"phase":"0","vertexType":"z"}}
         ],
         "edges": [
             {"id":"e1","source":"iA","target":"zA"},
@@ -563,7 +589,7 @@ fn boundary_order_field_drives_input_axis_order() {
 fn empty_node_is_identity_weight() {
     // An isolated empty node → degree 0 → scalar 1 (the multiplicative identity).
     let json = r#"{
-        "nodes": [{"id":"e","data":{"label":"","vertexType":"empty"}}],
+        "nodes": [{"id":"e","data":{"phase":"","vertexType":"empty"}}],
         "edges": []
     }"#;
     let r = compute(json);
@@ -580,9 +606,9 @@ fn unparseable_label_warning_flows_through_end_to_end() {
     // also confirms the substitution happened.
     let json = r#"{
         "nodes": [
-            {"id":"o","data":{"label":"","vertexType":"output"}},
-            {"id":"z","data":{"label":"not a phase","vertexType":"z"}},
-            {"id":"i","data":{"label":"","vertexType":"input"}}
+            {"id":"o","data":{"phase":"","vertexType":"output"}},
+            {"id":"z","data":{"phase":"not a phase","vertexType":"z"}},
+            {"id":"i","data":{"phase":"","vertexType":"input"}}
         ],
         "edges": [
             {"id":"e1","source":"i","target":"z"},
@@ -609,7 +635,7 @@ fn dangling_degree_zero_input_contributes_basis_state_axis() {
     // (the |0⟩ basis state).
     let json = r#"{
         "nodes": [
-            {"id":"in","data":{"label":"","vertexType":"input"}}
+            {"id":"in","data":{"phase":"","vertexType":"input"}}
         ],
         "edges": []
     }"#;
@@ -625,7 +651,7 @@ fn dangling_degree_zero_output_contributes_basis_state_axis() {
     // Symmetric to the input case: isolated `output` → shape [2], data [1,0].
     let json = r#"{
         "nodes": [
-            {"id":"out","data":{"label":"","vertexType":"output"}}
+            {"id":"out","data":{"phase":"","vertexType":"output"}}
         ],
         "edges": []
     }"#;
@@ -643,10 +669,10 @@ fn on_progress_is_invoked_once_per_edge_with_running_and_total_counts() {
     // 3-edge chain → 3 calls: (1,3),(2,3),(3,3).
     let json = r#"{
         "nodes": [
-            {"id":"a","data":{"label":"","vertexType":"z"}},
-            {"id":"b","data":{"label":"","vertexType":"z"}},
-            {"id":"c","data":{"label":"","vertexType":"z"}},
-            {"id":"d","data":{"label":"","vertexType":"z"}}
+            {"id":"a","data":{"phase":"","vertexType":"z"}},
+            {"id":"b","data":{"phase":"","vertexType":"z"}},
+            {"id":"c","data":{"phase":"","vertexType":"z"}},
+            {"id":"d","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": [
             {"id":"e1","source":"a","target":"b"},
@@ -680,7 +706,7 @@ fn on_progress_is_invoked_once_per_edge_with_running_and_total_counts() {
 fn on_progress_not_called_when_there_are_zero_edges() {
     // No edges → callback never fires (no spurious "0/0" call).
     let json = r#"{
-        "nodes": [{"id":"z","data":{"label":"","vertexType":"z"}}],
+        "nodes": [{"id":"z","data":{"phase":"","vertexType":"z"}}],
         "edges": []
     }"#;
     let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
@@ -706,8 +732,8 @@ fn degree_overflow_is_defensive_only_parallel_plus_selfloops() {
     // (DegreeOverflow is unreachable for valid inputs since arity == degree).
     let json = r#"{
         "nodes": [
-            {"id":"z1","data":{"label":"","vertexType":"z"}},
-            {"id":"z2","data":{"label":"","vertexType":"z"}}
+            {"id":"z1","data":{"phase":"","vertexType":"z"}},
+            {"id":"z2","data":{"phase":"","vertexType":"z"}}
         ],
         "edges": [
             {"id":"e1","source":"z1","target":"z2"},

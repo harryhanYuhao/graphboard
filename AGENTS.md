@@ -79,7 +79,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
   `hydrate()` stamps the flag at open time so the guide shows exactly once.
 - `src/lib/download.ts`, `src/lib/filename.ts` — file picker + filename helpers.
 - `src/lib/serialisation/` — the persistence + export boundary. `document.ts`
-  is the runtime ↔ v1-doc projection/hydration (`projectDocument` /
+  is the runtime ↔ v2-doc projection/hydration (`projectDocument` /
   `hydrateDocument` + handle index translation); `parse.ts` validates imported
   JSON (`parseDocument` / `importGraphJson`); `storage.ts` is the `localStorage`
   save/load; export serializers live one file per format (`export-json.ts` +
@@ -180,7 +180,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
 ### Rust compute layer
 
 The Rust crate `crates/zxw/` is the compute boundary — it consumes the
-`graph` slice of a `GraphDocument` (see §"Document shape (v1)" below)
+`graph` slice of a `GraphDocument` (see §"Document shape (v2)" below)
 and returns a tensor result. Same crate, two build targets:
 
 - **Native** — `cargo test -p zxw`, `cargo build -p zxw`. No WASM, no
@@ -223,25 +223,33 @@ fields. `index.test.ts` asserts the field names.
 Public plan: `doc/plans.md`. Treat that doc as the contract — if you
 change the compute boundary, update the plan too.
 
-### Label as phase (spider / box types)
+### Phase vs. visual label
 
-For `z`, `x`, `zbox`, `xbox` the vertex `label` carries **the phase
-expression**, not a free-form name. For `empty`, `w`, `h`, `and` the
-label is decoration only. The split is exposed via
-`isSpiderType(vertexType)` in `src/lib/graph/vertex-types.ts` — that's
-the single source of truth for "should this label be parsed as a
-phase?".
+The vertex's **phase** is `data.phase` on the graph slice — the compute
+input for spider/box types (`z`, `x`, `zbox`, `xbox`), decoration only for
+other types. The split is exposed via `isSpiderType(vertexType)` in
+`src/lib/graph/vertex-types.ts` — that's the single source of truth for
+"should this phase be parsed as a phase?".
 
-- A label that is exactly `$...$` or `$$...$$` is rendered with KaTeX
+- A phase that is exactly `$...$` or `$$...$$` is rendered with KaTeX
   (see `src/lib/label/renderLabel.ts`) and parsed as a phase by
   `src/lib/phase/parser.ts`. Anything else renders as plain text.
-- An empty label on a spider means phase 0 (identity).
+- An empty phase on a spider means phase 0 (identity).
 - Phase grammar (v1, numeric only): numbers, `\pi`, `+ - * / ( )`,
   unary minus / plus. Free variables (`\alpha`, `\beta`, …) are
   errors in v1; Phase 6 introduces symbolic arithmetic.
 
+The **visual label** is separate and lives in the view slice
+(`NodeView.label` + `labelLocation`, runtime fields `node.label` /
+`node.labelLocation`, like `rotation`). It is a KaTeX-enabled annotation
+shown near the node; purely visual — the compute layer never sees it.
+
+Phase was called `label` in schema v1; the v1→v2 migration in
+`src/lib/serialisation/parse.ts` renames `data.label` → `data.phase` on
+load/import.
+
 The Rust compute layer ports the same grammar
-(`crates/zxw/src/phase.rs`) so labels parse identically on both sides
+(`crates/zxw/src/phase.rs`) so phases parse identically on both sides
 of the WASM boundary; `crates/zxw/tests/phase_grammar.rs` pins it.
 
 ## Persistence & export gotchas
@@ -255,37 +263,37 @@ of the WASM boundary; `crates/zxw/tests/phase_grammar.rs` pins it.
   Access API (`window.showSaveFilePicker`) and falls back to anchor-download.
   `src/lib/filename.ts` sanitizes the title into a safe filename.
 
-## Document shape (v1): graph vs view
+## Document shape (v2): graph vs view
 
 Persisted documents (`GraphDocument`, see `src/lib/graph/types.ts`) are
 **split** into two parallel slices:
 
-- **`graph`** — graph-theoretic info only. `nodes: { id, data: { label,
+- **`graph`** — graph-theoretic info only. `nodes: { id, data: { phase,
   vertexType } }[]` and `edges: { id, source, target, sourceHandle?,
   targetHandle? }[]` (handle fields are numeric indices, see §"Handles"
   above). This is the contract that the future Rust/WASM compute layer (and
   any external researcher's tooling) consumes.
-- **`view`** — visual info only. `nodes: { id, position, rotation? }[]` and
-  `edges: { id }[]` today; future edge curvature, group colors, etc. will
-  live here.
+- **`view`** — visual info only. `nodes: { id, position, rotation?,
+  label?, labelLocation? }[]` and `edges: { id }[]` today; future edge
+  curvature, group colors, etc. will live here.
 
 The runtime store still holds React Flow's own `Node`/`Edge` objects
 (`VertexNode` / `GraphEdge`) because that's what React Flow consumes.
 Conversion happens at the persistence boundary in `src/lib/serialisation/`:
 
-- `projectDocument(runtime)` → v1 doc (called from `saveGraphDocument`
+- `projectDocument(runtime)` → v2 doc (called from `saveGraphDocument`
   and `exportGraphJson`).
 - `hydrateDocument(doc)` → runtime objects (called from `loadGraphDocument`
   consumers — i.e. the store's `hydrate` action).
 
 **Rules of thumb:**
 
-- The compute boundary (`src/lib/compute/` when it lands) reads only
-  `doc.graph` — never `doc.view`.
+- The compute boundary reads only `doc.graph` — never `doc.view`.
 - Selection (`selected`), `origin`, React Flow's `type` discriminator
   (`"vertex"` / `"straight-center"`), and runtime `measured` /
   `internals.*` fields are **never** persisted. (Pre-v1, selection
   accidentally survived reloads — the split fixes that.)
-- Schema versioning lives in `CURRENT_SCHEMA_VERSION` (= `1`). Bump it
+- Schema versioning lives in `CURRENT_SCHEMA_VERSION` (= `2`). Bump it
   when the shape changes again and add a migration step in
-  `loadGraphDocument` / `importGraphJson`.
+  `src/lib/serialisation/parse.ts` (`parseDocument` runs it for both
+  the load and import paths).

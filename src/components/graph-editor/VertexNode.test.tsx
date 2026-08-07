@@ -3,6 +3,7 @@ import { render, screen, act } from "@testing-library/react";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import { useGraphStore } from "@/store/graph-store";
 import type { VertexNode as VertexNodeType } from "@/lib/graph/types";
+import { makeVertexWith } from "@/test-utils/factories";
 import { VertexNode } from "./VertexNode";
 
 function renderWithFlow(ui: React.ReactElement) {
@@ -17,7 +18,7 @@ function props(
 ): NodeProps<VertexNodeType> {
   return {
     id,
-    data: { label: "", vertexType: vertexType as never },
+    data: { phase: "", vertexType: vertexType as never },
     selected,
   } as NodeProps<VertexNodeType>;
 }
@@ -86,5 +87,32 @@ describe("VertexNode — error rendering", () => {
     });
     rerender(<ReactFlowProvider><VertexNode {...props("w1", "w")} /></ReactFlowProvider>);
     expect(screen.queryByText("transient")).not.toBeInTheDocument();
+  });
+});
+
+describe("VertexNode — visual annotation label", () => {
+  beforeEach(() => {
+    useGraphStore.getState().reset();
+    useGraphStore.setState({ validationErrors: {} });
+  });
+
+  it("renders the visual label when present", () => {
+    useGraphStore.setState({
+      nodes: [makeVertexWith("a", { label: "hello" })],
+    });
+    renderWithFlow(<VertexNode {...props("a", "z")} />);
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
+
+  it("hides the label when it is empty or the location is 'none'", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("a", { label: "hidden", labelLocation: "none" }),
+        makeVertexWith("b", { label: "" }),
+      ],
+    });
+    renderWithFlow(<VertexNode {...props("a", "z")} />);
+    renderWithFlow(<VertexNode {...props("b", "z")} />);
+    expect(screen.queryByText("hidden")).not.toBeInTheDocument();
   });
 });

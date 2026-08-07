@@ -49,7 +49,7 @@ function validDocJson(overrides: Record<string, unknown> = {}): string {
     id: "local-document",
     title: "Imported",
     graph: {
-      nodes: [{ id: "imp1", data: { label: "lbl", vertexType: "z" } }],
+      nodes: [{ id: "imp1", data: { phase: "lbl", vertexType: "z" } }],
       edges: [],
     },
     view: { nodes: [{ id: "imp1", position: { x: 9, y: 9 } }], edges: [] },
@@ -532,9 +532,9 @@ describe("updateVertex* on a non-existent node id", () => {
   // the user can "undo" to a visually-identical state. Pinned; fixing would
   // require every action to short-circuit on no-change.
 
-  it("updateVertexLabel on a missing id is a silent no-op on node contents", () => {
+  it("updateVertexPhase on a missing id is a silent no-op on node contents", () => {
     useGraphStore.setState({ nodes: [makeVertex("a")] });
-    useGraphStore.getState().updateVertexLabel("does-not-exist", "x");
+    useGraphStore.getState().updateVertexPhase("does-not-exist", "x");
     expect(useGraphStore.getState().nodes).toHaveLength(1);
     expect(useGraphStore.getState().nodes[0].id).toBe("a");
   });
@@ -553,16 +553,16 @@ describe("updateVertex* on a non-existent node id", () => {
 });
 
 // ---------------------------------------------------------------------------
-// updateVertexLabel / updateVertexType boundary inputs.
+// updateVertexPhase / updateVertexType boundary inputs.
 // ---------------------------------------------------------------------------
 
-describe("updateVertexLabel / updateVertexType input boundaries", () => {
-  it("updateVertexLabel accepts an empty string (means phase 0 for spiders)", () => {
+describe("updateVertexPhase / updateVertexType input boundaries", () => {
+  it("updateVertexPhase accepts an empty string (means phase 0 for spiders)", () => {
     useGraphStore.setState({
-      nodes: [makeVertex("a", { data: { label: "pi", vertexType: "z" } })],
+      nodes: [makeVertex("a", { data: { phase: "pi", vertexType: "z" } })],
     });
-    useGraphStore.getState().updateVertexLabel("a", "");
-    expect(useGraphStore.getState().nodes[0].data.label).toBe("");
+    useGraphStore.getState().updateVertexPhase("a", "");
+    expect(useGraphStore.getState().nodes[0].data.phase).toBe("");
   });
 
   it("updateVertexType accepts a boundary type ('input') without validation", () => {
@@ -1002,8 +1002,8 @@ describe("importJson merge semantics", () => {
 
     const contents = docWithGraph(
       [
-        { id: "imp1", data: { label: "", vertexType: "z" } },
-        { id: "imp2", data: { label: "", vertexType: "z" } },
+        { id: "imp1", data: { phase: "", vertexType: "z" } },
+        { id: "imp2", data: { phase: "", vertexType: "z" } },
       ],
       [{ id: "e1", source: "imp1", target: "imp2" }],
     );
@@ -1035,7 +1035,7 @@ describe("importJson merge semantics", () => {
 
   it("drops imported edges whose endpoints are missing from the import", async () => {
     const contents = docWithGraph(
-      [{ id: "imp1", data: { label: "", vertexType: "z" } }],
+      [{ id: "imp1", data: { phase: "", vertexType: "z" } }],
       [{ id: "e1", source: "imp1", target: "ghost" }],
     );
     vi.mocked(openTextFileWithPicker).mockResolvedValue(contents);
@@ -1127,7 +1127,7 @@ describe("exportGraph / export dialog state", () => {
       createdAt: string;
     };
     expect(parsed.title).toBe("Round Trip");
-    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.schemaVersion).toBe(2);
     expect(parsed.createdAt).toBe("2025-01-01T00:00:00.000Z");
   });
 

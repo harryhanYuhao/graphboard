@@ -428,6 +428,7 @@ fn build_vertex_tensor_returns_some_for_every_generator() {
         VertexType::H,
         VertexType::And,
         VertexType::Empty,
+        VertexType::BlackDot,
     ];
     for vt in cases {
         assert!(

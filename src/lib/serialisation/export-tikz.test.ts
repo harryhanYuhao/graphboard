@@ -53,14 +53,14 @@ describe("exportTikz", () => {
 
   it("renders labeled z spiders as green word balls with math-wrapped labels", () => {
     const out = render([
-      makeVertexWith("a", { data: { label: "\\pi" } }),
+      makeVertexWith("a", { data: { phase: "\\pi" } }),
     ]);
     expect(out).toContain("\\node [GREEN_WORD_BALL] (1) at (0, 0) {$\\pi$};");
   });
 
   it("leaves already-delimited math labels untouched", () => {
     const out = render([
-      makeVertexWith("a", { data: { label: "$-\\frac{\\pi}{2}$" } }),
+      makeVertexWith("a", { data: { phase: "$-\\frac{\\pi}{2}$" } }),
     ]);
     expect(out).toContain("{$-\\frac{\\pi}{2}$}");
   });
@@ -69,7 +69,7 @@ describe("exportTikz", () => {
     const out = render([
       makeVertexWith("z", { data: { vertexType: "z" } }),
       makeVertexWith("x", { data: { vertexType: "x" } }),
-      makeVertexWith("xbox", { data: { vertexType: "xbox", label: "\\pi" } }),
+      makeVertexWith("xbox", { data: { vertexType: "xbox", phase: "\\pi" } }),
       makeVertexWith("zbox", { data: { vertexType: "zbox" } }),
       makeVertexWith("h", { data: { vertexType: "h" } }),
       makeVertexWith("w", { data: { vertexType: "w" } }),
@@ -129,15 +129,15 @@ describe("exportTikz — header + label hardening", () => {
 
   it("escapes LaTeX specials in bare labels but keeps phase math intact", () => {
     const out = render([
-      makeVertexWith("a", { data: { label: "&%#_^~$\\pi" } }),
+      makeVertexWith("a", { data: { phase: "&%#_^~$\\pi" } }),
     ]);
     expect(out).toContain("{$\\&\\%\\#\\_\\^{}\\~{}\\$\\pi$}");
   });
 
   it("keeps `\\pi` and user-delimited math untouched", () => {
     const out = render([
-      makeVertexWith("a", { data: { label: "\\pi" } }),
-      makeVertexWith("b", { data: { label: "$-\\frac{\\pi}{2}$" } }),
+      makeVertexWith("a", { data: { phase: "\\pi" } }),
+      makeVertexWith("b", { data: { phase: "$-\\frac{\\pi}{2}$" } }),
     ]);
     expect(out).toContain("{$\\pi$}");
     expect(out).toContain("{$-\\frac{\\pi}{2}$}");

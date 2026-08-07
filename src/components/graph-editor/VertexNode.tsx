@@ -2,7 +2,11 @@
 
 import { type NodeProps } from "@xyflow/react";
 import { useRef } from "react";
-import { EDITOR_MODES, type VertexNode as VertexNodeType } from "@/lib/graph/types";
+import {
+  DEFAULT_LABEL_LOCATION,
+  EDITOR_MODES,
+  type VertexNode as VertexNodeType,
+} from "@/lib/graph/types";
 import {
   DEFAULT_VERTEX_TYPE,
   TRIANGLE_CLIP_PATH,
@@ -12,6 +16,8 @@ import {
 } from "@/lib/graph/vertex-types";
 import { useGraphStore } from "@/store/graph-store";
 import { nodesById } from "@/store/selectors";
+import { useKatexReady } from "@/lib/hooks/useKatexReady";
+import { renderLabel } from "@/lib/label/renderLabel";
 import { VertexHandles } from "./VertexHandles";
 import {
   VertexLabelEditor,
@@ -32,11 +38,19 @@ export function VertexNode({
   const pendingEdgeSources = useGraphStore(
     (state) => state.pendingEdgeSources,
   );
-  const updateVertexLabel = useGraphStore((state) => state.updateVertexLabel);
-  // `rotation` is a view field on the runtime node, read via the memoized
-  // `nodesById` map so the primitive return only re-renders on change.
+  const updateVertexPhase = useGraphStore((state) => state.updateVertexPhase);
+  // `rotation`, `label`, and `labelLocation` are view fields on the runtime
+  // node, read via the memoized `nodesById` map so the primitive returns only
+  // re-render on change.
   const rotation = useGraphStore(
     (state) => nodesById(state.nodes).get(id)?.rotation ?? 0,
+  );
+  const visualLabel = useGraphStore(
+    (state) => nodesById(state.nodes).get(id)?.label ?? "",
+  );
+  const labelLocation = useGraphStore(
+    (state) =>
+      nodesById(state.nodes).get(id)?.labelLocation ?? DEFAULT_LABEL_LOCATION,
   );
   // This vertex's validation errors (from the last compute). The stable
   // `NO_ERRORS` ref keeps the no-error case from re-rendering on unrelated
@@ -69,9 +83,9 @@ export function VertexNode({
     .filter(Boolean)
     .join(" ");
 
-  // A vertex "has content" if it has a user label or a type default glyph;
-  // the body grows when it does to give the label/glyph room.
-  const hasContent = data.label !== "" || meta.glyph != null;
+  // A vertex "has content" if it has a user phase or a type default glyph;
+  // the body grows when it does to give the phase/glyph room.
+  const hasContent = data.phase !== "" || meta.glyph != null;
   const dimension = hasContent
     ? `${meta.size * 0.35}rem`
     : `${meta.size * 0.25}rem`;
@@ -134,12 +148,12 @@ export function VertexNode({
           >
             <VertexLabelEditor
               ref={labelEditorRef}
-              value={data.label}
+              value={data.phase}
               glyph={meta.glyph}
               canStartEditing={
                 mode === EDITOR_MODES.select || mode === EDITOR_MODES.addVertex
               }
-              onCommit={(label) => updateVertexLabel(id, label)}
+              onCommit={(phase) => updateVertexPhase(id, phase)}
             />
           </div>
         </div>
@@ -157,6 +171,49 @@ export function VertexNode({
           ))}
         </div>
       )}
+
+      {/* Visual annotation label (view slice; KaTeX-enabled). Outside the
+          rotated wrapper so it stays screen-upright at any rotation, and
+          pointer-events-none so it never intercepts canvas interactions. */}
+      {visualLabel !== "" && labelLocation !== "none" && (
+        <VisualVertexLabel
+          value={visualLabel}
+          labelLocation={labelLocation}
+        />
+      )}
     </div>
+  );
+}
+
+// Position the visual label relative to the node body. `labelLocation` picks
+// which side; each class combo pins one edge of the label chip to the node.
+const LABEL_LOCATION_CLASSES: Record<string, string> = {
+  top: "bottom-full left-1/2 mb-1 -translate-x-1/2",
+  bottom: "top-full left-1/2 mt-1 -translate-x-1/2",
+  left: "right-full top-1/2 mr-1 -translate-y-1/2",
+  right: "left-full top-1/2 ml-1 -translate-y-1/2",
+};
+
+function VisualVertexLabel({
+  value,
+  labelLocation,
+}: {
+  value: string;
+  labelLocation: string;
+}) {
+  // Re-render once the lazy-loaded KaTeX chunk resolves so a LaTeX label
+  // upgrades from escaped text to rendered math.
+  useKatexReady();
+  const rendered = renderLabel(value);
+
+  return (
+    <div
+      className={[
+        "pointer-events-none absolute z-10 whitespace-nowrap rounded border border-slate-300 bg-white/90 px-1 py-px text-[10px] leading-tight text-slate-700 shadow-sm",
+        LABEL_LOCATION_CLASSES[labelLocation] ?? LABEL_LOCATION_CLASSES.top,
+      ].join(" ")}
+      // `renderLabel` is XSS-safe (escaped text; KaTeX `trust: false`).
+      dangerouslySetInnerHTML={{ __html: rendered.html }}
+    />
   );
 }

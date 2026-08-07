@@ -25,7 +25,7 @@ export function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
     >
       {/* Default glyph, or fallback text. `h-full w-full` fills the swatch. */}
       <span className="block h-full w-full">
-        {meta.glyph ?? meta.defaultText}
+        {meta.glyph ?? meta.defaultPhase}
       </span>
     </div>
   );
