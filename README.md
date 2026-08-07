@@ -10,7 +10,7 @@ Its detailed documentation is in a separate repository and can be found at
 
 - Development server: `pnpm dev`.
 - Frontend Test: `pnpm test`
-- Backend Test: `cargo test`
+- Backend Test: `cargo test`, `cargo llvm-cov --workspace`.
 - Quick integration test: `pnpm ping:wasm`
 - Build
   - `pnpm build:wasm` builds the rust back end by invoking `./scripts/build-wasm.sh`, which is a wrapper for `wasm-pack`

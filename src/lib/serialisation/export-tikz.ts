@@ -12,11 +12,13 @@
 import type { GraphEdge, VertexNode, VertexType } from "../graph/types";
 import type { ExportParams } from "./formats";
 import { spoilerHeader } from "./placeholder";
+import { normalizeNodePositions } from "./normalize";
+import { roundToFiveDecimal } from "./round";
 
 // TikZ style per vertex type. Spider types render their phase label inside a
-// word ball; unlabeled spiders, empty nodes, and boundary markers render as
-// plain dots. Keep this in sync with `VertexType` — new types fall back to a
-// plain dot.
+// word ball; unlabeled spiders render as plain dots, and empty / boundary
+// markers render as invisible EMPTY anchors. Keep this in sync with
+// `VertexType` — new types fall back to a plain dot.
 function nodeStyle(vertexType: VertexType, hasLabel: boolean): string {
   switch (vertexType) {
     case "z":
@@ -30,10 +32,11 @@ function nodeStyle(vertexType: VertexType, hasLabel: boolean): string {
     case "h":
       return "YELLOW_BOX";
     case "empty":
-      return "EMPTY";
     case "input":
     case "output":
-      return "DOT";
+      return "EMPTY";
+    case "black_dot":
+      return "BLACK_DOT";
     default:
       // Unknown / newly added vertex types still render something visible.
       return "DOT";
@@ -51,11 +54,13 @@ function tikzLabel(label: string): string {
 }
 
 function nodeLine(node: VertexNode, idx: number): string {
-  // App positions are in px on a 12px grid; divide so TikZ coordinates stay small.
+  // App positions are in px on a 48px grid; divide so TikZ coordinates stay small.
   const locationRatio = 48;
-  const locationX = node.position.x / locationRatio;
+
+  const locationX = roundToFiveDecimal(node.position.x / locationRatio);
   // tikz and reactflow's y coordinates are reversed
-  const locationY = -node.position.y / locationRatio;
+  const locationY = roundToFiveDecimal(-node.position.y / locationRatio);
+
   const style = nodeStyle(node.data.vertexType, node.data.label !== "");
 
   return `\\node [${style}] (${idx}) at (${locationX}, ${locationY}) {${tikzLabel(node.data.label)}};`;
@@ -82,6 +87,8 @@ function tikzBackBone(nodeString: string, edgeString: string): string {
         outer sep=-1.7mm},
     DOT/.style={inner sep=0mm, minimum size=3.4mm, shape=circle,
         draw=black, outer sep=-0.5mm, line width=1pt},
+    BLACK_DOT/.style={minimum size=2mm,
+        outer sep=-1mm, fill=black, shape=circle},
     WORD_BALL/.style={draw=black, shape=rectangle, minimum size=7.5mm,
         rounded corners=3.6mm, inner sep=1.2mm, outer sep=-0.5mm,
         scale=1, font={\\Large\\boldmath}, line width=1pt},
@@ -117,10 +124,10 @@ ${edgeString}
 
 export function exportTikz(params: ExportParams): string {
   const header = spoilerHeader("TikZ", params, "%");
-  // 1-based indices so emitted names `(1), (2), …` read naturally in the
-  // LaTeX source (matches the reference format above).
-  const nodeIndexById = new Map(params.nodes.map((node, i) => [node.id, i + 1]));
-  const nodeStrings = params.nodes.map(
+  // Mean-center the positions first
+  const nodes = normalizeNodePositions(params.nodes);
+  const nodeIndexById = new Map(nodes.map((node, i) => [node.id, i + 1]));
+  const nodeStrings = nodes.map(
     (node, i) => `        ${nodeLine(node, i + 1)}`,
   );
   const edgeStrings = params.edges.map(

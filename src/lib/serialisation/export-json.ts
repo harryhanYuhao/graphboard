@@ -1,9 +1,12 @@
 // src/lib/serialisation/export-json.ts
 //
 // JSON export serializer: the native Graph Board document format
-// (`{ graph, view }` v1 shape). Pure — no store, no window.
+// (`{ graph, view }` v1 shape). Positions are mean-centered before
+// projection so the exported file doesn't carry absolute canvas offsets.
+// Pure — no store, no window; never mutates the input nodes.
 import { PERSISTED_IDS, type GraphEdge, type VertexNode } from "../graph/types";
 import { projectToDocument } from "./document";
+import { normalizeNodePositions } from "./normalize";
 
 export function exportGraphJson(params: {
   title: string;
@@ -18,7 +21,7 @@ export function exportGraphJson(params: {
   const document = projectToDocument({
     id: PERSISTED_IDS.exportedDocument,
     title: params.title,
-    nodes: params.nodes,
+    nodes: normalizeNodePositions(params.nodes),
     edges: params.edges,
     createdAt: params.createdAt ?? now,
     updatedAt: now,

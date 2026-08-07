@@ -28,9 +28,7 @@ export function isSpiderType(vertexType: VertexType): boolean {
 
 // Boundary marker types (input/output) — not tensors; they declare open legs
 // (dimension 2 each), so n inputs + m outputs → 2^m × 2^n matrix after
-// contraction, no boundaries → scalar. Render as labeled circles with
-// symmetric handles; degree ≤ 1 enforced at compute time (plan §5.6). Single
-// source of truth for "is this a boundary marker?".
+// contraction
 export function isBoundaryVertex(vertexType: VertexType): boolean {
   return vertexType === "input" || vertexType === "output";
 }
@@ -90,19 +88,27 @@ export const TRIANGLE_CLIP_PATH = "polygon(50% 0%, 0% 100%, 100% 100%)";
 
 const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
   {
-    type: "zbox",
-    label: "Z box",
-    shape: "square",
-    size: 4,
-    className: "bg-lime-500 text-black border-lime-900 border-2 text-sm",
-    defaultText: ""
-  },
-  {
     type: "z",
     label: "Z spider",
     shape: "circle",
     size: 4,
     className: "bg-lime-500 text-black border-lime-900 border-2 text-sm",
+    defaultText: ""
+  },
+  {
+    type: "x",
+    label: "X spider",
+    shape: "circle",
+    size: 4,
+    className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
+    defaultText: ""
+  },
+  {
+    type: "black_dot",
+    label: "Dot",
+    shape: "circle",
+    size: 2,
+    className: "bg-black text-black text-sm",
     defaultText: ""
   },
   {
@@ -132,22 +138,6 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     defaultText: ""
   },
   {
-    type: "x",
-    label: "X spider",
-    shape: "circle",
-    size: 4,
-    className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
-    defaultText: ""
-  },
-  {
-    type: "xbox",
-    label: "X box",
-    shape: "square",
-    size: 4,
-    className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
-    defaultText: ""
-  },
-  {
     type: "w",
     label: "W node",
     shape: "triangle",
@@ -163,6 +153,22 @@ const RAW_VERTEX_TYPES: VertexTypeMetaBase[] = [
     shape: "square",
     size: 4,
     className: "bg-yellow-300 text-slate-900 border-yellow-900 border-2 text-sm",
+    defaultText: ""
+  },
+  {
+    type: "zbox",
+    label: "Z box",
+    shape: "square",
+    size: 4,
+    className: "bg-lime-500 text-black border-lime-900 border-2 text-sm",
+    defaultText: ""
+  },
+  {
+    type: "xbox",
+    label: "X box",
+    shape: "square",
+    size: 4,
+    className: "bg-rose-500 text-black border-rose-900 border-2 text-sm",
     defaultText: ""
   },
   {

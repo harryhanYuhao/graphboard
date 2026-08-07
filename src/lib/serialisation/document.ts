@@ -2,7 +2,7 @@
 //
 // Persistence boundary across the document's two slices (`../graph/types.ts`):
 // `graph` (graph-theoretic data, what the compute backend sees) and `view`
-// (visual data, what the backend never sees). Entry points: `projectDocument`
+// (visual data, what the backend never sees). Entry points: `projectToDocument`
 // (runtime → v1 doc) and `hydrateDocument` (v1 doc → runtime).
 import {
   CURRENT_SCHEMA_VERSION,

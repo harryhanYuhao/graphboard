@@ -15,7 +15,8 @@ export type VertexType =
   | "xbox"
   | "and"
   | "input"
-  | "output";
+  | "output"
+  | "black_dot";
 
 // ---- React Flow handle & edge identifiers ---------------------------------
 //

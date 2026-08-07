@@ -1,7 +1,7 @@
 // src/lib/serialisation/storage.ts
 //
 // localStorage persistence for the local document. Writes go through
-// `projectDocument` (always to the current schema) and reads through
+// `projectToDocument` (always to the current schema) and reads through
 // `parseDocument` (fail-soft). SSR-guarded — never touches `window` on
 // the server.
 import {

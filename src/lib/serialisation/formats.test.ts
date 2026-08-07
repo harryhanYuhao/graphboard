@@ -51,8 +51,8 @@ describe("EXPORT_FORMATS", () => {
     expect(contents).toContain("Title: My Graph");
     expect(contents).toContain("Nodes: 2, Edges: 1");
     expect(contents).toContain("\\begin{tikzpicture}");
-    expect(contents).toContain("\\node [GREEN_DOT] (1) at (0.25, -0.25) {};");
-    expect(contents).toContain("\\node [GREEN_DOT] (2) at (0.75, -1.25) {};");
+    expect(contents).toContain("\\node [GREEN_DOT] (1) at (-0.25, 0.5) {};");
+    expect(contents).toContain("\\node [GREEN_DOT] (2) at (0.25, -0.5) {};");
     expect(contents).toContain("\\draw[EDGE] (1) to (2);");
     expect(contents).not.toContain("(placeholder)");
   });

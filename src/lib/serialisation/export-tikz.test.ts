@@ -1,6 +1,7 @@
 // Pins the TikZ serializer (`./export-tikz.ts`): style per vertex type, label
-// math-mode wrapping, coordinate scaling, 1-based node naming, and edge
-// emission. Coordinates divide by 48 and flip the y axis (TikZ is y-up,
+// math-mode wrapping, mean-centered coordinate scaling, 1-based node naming,
+// and edge emission. Positions are mean-centered before export (same as the
+// JSON serializer), divided by 48, and the y axis is flipped (TikZ is y-up,
 // React Flow is y-down). The output is a `\begingroup` … `\endgroup` picture
 // block with nodes on the nodelayer and edges on the edgelayer.
 
@@ -29,9 +30,25 @@ describe("exportTikz", () => {
   });
 
   it("scales coordinates by 1/48 and flips the y axis", () => {
-    const out = render([makeVertex("a", { x: 24, y: -36 })]);
-    // x = 24/48 = 0.5; y = -(-36)/48 = 0.75; 1-based node name.
-    expect(out).toContain("\\node [GREEN_DOT] (1) at (0.5, 0.75) {};");
+    // Two nodes so the mean is well-defined: a {0,0}, b {48,48} → mean {24,24}.
+    const out = render([
+      makeVertex("a", { x: 0, y: 0 }),
+      makeVertex("b", { x: 48, y: 48 }),
+    ]);
+    // a: (-24,-24) → x = -24/48 = -0.5, y = -(-24)/48 = 0.5
+    // b: ( 24, 24) → x =  24/48 =  0.5, y = -( 24)/48 = -0.5
+    expect(out).toContain("\\node [GREEN_DOT] (1) at (-0.5, 0.5) {};");
+    expect(out).toContain("\\node [GREEN_DOT] (2) at (0.5, -0.5) {};");
+  });
+
+  it("centers the graph on the mean position", () => {
+    // a {48,96}, b {144,192} → mean {96,144} → offsets (-48,-48) / (48,48).
+    const out = render([
+      makeVertex("a", { x: 48, y: 96 }),
+      makeVertex("b", { x: 144, y: 192 }),
+    ]);
+    expect(out).toContain("\\node [GREEN_DOT] (1) at (-1, 1) {};");
+    expect(out).toContain("\\node [GREEN_DOT] (2) at (1, -1) {};");
   });
 
   it("renders labeled z spiders as green word balls with math-wrapped labels", () => {
@@ -69,8 +86,8 @@ describe("exportTikz", () => {
     expect(out).toContain("\\node [GREEN_DOT] (6) at (0, 0) {};");
     expect(out).toContain("\\node [GREEN_DOT] (7) at (0, 0) {};");
     expect(out).toContain("\\node [EMPTY] (8) at (0, 0) {};");
-    expect(out).toContain("\\node [DOT] (9) at (0, 0) {};");
-    expect(out).toContain("\\node [DOT] (10) at (0, 0) {};");
+    expect(out).toContain("\\node [EMPTY] (9) at (0, 0) {};");
+    expect(out).toContain("\\node [EMPTY] (10) at (0, 0) {};");
   });
 
   it("emits one draw line per edge, using 1-based node names", () => {

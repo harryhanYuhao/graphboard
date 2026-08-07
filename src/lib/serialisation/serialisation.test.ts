@@ -391,6 +391,37 @@ describe("exportGraphJson / importGraphJson", () => {
     expect(parsed.title).toBe("Exported");
   });
 
+  it("saves mean-centered positions", () => {
+    const json = exportGraphJson({
+      title: "Centered",
+      nodes: [
+        makeVertex("a", { x: 12, y: 12 }),
+        makeVertex("b", { x: 36, y: 60 }),
+      ],
+      edges: [],
+    });
+    const parsed = JSON.parse(json) as {
+      view: { nodes: { position: { x: number; y: number } }[] };
+    };
+    // Mean is (24, 36); positions are saved relative to it.
+    expect(parsed.view.nodes.map((n) => n.position)).toEqual([
+      { x: -12, y: -24 },
+      { x: 12, y: 24 },
+    ]);
+  });
+
+  it("does not mutate the input nodes", () => {
+    const nodes = [
+      makeVertex("a", { x: 12, y: 12 }),
+      makeVertex("b", { x: 36, y: 60 }),
+    ];
+    exportGraphJson({ title: "t", nodes, edges: [] });
+    expect(nodes.map((n) => n.position)).toEqual([
+      { x: 12, y: 12 },
+      { x: 36, y: 60 },
+    ]);
+  });
+
   it("imports a valid exported document", () => {
     const json = exportGraphJson({
       title: "Round-trip",
