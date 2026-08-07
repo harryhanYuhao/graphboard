@@ -540,7 +540,7 @@ describe("save / hydrate round-trip via localStorage", () => {
   it("hydrate clears stale validationErrors from the prior session", () => {
     // On reload the persisted doc comes back via `hydrate`; any compute-time
     // errors left in the store must be wiped (they referenced a graph that no
-    // longer exists, and `importJson.applyImport` mirrors the same reset).
+    // longer exists).
     localStorage.setItem(
       "graph-board-document",
       JSON.stringify({

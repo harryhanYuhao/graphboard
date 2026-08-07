@@ -43,14 +43,41 @@ function nodeStyle(vertexType: VertexType, hasLabel: boolean): string {
   }
 }
 
+// Escape the LaTeX specials that never appear in a valid phase expression
+// (`& % # $ _ ^ ~`). `\ { }` are left alone so phase math like
+// `\frac{\pi}{2}` keeps working. Labels are otherwise treated as LaTeX
+// content by design (the picture is compiled by the user), so a `}`-breakout
+// remains possible for hand-typed labels — documented boundary, no
+// browser-side risk.
+function escapeTikzSpecials(label: string): string {
+  return label.replace(/[&%#$^_~]/g, (ch) => {
+    switch (ch) {
+      case "&":
+        return "\\&";
+      case "%":
+        return "\\%";
+      case "#":
+        return "\\#";
+      case "$":
+        return "\\$";
+      case "^":
+        return "\\^{}";
+      case "_":
+        return "\\_";
+      case "~":
+        return "\\~{}";
+      default:
+        return ch;
+    }
+  });
+}
+
 // Wrap a bare phase label in math mode (`\pi` → `$\pi$`); labels that are
-// already `$...$` / `$$...$$` delimited pass through untouched. Labels are
-// emitted as-is (no LaTeX escaping) — they are phase expressions, which are
-// already LaTeX-safe.
+// already `$...$` / `$$...$$` delimited pass through untouched.
 function tikzLabel(label: string): string {
   if (label === "") return "";
   if (label.startsWith("$")) return label;
-  return `$${label}$`;
+  return `$${escapeTikzSpecials(label)}$`;
 }
 
 function nodeLine(node: VertexNode, idx: number): string {

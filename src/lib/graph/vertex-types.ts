@@ -195,11 +195,14 @@ function enrich(base: VertexTypeMetaBase): VertexTypeMeta {
 
 export const VERTEX_TYPES: VertexTypeMeta[] = RAW_VERTEX_TYPES.map(enrich);
 
-// Lookup from vertex type to its metadata.
+// Lookup from vertex type to its metadata. Null-prototype so an untrusted
+// `vertexType` string (e.g. "__proto__" or "constructor" from an imported
+// file) resolves to `undefined` and the `?? default` fallbacks in the
+// renderer fire, instead of leaking Object.prototype members.
 export const VERTEX_TYPE_MAP: Record<VertexType, VertexTypeMeta> =
-  Object.fromEntries(VERTEX_TYPES.map((meta) => [meta.type, meta])) as Record<
-    VertexType,
-    VertexTypeMeta
-  >;
+  Object.create(null) as Record<VertexType, VertexTypeMeta>;
+for (const meta of VERTEX_TYPES) {
+  VERTEX_TYPE_MAP[meta.type] = meta;
+}
 
 export const DEFAULT_VERTEX_TYPE: VertexType = "z";

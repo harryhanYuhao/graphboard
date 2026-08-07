@@ -22,6 +22,7 @@ import {
   Smile,
 } from "lucide-react";
 import { useStore } from "zustand";
+import { useReactFlow, useStoreApi } from "@xyflow/react";
 import { useGraphStore } from "@/store/graph-store";
 import { EDITOR_MODES } from "@/lib/graph/types";
 
@@ -75,6 +76,24 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
   const canRedo = useStore(useGraphStore.temporal, (state) => state.futureStates.length > 0);
 
   const onDebugButtonPressed = useGraphStore((state) => state.onDebugButtonPressed);
+
+  const reactFlow = useReactFlow();
+  const storeApi = useStoreApi();
+
+  // Flow coordinate at the centre of the canvas, as client coordinates
+  // (rect origin + half-size); `screenToFlowPosition` applies the full
+  // inverse viewport transform (pane offset + translate + zoom) in one call,
+  // so the merge point tracks the focal point even after panning or zooming.
+  const handleImport = () => {
+    const { width, height, domNode } = storeApi.getState();
+    const rect = domNode?.getBoundingClientRect();
+    void importJson(
+      reactFlow.screenToFlowPosition({
+        x: rect ? rect.left + rect.width / 2 : width / 2,
+        y: rect ? rect.top + rect.height / 2 : height / 2,
+      }),
+    );
+  };
 
   return (
     <>
@@ -157,9 +176,7 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
 
         <ToolbarButton
           title="Import JSON"
-          onClick={() => {
-            void importJson();
-          }}
+          onClick={handleImport}
         >
           <FolderInput size={18} />
         </ToolbarButton>

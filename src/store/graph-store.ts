@@ -24,6 +24,8 @@ import {
   cloneSubgraphForClipboard,
   clearAllSelections,
   getSelectedSubgraph,
+  IMPORT_OFFSET_STEP,
+  mergeImportedGraph,
   nextBoundaryOrder,
   pasteSubgraph,
   reorderBoundaryVertex,
@@ -41,6 +43,7 @@ import {
   getExportFormat,
   hydrateDocument,
   importGraphJson,
+  type HydratedDocument,
   loadGraphDocument,
   normalizeRotation,
   saveGraphDocument,
@@ -143,7 +146,7 @@ type GraphStore = {
   save: () => void;
   exportJson: () => Promise<void>;
   exportGraph: (formatId: ExportFormatId) => Promise<void>;
-  importJson: () => Promise<void>;
+  importJson: (insertCenter?: { x: number; y: number }) => Promise<void>;
   reset: () => void;
 
   openConfirmDialogue: (params: {
@@ -257,6 +260,17 @@ function makeGestureController() {
 const dragGesture = makeGestureController();
 const vertexPropertyEditGesture = makeGestureController();
 
+// Untrusted vertex ids (from imports) are used as validation-error keys; a
+// null-prototype object keeps prototype keys ("__proto__", "constructor")
+// from resolving to inherited members anywhere the map is read.
+function emptyValidationErrors(): Record<string, ValidationError[]> {
+  return Object.create(null);
+}
+
+// Recovery copy written before the hydrate fallback replaces a possibly-
+// valid document; lets a regression (vs. real corruption) be recovered.
+const LOCAL_STORAGE_BACKUP_KEY = "graph-board-document-backup";
+
 // Save the graph to localStorage under the stable local-doc id. Shared
 // by `save`, `importJson.applyImport`, and `reset` so the field list
 // lives in one place.
@@ -301,7 +315,7 @@ export const useGraphStore = create<GraphStore>()(
 
       isPropertiesOpen: false,
 
-      validationErrors: {},
+      validationErrors: emptyValidationErrors(),
 
       clipboard: null,
 
@@ -310,7 +324,28 @@ export const useGraphStore = create<GraphStore>()(
         // runtime `VertexNode[]` / `GraphEdge[]`; the persisted shape
         // never reaches the store.
         const document = loadGraphDocument();
-        const hydrated = hydrateDocument(document);
+        let hydrated: HydratedDocument;
+        try {
+          hydrated = hydrateDocument(document);
+        } catch {
+          // A localStorage doc can pass the shape check yet hold malformed
+          // elements (e.g. `data: null`); fail soft instead of crashing.
+          // Back the parsed doc up first so a regression (rather than real
+          // corruption) can't silently destroy the user's only copy once
+          // the empty fallback is autosaved.
+          console.warn(
+            "graph-board: persisted document failed hydration; loading empty document.",
+          );
+          try {
+            localStorage.setItem(
+              LOCAL_STORAGE_BACKUP_KEY,
+              JSON.stringify(document),
+            );
+          } catch {
+            // Quota / availability issues must not block recovery.
+          }
+          hydrated = hydrateDocument(createEmptyGraphDocument());
+        }
 
         set({
           title: hydrated.title,
@@ -318,7 +353,7 @@ export const useGraphStore = create<GraphStore>()(
           nodes: hydrated.nodes,
           edges: hydrated.edges,
           hasHydrated: true,
-          validationErrors: {},
+          validationErrors: emptyValidationErrors(),
         });
 
         useGraphStore.temporal.getState().clear();
@@ -567,9 +602,12 @@ export const useGraphStore = create<GraphStore>()(
         await get().exportGraph("json");
       },
 
-      // Import replaces the editor state; if the canvas is non-empty the
-      // user must confirm the destructive import first.
-      importJson: async () => {
+      // Import merges the saved graph into the current one: existing
+      // nodes/edges are kept, colliding imported ids are re-minted, and the
+      // imported graph is placed around `insertCenter` (flow coordinates of
+      // the viewport centre) plus a small offset. Never destructive, so no
+      // confirmation is needed.
+      importJson: async (insertCenter) => {
         const contents = await openTextFileWithPicker({});
         if (contents === null) return;
 
@@ -579,49 +617,42 @@ export const useGraphStore = create<GraphStore>()(
           return;
         }
 
-        const applyImport = () => {
-          const hydrated = hydrateDocument(result.document);
-
-          set({
-            title: hydrated.title,
-            createdAt: hydrated.createdAt,
-            nodes: hydrated.nodes,
-            edges: hydrated.edges,
-            mode: EDITOR_MODES.select,
-            pendingEdgeSources: [],
-            clipboard: null,
-            isHelpOpen: false,
-            isExportOpen: false,
-            isPropertiesOpen: false,
-            validationErrors: {},
-            // Refit now that the graph replaced.
-            fitViewNonce: get().fitViewNonce + 1,
-          });
-
-          persistLocal(hydrated);
-
-          // A new document must not carry the old undo history (same as
-          // `hydrate` / `reset`), or undo after import would rewind into
-          // the pre-import graph.
-          useGraphStore.temporal.getState().clear();
-        };
-
-        if (!get().isStateEmpty()) {
-          get().openConfirmDialogue({
-            title: "Clear Canvas?",
-            message:
-              "The canvas is not empty. Importing will delete the existing nodes. This action cannot be undone.",
-            confirmText: "Import",
-            confirmButtonClassName: "bg-red-600 hover:bg-red-700",
-            onConfirm: () => {
-              get().closeConfirmDialogue();
-              applyImport();
-            },
-          });
+        let imported: HydratedDocument;
+        try {
+          imported = hydrateDocument(result.document);
+        } catch {
+          window.alert(
+            "Failed to import: document contains malformed nodes or edges.",
+          );
           return;
         }
+        const state = get();
 
-        applyImport();
+        const offset = {
+          x: (insertCenter?.x ?? 0) + IMPORT_OFFSET_STEP,
+          y: (insertCenter?.y ?? 0) + IMPORT_OFFSET_STEP,
+        };
+
+        const merged = mergeImportedGraph({
+          imported,
+          existing: { nodes: state.nodes, edges: state.edges },
+          offset,
+        });
+
+        set({
+          nodes: merged.nodes,
+          edges: merged.edges,
+          mode: EDITOR_MODES.select,
+          pendingEdgeSources: [],
+        });
+
+        // No explicit persist: the debounced autosave writes the merged
+        // graph (and any later undo) — explicit writes here would race undo
+        // and leave localStorage ahead of the store.
+
+        // A merge is a normal structural mutation: it stays on the undo
+        // stack, so undo removes the imported nodes (unlike reset/hydrate,
+        // which replace the document and clear history).
       },
 
       updateVertexLabel: (nodeId, label) => {
@@ -693,7 +724,7 @@ export const useGraphStore = create<GraphStore>()(
           isPropertiesOpen: false,
           clipboard: null,
           pendingEdgeSources: [],
-          validationErrors: {},
+          validationErrors: emptyValidationErrors(),
         });
 
         persistLocal(hydrated);
@@ -766,7 +797,11 @@ export const useGraphStore = create<GraphStore>()(
       // is dropped too: a node id is never `""`, so a "" bucket would
       // linger in the map with no renderer to consume it.
       setValidationErrors: (errors) => {
-        const grouped: Record<string, ValidationError[]> = {};
+        // Null-prototype so an untrusted vertex id (e.g. "__proto__" or
+        // "constructor" from an imported file) creates a real bucket instead
+        // of resolving to an inherited Object.prototype member (which made
+        // `??=` skip the assignment and `.push` throw).
+        const grouped = emptyValidationErrors();
         for (const e of errors) {
           if (!e.vertexId) continue;
           (grouped[e.vertexId] ??= []).push(e);
@@ -775,7 +810,7 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       clearValidationErrors: () => {
-        set({ validationErrors: {} });
+        set({ validationErrors: emptyValidationErrors() });
       },
 
       // True iff the graph has no nodes.

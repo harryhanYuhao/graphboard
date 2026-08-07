@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { computeGraphStats } from "./stats";
+import { VERTEX_TYPES } from "./vertex-types";
 import { makeEdge, makeVertex, makeVertexWith } from "@/test-utils/factories";
 
 describe("computeGraphStats", () => {
@@ -12,18 +13,10 @@ describe("computeGraphStats", () => {
       edgeCount: 0,
       minDegree: 0,
       maxDegree: 0,
-      countsByType: {
-        z: 0,
-        empty: 0,
-        x: 0,
-        w: 0,
-        h: 0,
-        zbox: 0,
-        xbox: 0,
-        and: 0,
-        input: 0,
-        output: 0,
-      },
+      // Derived from the registry so adding a vertex type can't rot this test.
+      countsByType: Object.fromEntries(
+        VERTEX_TYPES.map((meta) => [meta.type, 0]),
+      ),
     });
   });
 
@@ -83,5 +76,17 @@ describe("computeGraphStats", () => {
     expect(stats.countsByType.w).toBe(1);
     expect(stats.countsByType.h).toBe(0);
     expect(stats.countsByType.input).toBe(0);
+  });
+});
+
+describe("computeGraphStats — untrusted vertexType", () => {
+  it("tolerates prototype-key vertexType values without mangled counts", () => {
+    const stats = computeGraphStats(
+      [makeVertexWith("a", { data: { vertexType: "__proto__" as never } })],
+      [],
+    );
+    expect(stats.countsByType["__proto__" as never]).toBe(1);
+    // Every registered type still counts 0.
+    expect(Object.values(stats.countsByType)).toContain(0);
   });
 });

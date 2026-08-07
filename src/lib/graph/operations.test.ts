@@ -10,13 +10,15 @@ import {
   createVertexNode,
   deleteSelectedElements,
   getSelectedSubgraph,
+  IMPORT_OFFSET_STEP,
+  mergeImportedGraph,
   PASTE_OFFSET_STEP,
   pasteSubgraph,
   selectAllElements,
   snapPosition,
 } from "./operations";
 import { EDGE_TYPES, HANDLE_IDS, type VertexNode } from "./types";
-import { makeEdge, makeVertex } from "@/test-utils/factories";
+import { makeEdge, makeVertex, makeVertexWith } from "@/test-utils/factories";
 
 describe("createVertexNode", () => {
   it("produces a node with a unique id and the given position", () => {
@@ -464,5 +466,134 @@ describe("snapPosition", () => {
     const input = { x: 11, y: 13 };
     snapPosition(input);
     expect(input).toEqual({ x: 11, y: 13 });
+  });
+});
+
+describe("mergeImportedGraph", () => {
+  it("appends imported nodes and edges, keeping non-colliding ids", () => {
+    const { nodes, edges } = mergeImportedGraph({
+      existing: { nodes: [makeVertex("a")], edges: [] },
+      imported: {
+        nodes: [makeVertex("b", { x: 10, y: 20 })],
+        edges: [makeEdge("e1", "b", "b")],
+      },
+      offset: { x: 0, y: 0 },
+    });
+    expect(nodes.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(edges.map((e) => e.id)).toEqual(["e1"]);
+    expect(nodes[1].position).toEqual({ x: 10, y: 20 });
+    expect(nodes[0].position).toEqual({ x: 0, y: 0 });
+    // Imported content is selected so the user sees what was added; the
+    // existing node keeps its own (unselected) state.
+    expect(nodes[1].selected).toBe(true);
+    expect(edges[0].selected).toBe(true);
+    expect(nodes[0].selected).toBe(false);
+  });
+
+  it("remaps colliding node ids and follows the remap in edges", () => {
+    const { nodes, edges } = mergeImportedGraph({
+      existing: { nodes: [makeVertex("a")], edges: [] },
+      imported: {
+        nodes: [
+          makeVertex("a", { x: 1, y: 1 }),
+          makeVertex("b", { x: 2, y: 2 }),
+        ],
+        edges: [makeEdge("e1", "a", "b")],
+      },
+      offset: { x: 0, y: 0 },
+    });
+    expect(nodes).toHaveLength(3);
+    // Existing vertex untouched.
+    expect(nodes[0].id).toBe("a");
+    // Imported colliding vertex re-minted; free vertex keeps its id.
+    expect(nodes[1].id).not.toBe("a");
+    expect(nodes[2].id).toBe("b");
+    // Edge endpoints follow the node remap.
+    expect(edges[0].source).toBe(nodes[1].id);
+    expect(edges[0].target).toBe("b");
+  });
+
+  it("translates imported positions by the offset", () => {
+    const { nodes } = mergeImportedGraph({
+      existing: { nodes: [], edges: [] },
+      imported: { nodes: [makeVertex("b", { x: 10, y: 20 })], edges: [] },
+      offset: { x: 100, y: 50 },
+    });
+    expect(nodes[0].position).toEqual({ x: 110, y: 70 });
+  });
+
+  it("remaps colliding edge ids", () => {
+    const { edges } = mergeImportedGraph({
+      existing: { nodes: [makeVertex("a")], edges: [makeEdge("e1", "a", "a")] },
+      imported: { nodes: [makeVertex("b")], edges: [makeEdge("e1", "b", "b")] },
+      offset: { x: 0, y: 0 },
+    });
+    expect(edges).toHaveLength(2);
+    expect(edges[0].id).toBe("e1");
+    expect(edges[1].id).not.toBe("e1");
+  });
+
+  it("deduplicates edge ids repeated inside the import itself", () => {
+    const { edges } = mergeImportedGraph({
+      existing: { nodes: [], edges: [] },
+      imported: {
+        nodes: [makeVertex("b"), makeVertex("c")],
+        edges: [
+          makeEdge("dup", "b", "b"),
+          makeEdge("dup", "c", "c"),
+        ],
+      },
+      offset: { x: 0, y: 0 },
+    });
+    expect(edges).toHaveLength(2);
+    expect(edges[0].id).toBe("dup");
+    expect(edges[1].id).not.toBe("dup");
+  });
+
+  it("drops imported edges whose endpoints are missing from the import", () => {
+    const { edges } = mergeImportedGraph({
+      existing: { nodes: [makeVertex("a")], edges: [] },
+      imported: {
+        nodes: [makeVertex("b")],
+        edges: [makeEdge("e1", "b", "ghost")],
+      },
+      offset: { x: 0, y: 0 },
+    });
+    expect(edges).toEqual([]);
+  });
+
+  it("re-assigns imported boundary orders after existing ones", () => {
+    const { nodes } = mergeImportedGraph({
+      existing: {
+        nodes: [
+          makeVertexWith("in0", {
+            data: { vertexType: "input", order: 0 },
+          }),
+        ],
+        edges: [],
+      },
+      imported: {
+        nodes: [
+          makeVertexWith("in1", {
+            data: { vertexType: "input", order: 0 },
+          }),
+        ],
+        edges: [],
+      },
+      offset: { x: 0, y: 0 },
+    });
+    expect(nodes[0].data.order).toBe(0);
+    expect(nodes[1].data.order).toBe(1);
+  });
+
+  it("IMPORT_OFFSET_STEP is a positive offset", () => {
+    expect(IMPORT_OFFSET_STEP).toBeGreaterThan(0);
+  });
+});
+
+describe("snapPosition — non-finite guard", () => {
+  it("coerces NaN / Infinity / non-numeric coords to the grid origin", () => {
+    expect(snapPosition({ x: NaN, y: Infinity })).toEqual({ x: 12, y: 12 });
+    expect(snapPosition({ x: "12" as never, y: 24 })).toEqual({ x: 12, y: 36 });
   });
 });

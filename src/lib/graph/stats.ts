@@ -33,10 +33,13 @@ export function computeGraphStats(
   const maxDegree = degrees.length === 0 ? 0 : Math.max(...degrees);
 
   // Every vertex type starts at 0 so the breakdown always lists the full
-  // type set, even the types currently absent from the graph.
-  const countsByType = Object.fromEntries(
-    VERTEX_TYPES.map((meta) => [meta.type, 0]),
-  ) as Record<VertexType, number>;
+  // type set, even the types currently absent from the graph. Null-prototype
+  // so an untrusted `vertexType` from imported data can't read inherited
+  // Object.prototype members.
+  const countsByType = Object.create(null) as Record<VertexType, number>;
+  for (const meta of VERTEX_TYPES) {
+    countsByType[meta.type] = 0;
+  }
   for (const node of nodes) {
     countsByType[node.data.vertexType] =
       (countsByType[node.data.vertexType] ?? 0) + 1;

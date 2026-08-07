@@ -85,22 +85,26 @@ describe("undo history lifecycle on document replacement", () => {
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
   });
 
-  it("importJson clears the undo stack after a successful import", async () => {
-    // Seed undo history so there's something to clear.
+  it("importJson merges without clearing the undo stack, and undo removes the merge", async () => {
+    // Seed undo history so there's something to compare against.
     useGraphStore.getState().addVertexAt({ x: 0, y: 0 });
     useGraphStore.getState().addVertexAt({ x: 10, y: 10 });
-    expect(useGraphStore.temporal.getState().pastStates.length).toBeGreaterThan(0);
+    const before = useGraphStore.temporal.getState().pastStates.length;
+    expect(before).toBeGreaterThan(0);
 
     vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
-    await useGraphStore.getState().importJson();
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
 
-    // The canvas was non-empty, so importJson opened the confirm dialog.
-    // Simulate the user clicking "Import" — the path that runs applyImport.
-    const dialogue = useGraphStore.getState().confirmDialogue;
-    expect(dialogue).not.toBeNull();
-    dialogue!.onConfirm();
+    // Import is now a merge: the existing nodes survive and no confirmation
+    // dialog opens.
+    expect(useGraphStore.getState().nodes).toHaveLength(3);
+    expect(useGraphStore.getState().confirmDialogue).toBeNull();
+    // The merge is one structural mutation on the undo stack.
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(before + 1);
 
-    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+    // Undo reverts the merge, leaving the pre-import graph.
+    useGraphStore.temporal.getState().undo();
+    expect(useGraphStore.getState().nodes).toHaveLength(2);
   });
 });
 
@@ -925,15 +929,134 @@ describe("help dialog open/close/toggle", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fitViewNonce on import.
+// fitViewNonce on import. Import merges into the current viewport (no
+// replacement), so the view layer has nothing to refit.
 // ---------------------------------------------------------------------------
 
-describe("fitViewNonce increments on import", () => {
-  it("importJson bumps fitViewNonce so the view layer refits", async () => {
+describe("fitViewNonce on import", () => {
+  it("importJson merges without bumping fitViewNonce", async () => {
     useGraphStore.setState({ fitViewNonce: 7 });
     vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
-    await useGraphStore.getState().importJson();
-    expect(useGraphStore.getState().fitViewNonce).toBe(8);
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
+    expect(useGraphStore.getState().fitViewNonce).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Import merge semantics: no replacement, id remapping on collision, and
+// placement at the viewport centre + offset.
+// ---------------------------------------------------------------------------
+
+describe("importJson merge semantics", () => {
+  // Two-node import with one edge; nodes keep `id` so tests can remap.
+  function docWithGraph(
+    nodes: { id: string; [key: string]: unknown }[],
+    edges: { id: string; source: string; target: string }[],
+  ): string {
+    return validDocJson({
+      graph: { nodes, edges },
+      view: {
+        nodes: nodes.map((n) => ({ id: n.id, position: { x: 9, y: 9 } })),
+        edges: [],
+      },
+    });
+  }
+
+  it("adds the imported graph to the current graph and keeps the title", async () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("keep1", { position: { x: 0, y: 0 } })],
+      edges: [],
+    });
+
+    vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
+
+    const state = useGraphStore.getState();
+    expect(state.nodes.map((n) => n.id)).toEqual(["keep1", "imp1"]);
+    expect(state.title).toBe("Untitled Graph");
+  });
+
+  it("remaps colliding vertex ids and keeps existing vertices unchanged", async () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("imp1", { position: { x: 0, y: 0 } })],
+      edges: [],
+    });
+
+    vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
+
+    const nodes = useGraphStore.getState().nodes;
+    expect(nodes).toHaveLength(2);
+    // Existing vertex keeps its id and position.
+    expect(nodes[0].id).toBe("imp1");
+    expect(nodes[0].position).toEqual({ x: 0, y: 0 });
+    // Imported vertex got a fresh id.
+    expect(nodes[1].id).not.toBe("imp1");
+  });
+
+  it("remaps edge endpoints that point at colliding nodes", async () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("imp1", { position: { x: 0, y: 0 } })],
+      edges: [],
+    });
+
+    const contents = docWithGraph(
+      [
+        { id: "imp1", data: { label: "", vertexType: "z" } },
+        { id: "imp2", data: { label: "", vertexType: "z" } },
+      ],
+      [{ id: "e1", source: "imp1", target: "imp2" }],
+    );
+    vi.mocked(openTextFileWithPicker).mockResolvedValue(contents);
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
+
+    const { nodes, edges } = useGraphStore.getState();
+    expect(nodes).toHaveLength(3);
+    const importedNode = nodes.find((n) => n.id !== "imp1") as NonNullable<
+      (typeof nodes)[number]
+    >;
+    expect(edges).toHaveLength(1);
+    // Edge follows the remap: source is the imported node's fresh id.
+    expect(edges[0].source).toBe(importedNode.id);
+    expect(edges[0].target).toBe("imp2");
+  });
+
+  it("offsets imported positions by the insert centre plus IMPORT_OFFSET_STEP", async () => {
+    // hydrateDocument snaps the imported {9,9} to {12,12}; the store adds
+    // insertCenter + IMPORT_OFFSET_STEP (48).
+    vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
+    await useGraphStore.getState().importJson({ x: 100, y: 200 });
+
+    expect(useGraphStore.getState().nodes[0].position).toEqual({
+      x: 12 + 100 + 48,
+      y: 12 + 200 + 48,
+    });
+  });
+
+  it("drops imported edges whose endpoints are missing from the import", async () => {
+    const contents = docWithGraph(
+      [{ id: "imp1", data: { label: "", vertexType: "z" } }],
+      [{ id: "e1", source: "imp1", target: "ghost" }],
+    );
+    vi.mocked(openTextFileWithPicker).mockResolvedValue(contents);
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
+
+    expect(useGraphStore.getState().edges).toEqual([]);
+  });
+
+  it("selects the imported nodes after the merge", async () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("keep1", { position: { x: 0, y: 0 } })],
+      edges: [],
+    });
+
+    vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
+
+    const nodes = useGraphStore.getState().nodes;
+    // Existing vertices keep their selection state; imported ones light up.
+    expect(nodes.find((n) => n.id === "keep1")?.selected).toBe(false);
+    expect(nodes.find((n) => n.id === "imp1")?.selected).toBe(true);
   });
 });
 
@@ -1030,5 +1153,101 @@ describe("exportGraph / export dialog state", () => {
     expect(params?.suggestedName).toBe("Graph B.zxlive");
     expect(params?.extension).toBe(".zxlive");
     expect(params?.contents).toContain("ZXLive export (placeholder)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Untrusted-import hardening: prototype-key ids, malformed elements, and
+// corrupted localStorage must fail soft instead of crashing the store.
+// ---------------------------------------------------------------------------
+
+describe("untrusted import hardening", () => {
+  it("setValidationErrors survives prototype-key vertex ids", () => {
+    const spy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    try {
+      const errors = [
+        { vertexId: "__proto__", kind: "h-box-arity" as const, message: "boom" },
+        { vertexId: "constructor", kind: "h-box-arity" as const, message: "boom" },
+      ];
+      expect(() =>
+        useGraphStore.getState().setValidationErrors(errors),
+      ).not.toThrow();
+      const grouped = useGraphStore.getState().validationErrors as unknown as Record<
+        string,
+        unknown[]
+      >;
+      expect(Array.isArray(grouped["__proto__"])).toBe(true);
+      expect(Array.isArray(grouped["constructor"])).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("importJson fails soft on documents with malformed elements", async () => {
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
+    try {
+      useGraphStore.setState({
+        nodes: [makeVertex("keep1", { position: { x: 0, y: 0 } })],
+        edges: [],
+      });
+      const malformed = validDocJson({
+        graph: { nodes: [null], edges: [] },
+        view: { nodes: [], edges: [] },
+      });
+      vi.mocked(openTextFileWithPicker).mockResolvedValue(malformed);
+
+      await useGraphStore.getState().importJson({ x: 0, y: 0 });
+
+      expect(alertSpy).toHaveBeenCalled();
+      // Store untouched by the failed merge.
+      expect(useGraphStore.getState().nodes).toHaveLength(1);
+    } finally {
+      alertSpy.mockRestore();
+    }
+  });
+
+  it("hydrate fails soft when the persisted doc has malformed elements", () => {
+    localStorage.setItem(
+      "graph-board-document",
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "local-document",
+        title: "Broken",
+        graph: { nodes: [null], edges: [] },
+        view: { nodes: [], edges: [] },
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      }),
+    );
+
+    expect(() => useGraphStore.getState().hydrate()).not.toThrow();
+    expect(useGraphStore.getState().nodes).toHaveLength(0);
+    expect(useGraphStore.getState().hasHydrated).toBe(true);
+    // The pre-fallback document is preserved for recovery.
+    expect(localStorage.getItem("graph-board-document-backup")).toContain(
+      "Broken",
+    );
+
+    // Clean up the keys this test seeded so later tests start fresh.
+    localStorage.removeItem("graph-board-document-backup");
+    localStorage.removeItem("graph-board-document");
+  });
+
+  it("validationErrors is null-prototype everywhere it is created", () => {
+    // reset / clearValidationErrors must not restore a prototype-bearing map,
+    // or a prototype-key node id would crash the renderer's error lookup.
+    useGraphStore.getState().reset();
+    expect(
+      (useGraphStore.getState().validationErrors as Record<string, unknown>)[
+        "__proto__"
+      ],
+    ).toBeUndefined();
+
+    useGraphStore.getState().clearValidationErrors();
+    expect(
+      (useGraphStore.getState().validationErrors as Record<string, unknown>)[
+        "constructor"
+      ],
+    ).toBeUndefined();
   });
 });

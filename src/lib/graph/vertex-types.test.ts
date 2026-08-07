@@ -113,3 +113,12 @@ describe("isSpiderType", () => {
     },
   );
 });
+describe("VERTEX_TYPE_MAP — prototype-key safety", () => {
+  it("looks up prototype-chain keys as undefined", () => {
+    // Imported files can carry arbitrary vertexType strings; a null-prototype
+    // map must not leak Object.prototype members through `??` fallbacks.
+    expect(VERTEX_TYPE_MAP["__proto__" as never]).toBeUndefined();
+    expect(VERTEX_TYPE_MAP["constructor" as never]).toBeUndefined();
+    expect(VERTEX_TYPE_MAP["toString" as never]).toBeUndefined();
+  });
+});

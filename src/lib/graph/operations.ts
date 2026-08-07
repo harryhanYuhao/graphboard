@@ -227,9 +227,15 @@ export function snapPosition(position: { x: number; y: number }): {
   x: number;
   y: number;
 } {
+  // Guard non-finite values: imported JSON can carry `1e999` (Infinity) or
+  // string coords, and NaN would poison every downstream position (and later
+  // persist as `null`).
+  const x = Number.isFinite(position.x) ? position.x : 0;
+  const y = Number.isFinite(position.y) ? position.y : 0;
+
   return {
-    x: GRID_SIZE * Math.round(position.x / GRID_SIZE - 0.5) + GRID_SIZE / 2,
-    y: GRID_SIZE * Math.round(position.y / GRID_SIZE - 0.5) + GRID_SIZE / 2,
+    x: GRID_SIZE * Math.round(x / GRID_SIZE - 0.5) + GRID_SIZE / 2,
+    y: GRID_SIZE * Math.round(y / GRID_SIZE - 0.5) + GRID_SIZE / 2,
   };
 }
 
@@ -494,5 +500,101 @@ export function pasteSubgraph(params: {
   });
 
   return { nodes: newNodes, edges: newEdges };
+}
+
+// Insertion offset applied to an imported graph on top of the viewport
+// centre, so the merge doesn't land exactly on the focal point.
+export const IMPORT_OFFSET_STEP = 48;
+
+// Merge an imported (hydrated) graph into the live graph. Non-colliding
+// imported ids survive; ids that clash with the existing graph (or repeat
+// inside the import itself) are re-minted and their edges remapped. Every
+// imported position is translated by `offset`, and imported nodes/edges are
+// marked selected so the user immediately sees what was added. The existing
+// nodes/edges are returned untouched, and imported boundary vertices get
+// fresh `order`s so the compute layer's axis ordering stays unique.
+export function mergeImportedGraph(params: {
+  imported: { nodes: VertexNode[]; edges: GraphEdge[] };
+  existing: { nodes: VertexNode[]; edges: GraphEdge[] };
+  offset: { x: number; y: number };
+}): { nodes: VertexNode[]; edges: GraphEdge[] } {
+  const { imported, existing, offset } = params;
+
+  const existingNodeIds = new Set(existing.nodes.map((n) => n.id));
+  const importedNodeIds = new Set(imported.nodes.map((n) => n.id));
+  const existingEdgeIds = new Set(existing.edges.map((e) => e.id));
+
+  // Mint fresh ids only where needed: collisions with the existing graph and
+  // duplicates inside the import itself.
+  const idMap = new Map<string, string>();
+  const usedIds = new Set(existingNodeIds);
+  for (const node of imported.nodes) {
+    if (usedIds.has(node.id)) {
+      const freshId = nanoid();
+      idMap.set(node.id, freshId);
+      usedIds.add(freshId);
+    } else {
+      usedIds.add(node.id);
+    }
+  }
+
+  // Boundary `order` must stay unique per type; seed the pool with the live
+  // graph so imported boundaries land after existing ones.
+  const orderPool: VertexNode[] = existing.nodes.map((node) => ({
+    ...node,
+    data: { ...node.data },
+  }));
+
+  const newNodes: VertexNode[] = imported.nodes.map((node) => {
+    const newNode: VertexNode = {
+      ...node,
+      id: idMap.get(node.id) ?? node.id,
+      position: {
+        x: node.position.x + offset.x,
+        y: node.position.y + offset.y,
+      },
+      data: { ...node.data },
+      selected: true,
+    };
+
+    if (isBoundaryVertex(node.data.vertexType)) {
+      const order = nextBoundaryOrder(orderPool, node.data.vertexType);
+      newNode.data.order = order;
+      orderPool.push(newNode);
+    }
+
+    return newNode;
+  });
+
+  const newEdges: GraphEdge[] = [];
+  // Deduplicate edge ids across the whole result (existing + import), like
+  // the node side: a hand-edited file may repeat an edge id.
+  const usedEdgeIds = new Set(existingEdgeIds);
+  for (const edge of imported.edges) {
+    // A hand-edited file may reference an endpoint that isn't in the node
+    // set; drop such edges rather than leave them dangling.
+    if (
+      !importedNodeIds.has(edge.source) ||
+      !importedNodeIds.has(edge.target)
+    ) {
+      continue;
+    }
+
+    const edgeId = usedEdgeIds.has(edge.id) ? nanoid() : edge.id;
+    usedEdgeIds.add(edgeId);
+
+    newEdges.push({
+      ...edge,
+      id: edgeId,
+      source: idMap.get(edge.source) ?? edge.source,
+      target: idMap.get(edge.target) ?? edge.target,
+      selected: true,
+    });
+  }
+
+  return {
+    nodes: [...existing.nodes, ...newNodes],
+    edges: [...existing.edges, ...newEdges],
+  };
 }
 

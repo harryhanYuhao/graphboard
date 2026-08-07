@@ -11,10 +11,13 @@ export function spoilerHeader(
   commentPrefix: string,
 ): string {
   const now = new Date().toISOString();
+  // Titles are user/import controlled; a newline would break out of the
+  // comment line and inject raw text into the exported file.
+  const title = params.title.replace(/[\r\n]+/g, " ");
   const lines = [
     `${commentPrefix} Graph Board ${formatName} export`,
     `${commentPrefix} Exported: ${now}`,
-    `${commentPrefix} Title: ${params.title}`,
+    `${commentPrefix} Title: ${title}`,
     `${commentPrefix} Nodes: ${params.nodes.length}, Edges: ${params.edges.length}`,
   ];
   return lines.join("\n") + "\n";

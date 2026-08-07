@@ -112,3 +112,34 @@ describe("exportTikz", () => {
     expect(out).not.toContain("\\draw[EDGE] (1) to (undefined);");
   });
 });
+
+describe("exportTikz — header + label hardening", () => {
+  it("strips newlines from the title in the header comment", () => {
+    const out = exportTikz({
+      title: "Line1\nLine2\r\nLine3",
+      nodes: [],
+      edges: [],
+    });
+    expect(out).toContain("% Title: Line1 Line2 Line3");
+    // Exactly one title line — a newline no longer breaks out of the comment.
+    expect(
+      out.split("\n").filter((line) => line.startsWith("% Title: ")),
+    ).toHaveLength(1);
+  });
+
+  it("escapes LaTeX specials in bare labels but keeps phase math intact", () => {
+    const out = render([
+      makeVertexWith("a", { data: { label: "&%#_^~$\\pi" } }),
+    ]);
+    expect(out).toContain("{$\\&\\%\\#\\_\\^{}\\~{}\\$\\pi$}");
+  });
+
+  it("keeps `\\pi` and user-delimited math untouched", () => {
+    const out = render([
+      makeVertexWith("a", { data: { label: "\\pi" } }),
+      makeVertexWith("b", { data: { label: "$-\\frac{\\pi}{2}$" } }),
+    ]);
+    expect(out).toContain("{$\\pi$}");
+    expect(out).toContain("{$-\\frac{\\pi}{2}$}");
+  });
+});

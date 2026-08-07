@@ -301,12 +301,12 @@ describe("Escape ladder", () => {
 
 describe("vertex-type number shortcuts (add-vertex mode only)", () => {
   it("press 1 selects the first vertex type in add-vertex mode", () => {
-    useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
+    useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "x" });
     renderShortcuts();
 
     pressOnBody({ key: "1" });
-    // VERTEX_TYPES[0] is "zbox" — routed through the registry.
-    expect(useGraphStore.getState().selectedVertexType).toBe("zbox");
+    // VERTEX_TYPES[0] is "z" — routed through the registry.
+    expect(useGraphStore.getState().selectedVertexType).toBe("z");
   });
 
   it("press 4 selects the 4th vertex type", () => {
@@ -314,8 +314,8 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
     renderShortcuts();
 
     pressOnBody({ key: "4" });
-    // VERTEX_TYPES[3] is "input" (order: zbox, z, empty, input, output, x, …).
-    expect(useGraphStore.getState().selectedVertexType).toBe("input");
+    // VERTEX_TYPES[3] is "empty" (order: z, x, black_dot, empty, input, …).
+    expect(useGraphStore.getState().selectedVertexType).toBe("empty");
   });
 
   it("press 0 is a no-op (index 0 not accepted)", () => {
@@ -326,13 +326,13 @@ describe("vertex-type number shortcuts (add-vertex mode only)", () => {
     expect(useGraphStore.getState().selectedVertexType).toBe("z");
   });
 
-  it("press 9 selects the 9th vertex type (h)", () => {
-    // 10 types today → digits 1–9 are valid; 9 maps to index 8 = "h".
+  it("press 9 selects the 9th vertex type (zbox)", () => {
+    // 11 types today → digits 1–9 are valid; 9 maps to index 8 = "zbox".
     useGraphStore.setState({ mode: "add-vertex", selectedVertexType: "z" });
     renderShortcuts();
 
     pressOnBody({ key: "9" });
-    expect(useGraphStore.getState().selectedVertexType).toBe("h");
+    expect(useGraphStore.getState().selectedVertexType).toBe("zbox");
   });
 
   it("number keys are ignored outside add-vertex mode", () => {

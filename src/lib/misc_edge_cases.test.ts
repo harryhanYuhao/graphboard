@@ -90,6 +90,7 @@ describe("VERTEX_TYPE_MAP — exhaustive coverage", () => {
       "z",
       "empty",
       "x",
+      "black_dot",
       "w",
       "h",
       "zbox",
