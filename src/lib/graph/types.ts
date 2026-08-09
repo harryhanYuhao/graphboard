@@ -72,7 +72,13 @@ export type VertexData = {
 // `src/lib/label/renderLabel.ts`). Lives in the view slice alongside
 // `rotation` — the graph slice / compute layer never sees it.
 
-export const LABEL_LOCATIONS = ["top", "bottom", "left", "right", "none"] as const;
+export const LABEL_LOCATIONS = [
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "none",
+] as const;
 
 export type LabelLocation = (typeof LABEL_LOCATIONS)[number];
 
