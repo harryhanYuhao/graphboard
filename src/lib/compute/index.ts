@@ -33,10 +33,10 @@ async function getWorker(): Promise<Worker> {
           const onMsg = (e: MessageEvent<WorkerResponse>) => {
             const m = e.data;
             if (m.type === "version-ok") {
-              worker.removeEventListener("message", onMsg);
+              cleanupHandshake();
               resolve(m.version);
             } else if (m.type === "error" && m.requestId === "version-check") {
-              worker.removeEventListener("message", onMsg);
+              cleanupHandshake();
               reject(
                 new ComputeError(
                   m.errorKind ?? classifyComputeError(m.error),
@@ -45,7 +45,24 @@ async function getWorker(): Promise<Worker> {
               );
             }
           };
+          // A worker that throws at eval (e.g. a bad wasm import) never posts
+          // a handshake reply; without this the version promise would hang
+          // forever and the compute dialog would spin indefinitely.
+          const onError = (e: ErrorEvent) => {
+            cleanupHandshake();
+            reject(
+              new ComputeError(
+                "load-failed",
+                `Worker failed to start: ${e.message ?? "unknown worker error"}`,
+              ),
+            );
+          };
+          const cleanupHandshake = () => {
+            worker.removeEventListener("message", onMsg);
+            worker.removeEventListener("error", onError);
+          };
           worker.addEventListener("message", onMsg);
+          worker.addEventListener("error", onError);
           worker.postMessage({ type: "version-check" } satisfies WorkerRequest);
         });
 
@@ -112,6 +129,14 @@ export async function computeTensor(
   }
 
   const worker = await getWorker();
+
+  // The signal may have aborted while the worker spawned / handshook: an
+  // abort listener attached now would miss the one-shot `abort` event, so
+  // the post-await check is what actually cancels that window.
+  if (signal?.aborted) {
+    throw new DOMException("Computation cancelled", "AbortError");
+  }
+
   const requestId = nanoid();
 
   return new Promise<TensorResult>((resolve, reject) => {

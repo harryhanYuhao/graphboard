@@ -1251,3 +1251,46 @@ describe("untrusted import hardening", () => {
     ).toBeUndefined();
   });
 });
+
+describe("pendingEdgeSources cleanup on delete/cut", () => {
+  it("deleteSelected drops the deleted vertices from pendingEdgeSources", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [],
+      pendingEdgeSources: ["a", "b"],
+    });
+    // Select only `a` and delete it.
+    useGraphStore.setState({
+      nodes: useGraphStore.getState().nodes.map((n) =>
+        n.id === "a" ? { ...n, selected: true } : n,
+      ),
+    });
+    useGraphStore.getState().deleteSelected();
+
+    expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["b"]);
+    // The deleted id leaves the pending list — otherwise the next add-edge
+    // click would create an edge from a nonexistent source.
+    expect(useGraphStore.getState().pendingEdgeSources).toEqual(["b"]);
+  });
+
+  it("cutSelected drops the deleted vertices from pendingEdgeSources", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [],
+      pendingEdgeSources: ["a", "b"],
+    });
+    useGraphStore.setState({
+      nodes: useGraphStore.getState().nodes.map((n) =>
+        n.id === "a" ? { ...n, selected: true } : n,
+      ),
+    });
+    useGraphStore.getState().cutSelected();
+
+    expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["b"]);
+    expect(useGraphStore.getState().pendingEdgeSources).toEqual(["b"]);
+    // The cut subgraph is still on the clipboard.
+    expect(useGraphStore.getState().clipboard?.nodes.map((n) => n.id)).toEqual([
+      "a",
+    ]);
+  });
+});

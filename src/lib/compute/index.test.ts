@@ -16,7 +16,8 @@ type Listener = (e: MessageEvent<WorkerResponse>) => void;
 class MockWorker {
   static lastInstance: MockWorker | null = null;
   posted: WorkerRequest[] = [];
-  private listeners = new Set<Listener>();
+  private messageListeners = new Set<Listener>();
+  private errorListeners = new Set<Listener>();
 
   constructor() {
     MockWorker.lastInstance = this;
@@ -26,22 +27,32 @@ class MockWorker {
     this.posted.push(msg);
   }
 
-  addEventListener(_kind: string, fn: Listener) {
-    this.listeners.add(fn);
+  // Kind-aware like a real Worker: an `error` listener must NOT receive
+  // dispatched message events (the wrapper's handshake onerror guard).
+  addEventListener(kind: string, fn: Listener) {
+    (kind === "error" ? this.errorListeners : this.messageListeners).add(fn);
   }
 
-  removeEventListener(_kind: string, fn: Listener) {
-    this.listeners.delete(fn);
+  removeEventListener(kind: string, fn: Listener) {
+    (kind === "error" ? this.errorListeners : this.messageListeners).delete(fn);
   }
 
   terminate() {
-    this.listeners.clear();
+    this.messageListeners.clear();
+    this.errorListeners.clear();
   }
 
   /** Deliver a WorkerResponse as if it came from the worker. */
   dispatch(msg: WorkerResponse) {
-    for (const fn of this.listeners) {
+    for (const fn of this.messageListeners) {
       fn({ data: msg } as MessageEvent<WorkerResponse>);
+    }
+  }
+
+  /** Fire the worker `error` event (e.g. the script threw at eval). */
+  fireError(event: ErrorEvent) {
+    for (const fn of this.errorListeners) {
+      fn(event as unknown as MessageEvent<WorkerResponse>);
     }
   }
 }
@@ -130,6 +141,57 @@ describe("computeTensor", () => {
 
     worker.dispatch({ type: "error", requestId, error: "boom" });
     await expect(promise).rejects.toThrow("boom");
+  });
+
+  it("rejects with AbortError when the signal aborts during worker init", async () => {
+    const computeTensor = await freshModule();
+    const controller = new AbortController();
+
+    const promise = computeTensor(EMPTY_GRAPH, { signal: controller.signal });
+    await vi.waitFor(() => expect(MockWorker.lastInstance).not.toBeNull());
+    const worker = MockWorker.lastInstance!;
+    await waitForPosts(worker, 1); // handshake posted, not yet answered
+
+    // Abort while the handshake is still in flight — the one-shot `abort`
+    // event fires before the wrapper can attach its listener, so only the
+    // post-await re-check catches it.
+    controller.abort();
+    // Complete the handshake so getWorker resolves; the post-await check
+    // must then refuse to post the compute.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const wasmPkg: { version: string } = require("../../../public/wasm/zxw/package.json");
+    worker.dispatch({ type: "version-ok", version: wasmPkg.version });
+
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(worker.posted.filter((m) => m.type === "compute")).toHaveLength(0);
+  });
+
+  it("rejects when the worker fires an error during the handshake, then recovers on the next call", async () => {
+    const computeTensor = await freshModule();
+
+    const promise = computeTensor(EMPTY_GRAPH);
+    await vi.waitFor(() => expect(MockWorker.lastInstance).not.toBeNull());
+    const firstWorker = MockWorker.lastInstance!;
+    await waitForPosts(firstWorker, 1);
+
+    // Worker script threw at eval → `error` event, no handshake reply.
+    firstWorker.fireError({ message: "bad wasm import" } as ErrorEvent);
+    await expect(promise).rejects.toThrow(/Worker failed to start/);
+
+    // The failed worker must not be cached: the next call spawns a fresh
+    // one and works normally.
+    const retry = computeTensor(EMPTY_GRAPH);
+    await vi.waitFor(() => expect(MockWorker.lastInstance).not.toBe(firstWorker));
+    const secondWorker = MockWorker.lastInstance!;
+    await waitForPosts(secondWorker, 1);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const wasmPkg: { version: string } = require("../../../public/wasm/zxw/package.json");
+    secondWorker.dispatch({ type: "version-ok", version: wasmPkg.version });
+    await waitForPosts(secondWorker, 2);
+    if (secondWorker.posted[1].type !== "compute") throw new Error("unreachable");
+    const requestId = secondWorker.posted[1].requestId;
+    secondWorker.dispatch({ type: "result", requestId, result: SAMPLE_RESULT });
+    await expect(retry).resolves.toEqual(SAMPLE_RESULT);
   });
 
   it("forwards progress messages to onProgress", async () => {

@@ -130,6 +130,81 @@ describe("useCompute — validation gate", () => {
     expect(result.current.progress).toBeNull();
   });
 
+  it("second requestCompute aborts the first in-flight run", async () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+    });
+
+    let capturedSignal: AbortSignal | null = null;
+    computeTensorMock.mockImplementation((_graph, callbacks) => {
+      capturedSignal = callbacks?.signal ?? null;
+      return new Promise((_resolve, reject) => {
+        callbacks?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("Computation cancelled", "AbortError")),
+        );
+      });
+    });
+
+    const { result } = renderHook(() => useCompute());
+    act(() => result.current.requestCompute());
+    const firstPromise = result.current.computePromise;
+    const firstSignal = capturedSignal!;
+    // The aborted promise is owned by the (mocked) dialog in real usage;
+    // swallow the rejection here so it never becomes unhandled in the test.
+    firstPromise?.catch(() => {});
+
+    act(() => result.current.requestCompute());
+    const secondPromise = result.current.computePromise;
+
+    // The second request aborted the first run's controller.
+    expect(firstSignal.aborted).toBe(true);
+    await expect(firstPromise).rejects.toMatchObject({ name: "AbortError" });
+    expect(secondPromise).not.toBe(firstPromise);
+  });
+
+  it("stale progress from a replaced run does not overwrite the current one", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+    });
+
+    const progressCallbacks: Array<(c: number, t: number) => void> = [];
+    computeTensorMock.mockImplementation((_graph, callbacks) => {
+      progressCallbacks.push(callbacks?.onProgress ?? (() => {}));
+      return new Promise(() => {});
+    });
+
+    const { result } = renderHook(() => useCompute());
+    act(() => result.current.requestCompute());
+    const firstOnProgress = progressCallbacks[0];
+
+    // A second request replaces the controller; the first run's progress
+    // must then be dropped.
+    act(() => result.current.requestCompute());
+    act(() => firstOnProgress(7, 42));
+
+    expect(result.current.progress).not.toEqual({ contracted: 7, total: 42 });
+  });
+
   it("does not create an unhandled promise rejection on a validation error", async () => {
     // The rejection must be caught eagerly so it never becomes an
     // unhandled rejection (the dialog's `.catch` only attaches on the

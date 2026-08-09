@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useGraphStore } from "@/store/graph-store";
 import {
   VERTEX_TYPES,
@@ -77,6 +77,20 @@ export function VertexPropertyPanel() {
   // draft on every tick (which would also cause a one-frame panel flicker).
   const [isDraggingRotationSlider, setIsDraggingRotationSlider] =
     useState(false);
+  // Ref mirror so the unmount cleanup below can see the drag state even
+  // after this component has torn down.
+  const isDraggingSliderRef = useRef(false);
+
+  // If the panel unmounts mid-drag (e.g. the vertex is deselected while the
+  // rotation slider is held), pointerup never fires and the undo stack would
+  // stay paused forever. Resume on unmount to close that leak.
+  useEffect(() => {
+    return () => {
+      if (isDraggingSliderRef.current) {
+        onVertexPropertyEditEnd();
+      }
+    };
+  }, [onVertexPropertyEditEnd]);
 
   const [rotationDraft, setRotationDraft, rotationDidReset] = useTrackedDraft({
     source: selectedVertex?.rotation ?? 0,
@@ -362,11 +376,13 @@ export function VertexPropertyPanel() {
             onPointerDown={(event) => {
               event.currentTarget.setPointerCapture(event.pointerId);
               setIsDraggingRotationSlider(true);
+              isDraggingSliderRef.current = true;
               onVertexPropertyEditStart();
             }}
             onPointerUp={(event) => {
               event.currentTarget.releasePointerCapture(event.pointerId);
               setIsDraggingRotationSlider(false);
+              isDraggingSliderRef.current = false;
               onVertexPropertyEditEnd();
             }}
             onChange={(event) => {

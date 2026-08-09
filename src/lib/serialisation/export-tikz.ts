@@ -4,9 +4,10 @@
 // … `\endgroup`) with the ZX style definitions (dots, word balls, colors),
 // nodes on the `nodelayer` and edges on the `edgelayer`.
 //
-// Reference format:
+// Reference format (phases pass through raw, visual labels become label=
+// options):
 //   \node [GREEN_DOT] (1) at (-11, 0) {};
-//   \node [RED_WORD_BALL] (3) at (-9, -1) {$\pi$};
+//   \node [RED_WORD_BALL, label=above:{$\pi$}] (3) at (-9, -1) {\pi};
 //   \draw[EDGE] (1) to (4);
 
 import type {
@@ -48,35 +49,6 @@ function nodeStyle(vertexType: VertexType, hasPhase: boolean): string {
   }
 }
 
-// Escape the LaTeX specials that never appear in a valid phase expression
-// (`& % # $ _ ^ ~`). `\ { }` are left alone so phase math like
-// `\frac{\pi}{2}` keeps working. Labels are otherwise treated as LaTeX
-// content by design (the picture is compiled by the user), so a `}`-breakout
-// remains possible for hand-typed labels — documented boundary, no
-// browser-side risk.
-function escapeTikzSpecials(label: string): string {
-  return label.replace(/[&%#$^_~]/g, (ch) => {
-    switch (ch) {
-      case "&":
-        return "\\&";
-      case "%":
-        return "\\%";
-      case "#":
-        return "\\#";
-      case "$":
-        return "\\$";
-      case "^":
-        return "\\^{}";
-      case "_":
-        return "\\_";
-      case "~":
-        return "\\~{}";
-      default:
-        return ch;
-    }
-  });
-}
-
 function nodeLabel(node: VertexNode): string {
   function tikz_position_string(labelLocation: LabelLocation): string {
     switch (labelLocation) {
@@ -99,9 +71,11 @@ function nodeLabel(node: VertexNode): string {
   return `label=${tikz_position_string(node.labelLocation)}:{${processLabelString(node.label)}}`;
 }
 
-// Wrap a bare phase label in math mode (`\pi` → `$\pi$`); labels that are
-// already `$...$` / `$$...$$` delimited pass through untouched.
-// TODO: shall I give user the full privilage to control the lable?
+// Phase labels pass through as raw LaTeX — no auto math-mode wrapping, no
+// escaping — so the user has full control of the emitted math. `$...$`
+// delimited labels pass through verbatim; `$$...$$` is reduced to a single
+// `$` pair because TikZ handles one `$`.
+// TODO: shall I give user the full privilege to control the label?
 function processLabelString(label: string): string {
   const trimmed = label.trim();
   if (trimmed === "") return "";

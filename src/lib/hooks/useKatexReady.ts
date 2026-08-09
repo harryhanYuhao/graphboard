@@ -6,13 +6,20 @@
 
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import {
+  ensureKatex,
   getKatexReadySnapshot,
   subscribeKatexReady,
 } from "@/lib/label/katex-loader";
 
 export function useKatexReady(): boolean {
+  // Kick off (or re-kick after a failed load — `ensureKatex` clears its
+  // memo on rejection) the KaTeX chunk on mount, so a transient network
+  // error self-heals on the next mount.
+  useEffect(() => {
+    ensureKatex();
+  }, []);
   return useSyncExternalStore(
     subscribeKatexReady,
     getKatexReadySnapshot,

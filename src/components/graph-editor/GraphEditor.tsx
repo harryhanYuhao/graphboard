@@ -41,12 +41,13 @@ function GraphEditorInner() {
   // `useShallow` bundles multi-field state into one shallow comparison so the
   // component re-renders only when a read slice changes. The actions below are
   // stable references and don't need shallow.
-  const { nodes, edges, mode, hasHydrated } = useGraphStore(
+  const { nodes, edges, mode, hasHydrated, title } = useGraphStore(
     useShallow((state) => ({
       nodes: state.nodes,
       edges: state.edges,
       mode: state.mode,
       hasHydrated: state.hasHydrated,
+      title: state.title,
     })),
   );
   const { confirmDialogue, isHelpOpen, isIntroOpen, isExportOpen, isPropertiesOpen } =
@@ -140,7 +141,8 @@ function GraphEditorInner() {
 
   useKeyboardShortcuts({ onCompute: compute.requestCompute });
 
-  // Auto save
+  // Auto save. `save()` persists `title` too, so title changes must also
+  // reset the debounce (not just node/edge changes).
   useEffect(() => {
     if (!hasHydrated) return;
 
@@ -149,7 +151,7 @@ function GraphEditorInner() {
     }, 2000);
 
     return () => window.clearTimeout(timeout);
-  }, [nodes, edges, hasHydrated]);
+  }, [nodes, edges, title, hasHydrated]);
 
 
   const handlePaneClick = useCallback(

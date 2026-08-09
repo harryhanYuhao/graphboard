@@ -1,10 +1,50 @@
 // src/lib/graph/types.ts
+//
+// Shared graph types, top to bottom:
+//
+//   1. Vertex types  — the 11 vertex types and what each one is
+//   2. Constants     — string-literal sources of truth (HANDLE_IDS,
+//                      EDGE_TYPES, PERSISTED_IDS, EDITOR_MODES); the literal
+//                      values are a contract, so they're never sprinkled
+//                      elsewhere in the codebase
+//   3. VertexData    — graph-slice vertex data (phase, vertexType, order):
+//                      exactly what the compute layer (Rust/WASM) consumes
+//   4. Runtime layer — VertexNode / GraphEdge: React Flow's in-memory
+//                      objects. View fields (rotation, visual label) ride on
+//                      VertexNode but are never persisted
+//   5. Persistence   — GraphDocument split into a `graph` slice (compute
+//                      contract) + `view` slice (visual only), schema-
+//                      versioned via CURRENT_SCHEMA_VERSION
+//
+// Per-type behaviour predicates (isSpiderType, isDirectionalVertex,
+// isBoundaryVertex) and the visual metadata table (VERTEX_TYPE_MAP) live in
+// `./vertex-types.ts`, not here.
 
 import type { Edge, Node } from "@xyflow/react";
 
-// Vertex type. `input` / `output` are boundary markers (not tensors): they
-// declare open legs (dimension 2 each), so n inputs + m outputs → 2^m × 2^n
-// matrix after contraction; no boundaries → scalar. See `isBoundaryVertex`.
+// ---- Vertex types -----------------------------------------------------------
+//
+// The 11 vertex types, grouped by role:
+//
+//   Spiders (phase-bearing, `isSpiderType`): z, x, zbox, xbox
+//     The phase expression lives in `VertexData.phase` (empty = phase 0).
+//     z / x are round spiders; zbox / xbox are their boxed variants.
+//   Directional (`isDirectionalVertex`): w, and
+//     One input at the top, fan-out outputs at the bottom. The W generator
+//     and the And gate.
+//   Boxes (fixed arity): h
+//     The Hadamard box, always arity 2.
+//   Plain markers: empty, black_dot
+//     `empty`: the empty node (isolated → scalar 1, wired → identity).
+//     `black_dot`: a filled dot — a phaseless Z spider (compute:
+//     z_spider(arity, 0)).
+//   Boundary (`isBoundaryVertex`): input, output
+//     Not tensors — they declare the open legs (dimension 2 each), so
+//     n inputs + m outputs → 2^m × 2^n matrix after contraction; no
+//     boundaries → scalar.
+//
+// `VERTEX_TYPE_MAP` in `./vertex-types.ts` is the single source of truth for
+// shape/colour/size and the behaviour predicates above.
 export type VertexType =
   | "z"
   | "empty"
@@ -18,12 +58,14 @@ export type VertexType =
   | "output"
   | "black_dot";
 
-// ---- React Flow handle & edge identifiers ---------------------------------
+// ---- Shared string-literal constants ---------------------------------------
 //
 // Centralized string constants — the shared contract between edge creation
 // (operations.ts), serialisation (src/lib/serialisation/document.ts), and the
-// renderer. Don't sprinkle the literals elsewhere.
-//
+// renderer. Don't sprinkle the literals elsewhere. Each block follows the same
+// pattern: an object literal + a derived union type, so a typo like
+// "add-egde" fails to compile.
+
 // React Flow handle ids on VertexNode: `center-source` / `center-target` are
 // the transparent overlays at the body center; `top` is the visible dot that
 // anchors the directional W / And-gate target.
@@ -43,14 +85,24 @@ export const EDGE_TYPES = {
 
 export type EdgeType = (typeof EDGE_TYPES)[keyof typeof EDGE_TYPES];
 
-// ---- Persisted document identifiers ----------------------------------------
-//
 // Stable ids for `createEmptyGraphDocument` and export, keeping literals
 // out of the serialisation module.
 export const PERSISTED_IDS = {
   localDocument: "local-document",
   exportedDocument: "exported-document",
 } as const;
+
+// Editor interaction modes. Mirrors the HANDLE_IDS / EDGE_TYPES pattern
+// (string-literal source of truth) so a typo like "add-egde" fails to compile.
+export const EDITOR_MODES = {
+  select: "select",
+  addVertex: "add-vertex",
+  addEdge: "add-edge",
+} as const satisfies Record<string, string>;
+
+export type EditorMode = (typeof EDITOR_MODES)[keyof typeof EDITOR_MODES];
+
+// ---- Vertex data (graph slice) ---------------------------------------------
 
 export type VertexData = {
   // The vertex's phase expression — the compute input for spider/box types
@@ -65,25 +117,6 @@ export type VertexData = {
   // falls back to array position so older saved graphs still work.
   order?: number;
 };
-
-// ---- Visual vertex label (view slice) ------------------------------------
-//
-// A purely visual annotation shown near a vertex (KaTeX-enabled, see
-// `src/lib/label/renderLabel.ts`). Lives in the view slice alongside
-// `rotation` — the graph slice / compute layer never sees it.
-
-export const LABEL_LOCATIONS = [
-  "top",
-  "bottom",
-  "left",
-  "right",
-  "none",
-] as const;
-
-export type LabelLocation = (typeof LABEL_LOCATIONS)[number];
-
-// Where an unset label location defaults to: above the node.
-export const DEFAULT_LABEL_LOCATION: LabelLocation = "top";
 
 // ---- Runtime layer (in-memory, what the store + React Flow hold) -----------
 //
@@ -109,7 +142,7 @@ export type GraphEdge = Edge;
 // The document is split into two parallel slices:
 //   - `graph` — graph-theoretic data only; what compute layers (Rust/WASM)
 //     consume. No visual or React-Flow-shaped fields.
-//   - `view` — visual data (position today, future curvature/labels). The
+//   - `view` — visual data only (position, rotation, visual label today). The
 //     renderer rebuilds runtime objects by joining `graph` + `view` on id.
 //
 // The split keeps the WASM `serde` boundary trivial, stops React Flow runtime
@@ -142,6 +175,23 @@ export type GraphSlice = {
   nodes: GraphNodeRecord[];
   edges: GraphEdgeRecord[];
 };
+
+// ---- View slice (visual only, never seen by compute) -----------------------
+
+// Where a visual label sits relative to its node; `none` hides it. Default is
+// above the node (DEFAULT_LABEL_LOCATION).
+export const LABEL_LOCATIONS = [
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "none",
+] as const;
+
+export type LabelLocation = (typeof LABEL_LOCATIONS)[number];
+
+// Where an unset label location defaults to: above the node.
+export const DEFAULT_LABEL_LOCATION: LabelLocation = "top";
 
 // View entry for a node — position, rotation, and the visual label today;
 // more visual fields later.
@@ -181,13 +231,3 @@ export type GraphDocument = {
   createdAt: string;
   updatedAt: string;
 };
-
-// Editor interaction modes. Mirrors the HANDLE_IDS / EDGE_TYPES pattern
-// (string-literal source of truth) so a typo like "add-egde" fails to compile.
-export const EDITOR_MODES = {
-  select: "select",
-  addVertex: "add-vertex",
-  addEdge: "add-edge",
-} as const satisfies Record<string, string>;
-
-export type EditorMode = (typeof EDITOR_MODES)[keyof typeof EDITOR_MODES];

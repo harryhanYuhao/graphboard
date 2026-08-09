@@ -33,11 +33,24 @@ function notifyReady() {
 /** Kick off the KaTeX import if it hasn't started. Safe to call repeatedly. */
 export function ensureKatex(): void {
   if (katexPromise) return;
-  katexPromise = import("katex").then((mod) => {
-    katexModule = mod.default ?? mod;
-    notifyReady();
-    return mod;
-  });
+  katexPromise = import("katex")
+    .then((mod) => {
+      katexModule = mod.default ?? mod;
+      notifyReady();
+      return mod;
+    })
+    .catch((err) => {
+      // Don't cache a failed load: a transient network error would
+      // otherwise degrade every LaTeX label to escaped text for the
+      // whole session. Clearing the memo lets a later render retry.
+      katexPromise = null;
+      throw err;
+    });
+  // Absorb the rejection: nothing consumes `katexPromise` directly, and an
+  // unhandled rejection on every failed fetch (incl. the boot-time kickoff)
+  // would spam console errors. `whenKatexReady` still surfaces failures
+  // through its own `.then` chain.
+  katexPromise.catch(() => {});
 }
 
 /**

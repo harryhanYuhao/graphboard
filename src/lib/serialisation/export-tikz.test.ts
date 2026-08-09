@@ -1,6 +1,7 @@
-// Pins the TikZ serializer (`./export-tikz.ts`): style per vertex type, label
-// math-mode wrapping, mean-centered coordinate scaling, 1-based node naming,
-// and edge emission. Positions are mean-centered before export (same as the
+// Pins the TikZ serializer (`./export-tikz.ts`): style per vertex type, raw
+// LaTeX phase passthrough, the view-slice visual label as a TikZ `label=`
+// option, mean-centered coordinate scaling, 1-based node naming, and edge
+// emission. Positions are mean-centered before export (same as the
 // JSON serializer), divided by 48, and the y axis is flipped (TikZ is y-up,
 // React Flow is y-down). The output is a `\begingroup` … `\endgroup` picture
 // block with nodes on the nodelayer and edges on the edgelayer.
@@ -51,11 +52,13 @@ describe("exportTikz", () => {
     expect(out).toContain("\\node [GREEN_DOT] (2) at (1, -1) {};");
   });
 
-  it("renders labeled z spiders as green word balls with math-wrapped labels", () => {
+  it("renders labeled z spiders as green word balls with the raw phase label", () => {
+    // Phases pass through as-is — no auto math-mode wrapping; the user has
+    // full control of the LaTeX (see `processLabelString` in export-tikz.ts).
     const out = render([
       makeVertexWith("a", { data: { phase: "\\pi" } }),
     ]);
-    expect(out).toContain("\\node [GREEN_WORD_BALL] (1) at (0, 0) {$\\pi$};");
+    expect(out).toContain("\\node [GREEN_WORD_BALL] (1) at (0, 0) {\\pi};");
   });
 
   it("leaves already-delimited math labels untouched", () => {
@@ -80,7 +83,7 @@ describe("exportTikz", () => {
     ]);
     expect(out).toContain("\\node [GREEN_DOT] (1) at (0, 0) {};");
     expect(out).toContain("\\node [RED_DOT] (2) at (0, 0) {};");
-    expect(out).toContain("\\node [RED_WORD_BALL] (3) at (0, 0) {$\\pi$};");
+    expect(out).toContain("\\node [RED_WORD_BALL] (3) at (0, 0) {\\pi};");
     expect(out).toContain("\\node [GREEN_DOT] (4) at (0, 0) {};");
     expect(out).toContain("\\node [YELLOW_BOX] (5) at (0, 0) {};");
     expect(out).toContain("\\node [GREEN_DOT] (6) at (0, 0) {};");
@@ -127,19 +130,39 @@ describe("exportTikz — header + label hardening", () => {
     ).toHaveLength(1);
   });
 
-  it("escapes LaTeX specials in bare labels but keeps phase math intact", () => {
+  it("passes phase labels through as raw LaTeX (no escaping — user-controlled)", () => {
+    // The serializer deliberately does NOT escape LaTeX specials: the phase
+    // is handed to the user verbatim (see the TODO in processLabelString).
     const out = render([
       makeVertexWith("a", { data: { phase: "&%#_^~$\\pi" } }),
     ]);
-    expect(out).toContain("{$\\&\\%\\#\\_\\^{}\\~{}\\$\\pi$}");
+    expect(out).toContain("{&%#_^~$\\pi}");
   });
 
   it("keeps `\\pi` and user-delimited math untouched", () => {
     const out = render([
       makeVertexWith("a", { data: { phase: "\\pi" } }),
       makeVertexWith("b", { data: { phase: "$-\\frac{\\pi}{2}$" } }),
+      makeVertexWith("c", { data: { phase: "$$\\frac{\\pi}{4}$$" } }),
     ]);
-    expect(out).toContain("{$\\pi$}");
+    // Bare phase: verbatim. Already-delimited $...$: verbatim.
+    expect(out).toContain("{\\pi}");
     expect(out).toContain("{$-\\frac{\\pi}{2}$}");
+    // $$...$$ is reduced to a single $ pair (TikZ handles one $).
+    expect(out).toContain("{$\\frac{\\pi}{4}$}");
+  });
+
+  it("emits the visual label as a positioned TikZ label= option", () => {
+    // The view-slice visual label becomes a `label=<pos>:{...}` node option;
+    // no label when empty or location "none".
+    const out = render([
+      makeVertexWith("a", { label: "$\\alpha$", labelLocation: "right" }),
+      makeVertexWith("b", { label: "note", labelLocation: "top" }),
+      makeVertexWith("c", { label: "hidden", labelLocation: "none" }),
+    ]);
+    expect(out).toContain("\\node [label=right:{$\\alpha$}, GREEN_DOT] (1)");
+    expect(out).toContain("\\node [label=above:{note}, GREEN_DOT] (2)");
+    expect(out).toContain("\\node [GREEN_DOT] (3)");
+    expect(out).not.toContain("hidden");
   });
 });

@@ -80,11 +80,25 @@ export function useCompute(): ComputeState {
       return;
     }
 
+    // Cancel any in-flight run before starting a new one. Both runs would
+    // otherwise post to the single-threaded worker and run serially, with
+    // the older run's `onProgress` overwriting the new dialog's progress
+    // bar (and Cancel only ever aborting the newest run).
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+
     const controller = new AbortController();
     abortRef.current = controller;
     const callbacks: ComputeCallbacks = {
       signal: controller.signal,
-      onProgress: (contracted, total) => setProgress({ contracted, total }),
+      onProgress: (contracted, total) => {
+        // A newer request has replaced this controller — drop the stale
+        // run's progress instead of clobbering the current dialog.
+        if (abortRef.current !== controller) return;
+        setProgress({ contracted, total });
+      },
     };
 
     setProgress({ contracted: 0, total: 0 });

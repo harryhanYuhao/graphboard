@@ -46,6 +46,7 @@ import {
   importGraphJson,
   type HydratedDocument,
   loadGraphDocument,
+  LOCAL_STORAGE_BACKUP_KEY,
   normalizeRotation,
   saveGraphDocument,
   type ExportFormatId,
@@ -275,7 +276,7 @@ function emptyValidationErrors(): Record<string, ValidationError[]> {
 
 // Recovery copy written before the hydrate fallback replaces a possibly-
 // valid document; lets a regression (vs. real corruption) be recovered.
-const LOCAL_STORAGE_BACKUP_KEY = "graph-board-document-backup";
+// Key lives in storage.ts so the parse-fail backup path shares it.
 
 // Save the graph to localStorage under the stable local-doc id. Shared
 // by `save` and `reset` so the field list lives in one place.
@@ -488,7 +489,14 @@ export const useGraphStore = create<GraphStore>()(
           edges: get().edges,
         });
 
-        set(next);
+        // Deleted vertices must leave the pending source list: otherwise the
+        // next add-edge click would create edges from nonexistent sources.
+        const remainingIds = new Set(next.nodes.map((n) => n.id));
+        const pendingEdgeSources = get().pendingEdgeSources.filter((id) =>
+          remainingIds.has(id),
+        );
+
+        set({ ...next, pendingEdgeSources });
       },
 
       selectAll: () => {
@@ -568,8 +576,15 @@ export const useGraphStore = create<GraphStore>()(
           edges: get().edges,
         });
 
+        // Same pending-source cleanup as `deleteSelected`.
+        const remainingIds = new Set(remaining.nodes.map((n) => n.id));
+        const pendingEdgeSources = get().pendingEdgeSources.filter((id) =>
+          remainingIds.has(id),
+        );
+
         set({
           ...remaining,
+          pendingEdgeSources,
           clipboard: {
             ...cloneSubgraphForClipboard(subgraph),
             pasteCount: 0,

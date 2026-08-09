@@ -21,6 +21,7 @@ export {
   createEmptyGraphDocument,
   saveGraphDocument,
   loadGraphDocument,
+  LOCAL_STORAGE_BACKUP_KEY,
 } from "./storage";
 export { exportGraphJson } from "./export-json";
 export { exportTikz } from "./export-tikz";

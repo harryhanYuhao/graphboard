@@ -733,3 +733,44 @@ describe("exportGraphJson / importGraphJson", () => {
     }
   });
 });
+describe("loadGraphDocument — parse-fail backup", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("backs up the raw document before falling back to empty on parse failure", () => {
+    // Non-JSON garbage: parseDocument fails, so the load returns the empty
+    // doc — but the raw contents must be preserved first, because the empty
+    // fallback is autosaved ~2s later and would otherwise destroy the only
+    // copy.
+    const garbage = "{not-json!!!";
+    localStorage.setItem("graph-board-document", garbage);
+
+    const doc = loadGraphDocument();
+
+    expect(doc.graph.nodes).toEqual([]);
+    expect(doc.title).toBe("Untitled Graph");
+    expect(localStorage.getItem("graph-board-document-backup")).toBe(garbage);
+  });
+
+  it("does not write a backup when the document parses fine", () => {
+    const good = JSON.stringify({
+      schemaVersion: 2,
+      id: "local-document",
+      title: "Good",
+      graph: { nodes: [], edges: [] },
+      view: { nodes: [], edges: [] },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    });
+    localStorage.setItem("graph-board-document", good);
+
+    loadGraphDocument();
+
+    expect(localStorage.getItem("graph-board-document-backup")).toBeNull();
+  });
+});
