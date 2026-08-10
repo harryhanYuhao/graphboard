@@ -8,6 +8,8 @@ import type { CSSProperties } from "react";
 import { isDirectionalVertex } from "./vertex-types";
 import { normalizeRotation } from "@/lib/serialisation";
 import type { VertexType } from "./types";
+import type { EdgeKind } from "@/lib/graph/types";
+import { EDGE_KIND_MAP } from "@/lib/graph/edge-kinds";
 
 // Inputs to a single edge endpoint. Mirrors React Flow's `useInternalNode`,
 // plus our custom `rotation`.
@@ -75,10 +77,14 @@ export function getEdgeEndpoint(
 // override that CSS rule. So a selected dashed-blue edge drops the inline
 // color (keeping the dash) and lets the selection color show.
 export function edgeKindPathStyle(
-  kind: unknown,
+  kind: EdgeKind,
   selected: boolean,
 ): CSSProperties | undefined {
-  if (kind !== "dashed_blue") return { strokeWidth: 1.5 };
-  if (selected) return { strokeDasharray: "4 1.5", strokeWidth: 2 };
-  return { stroke: "#2563eb", strokeDasharray: "4 1.5", strokeWidth: 2 };
+  const meta = EDGE_KIND_MAP[kind];
+  // if (kind !== "dashed_blue") return { strokeWidth: meta.strokeWidth };
+
+  // TODO: selected shall have shadow
+  if (selected) return { strokeDasharray: meta.strokeDashArray, strokeWidth: meta.strokeWidth };
+
+  return { stroke: meta.stroke, strokeDasharray: meta.strokeDashArray, strokeWidth: meta.strokeWidth };
 }

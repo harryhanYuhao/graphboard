@@ -15,10 +15,22 @@ import type { EdgeKind } from "./types";
 export type EdgeKindMeta = {
   label: string;
   stroke: string;
+  strokeDashArray: string;
+  strokeWidth: number;
 };
 
 // Keys must cover `EDGE_KINDS` exactly (pinned by `edge-kinds.test.ts`).
 export const EDGE_KIND_MAP: Record<EdgeKind, EdgeKindMeta> = {
-  default: { label: "Default", stroke: "#334155" },
-  dashed_blue: { label: "Dashed blue", stroke: "#2563eb" },
+  default: {
+    label: "Default",
+    stroke: "#334155",
+    strokeDashArray: "",
+    strokeWidth: 1.5,
+  },
+  dashed_blue: {
+    label: "Dashed blue",
+    stroke: "#2563eb",
+    strokeDashArray: "4 1.5",
+    strokeWidth: 2,
+  }
 };

@@ -11,7 +11,6 @@ import type { EdgeKind } from "@/lib/graph/types";
 
 export function EdgeKindSwatch({ kind }: { kind: EdgeKind }) {
   const meta = EDGE_KIND_MAP[kind];
-  const isDashed = kind === "dashed_blue";
   return (
     <svg width="32" height="8" viewBox="0 0 32 8" aria-hidden="true">
       <line
@@ -22,7 +21,7 @@ export function EdgeKindSwatch({ kind }: { kind: EdgeKind }) {
         stroke={meta.stroke}
         strokeWidth={2}
         // Same dash pattern the edges themselves draw (edgeKindPathStyle).
-        strokeDasharray={isDashed ? "4 1.5" : undefined}
+        strokeDasharray={meta.strokeDashArray}
       />
     </svg>
   );
