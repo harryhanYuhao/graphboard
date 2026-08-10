@@ -78,8 +78,10 @@ pub enum VertexType {
 /// A persisted edge: endpoints plus optional handle indices. Handles are
 /// `None` when JSON omits the field (meaning "use the role default");
 /// `skip_serializing_if` keeps re-serialized output byte-compatible with
-/// the frontend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// the frontend. `data.kind` is the edge kind — ignored by the compute
+/// layer today (both kinds contract identically), but it travels through
+/// the graph slice so a future compute difference needs no schema change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrontendGraphEdgeRecord {
     pub id: String,
@@ -89,4 +91,27 @@ pub struct FrontendGraphEdgeRecord {
     pub source_handle: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_handle: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<FrontendEdgeData>,
+}
+
+/// Edge-kind payload on a persisted edge. Serialized camelCase to match the
+/// TS `GraphEdgeRecord.data` (`{ kind }`); the kind enum is snake_case like
+/// `VertexType` (`Default` → `default`, `DashedBlue` → `dashed_blue`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendEdgeData {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<EdgeKind>,
+}
+
+/// The edge kinds. `Default` is the plain straight edge; `DashedBlue` is the
+/// dashed-blue variant — visually distinct, compute-identical for now (both
+/// contract as the plain edge). Future kinds carry their own tensor
+/// definitions in `contraction.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeKind {
+    Default,
+    DashedBlue,
 }

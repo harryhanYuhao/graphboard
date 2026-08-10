@@ -5,10 +5,11 @@
 // nodes on the `nodelayer` and edges on the `edgelayer`.
 //
 // Reference format (phases pass through raw, visual labels become label=
-// options):
+// options, edge kinds pick the draw style):
 //   \node [GREEN_DOT] (1) at (-11, 0) {};
 //   \node [RED_WORD_BALL, label=above:{$\pi$}] (3) at (-9, -1) {\pi};
 //   \draw[EDGE] (1) to (4);
+//   \draw[BLUE_DASHED_EDGE] (2) to (3);   % dashed_blue edge kind
 
 import type {
   GraphEdge,
@@ -112,7 +113,10 @@ function edgeLine(edge: GraphEdge, nodeIndexById: Map<string, number>): string {
   if (source === undefined || target === undefined) {
     return `% skipped edge ${edge.id}: endpoint not in node list`;
   }
-  return `\\draw[EDGE] (${source}) to (${target});`;
+  // Edge kind picks the TikZ style: dashed-blue edges draw dashed in blue,
+  // everything else uses the plain EDGE style.
+  const style = edge.data?.kind === "dashed_blue" ? "BLUE_DASHED_EDGE" : "EDGE";
+  return `\\draw[${style}] (${source}) to (${target});`;
 }
 
 function tikzBackBone(nodeString: string, edgeString: string): string {
@@ -138,7 +142,8 @@ function tikzBackBone(nodeString: string, edgeString: string): string {
     YELLOW_BOX/.style={fill=zxYellow, draw=black, line width=1pt, shape=rectangle, inner sep=0.6mm,
         minimum height=3.4mm, minimum width=3.4mm,
         font={\\large\\boldmath}},
-    EDGE/.style={draw=black, line width=1pt}
+    EDGE/.style={draw=black, line width=1pt},
+    BLUE_DASHED_EDGE/.style={EDGE, draw=blue, dashed}
 }
 \\pgfdeclarelayer{edgelayer}
 \\pgfdeclarelayer{nodelayer}

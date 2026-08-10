@@ -54,12 +54,15 @@ Typecheck runs through `next build` and the VS Code TS SDK
   it composes `VertexGlyphs.tsx` (SVG shapes), `VertexHandles.tsx` (React
   Flow `<Handle>`s), `VertexLabelEditor.tsx` (inline phase/text edit), plus
   `VertexPropertyPanel.tsx`, `VertexSwatch.tsx`, `VertexTypeMenu.tsx`,
-  `GraphToolbar.tsx`, dialog components (`ConfirmationDialog`,
+  `GraphToolbar.tsx`, `EdgeKindSwatch.tsx`, `EdgeKindMenu.tsx` (edge-kind
+  picker in add-edge mode), `EdgePropertyPanel.tsx` (edge kind selector),
+  dialog components (`ConfirmationDialog`,
   `HelpDialog.tsx` — the Help page, with a button that reopens the
   `IntroGuideDialog` first-run stepper, `ComputeResultDialog`).
 - `src/lib/graph/edge-geometry.ts` — pure edge-endpoint math (rotation-aware)
-  for `StraightCenterEdge`. Keep geometry here, not in the component, so it
-  is unit-testable without React Flow.
+  + the edge-kind path style (`edgeKindPathStyle`) for `StraightCenterEdge`.
+  Keep geometry here, not in the component, so it is unit-testable without
+  React Flow.
 - `src/lib/keyboard/shortcuts.ts` — **display-only** shortcut registry.
   `src/components/graph-editor/useKeyboardShortcuts.ts` is the actual
   dispatch. If you add a shortcut, add it to both.
@@ -143,7 +146,25 @@ Typecheck runs through `next build` and the VS Code TS SDK
   - `straight-center` → `StraightCenterEdge.tsx` — straight line whose
     endpoints come from `src/lib/graph/edge-geometry.ts` (node centers, or
     the rotating top-edge dot for directional targets), **not** React Flow's
-    default border-to-border.
+    default border-to-border. Its stroke is picked by the edge **kind** via
+    `edgeKindPathStyle`: `dashed_blue` draws dashed in blue (color dropped
+    while selected so React Flow's CSS selection colour shows), `default`
+    keeps the CSS-driven look.
+- **Edge kinds:** `EDGE_KINDS` (`default`, `dashed_blue`) in `types.ts` is
+  the registry; `DEFAULT_EDGE_KIND` is `default`; display metadata lives in
+  `src/lib/graph/edge-kinds.ts` (`EDGE_KIND_MAP`), mirroring
+  `vertex-types.ts` (`VERTEX_TYPES` vs `VERTEX_TYPE_MAP`). The kind rides in
+  the **graph slice** (`GraphEdge.data.kind` → persisted `edges[].data.kind`,
+  sent to the compute layer) because future kinds will compute differently —
+  today both kinds contract identically. It is additive-optional (the
+  `order` precedent): legacy docs hydrate to `default`, and `hydrateEdgeKind`
+  coerces crafted/unknown values. **Adding edges is click-to-connect with a
+  staged kind**: in `add-edge` mode `EdgeKindMenu` appears (like
+  `VertexTypeMenu`) and picks `selectedEdgeKind`; `handleVertexClick` →
+  `computeVertexClick` creates new edges with that kind via
+  `createGraphEdge(..., kind)`. The edge property panel (opens when exactly
+  one edge is selected) switches an existing edge's kind via
+  `updateEdgeKind` (structural, undo-tracked).
 - **Handles & directional vertices:** `HANDLE_IDS` in
   `src/lib/graph/types.ts` (`center-source`, `center-target`, `top`) is the
   contract shared by operations, serializer, and renderer — don't sprinkle
@@ -270,9 +291,9 @@ Persisted documents (`GraphDocument`, see `src/lib/graph/types.ts`) are
 
 - **`graph`** — graph-theoretic info only. `nodes: { id, data: { phase,
   vertexType } }[]` and `edges: { id, source, target, sourceHandle?,
-  targetHandle? }[]` (handle fields are numeric indices, see §"Handles"
-  above). This is the contract that the future Rust/WASM compute layer (and
-  any external researcher's tooling) consumes.
+  targetHandle?, data?: { kind? } }[]` (handle fields are numeric indices,
+  see §"Handles" above). This is the contract that the Rust/WASM compute
+  layer (and any external researcher's tooling) consumes.
 - **`view`** — visual info only. `nodes: { id, position, rotation?,
   label?, labelLocation? }[]` and `edges: { id }[]` today; future edge
   curvature, group colors, etc. will live here.

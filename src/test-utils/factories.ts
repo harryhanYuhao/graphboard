@@ -3,8 +3,10 @@
 // than across every test file at once.
 
 import {
+  DEFAULT_EDGE_KIND,
   DEFAULT_LABEL_LOCATION,
   EDGE_TYPES,
+  type EdgeKind,
   type GraphEdge,
   type LabelLocation,
   type VertexData,
@@ -63,5 +65,33 @@ export function makeEdge(
   target: string,
   selected = false,
 ): GraphEdge {
-  return { id, source, target, type: EDGE_TYPES.straightCenter, selected };
+  return {
+    id,
+    source,
+    target,
+    type: EDGE_TYPES.straightCenter,
+    selected,
+    data: { kind: DEFAULT_EDGE_KIND },
+  };
+}
+
+export type EdgeWithOptions = {
+  selected?: boolean;
+  kind?: EdgeKind;
+};
+
+export function makeEdgeWith(
+  id: string,
+  source: string,
+  target: string,
+  options: EdgeWithOptions = {},
+): GraphEdge {
+  return {
+    id,
+    source,
+    target,
+    type: EDGE_TYPES.straightCenter,
+    selected: options.selected ?? false,
+    data: { kind: options.kind ?? DEFAULT_EDGE_KIND },
+  };
 }

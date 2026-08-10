@@ -410,6 +410,7 @@ fn serialization_key_order_is_stable() {
         target: "t".into(),
         source_handle: Some(0),
         target_handle: Some(1),
+        data: None,
     };
     assert_eq!(
         serde_json::to_string(&edge_with_handles).unwrap(),
@@ -446,6 +447,7 @@ fn edge_with_handles_serializes_them() {
         target: "t".into(),
         source_handle: Some(0),
         target_handle: Some(1),
+        data: None,
     };
     let json = serde_json::to_string(&edge).unwrap();
     assert!(
@@ -461,6 +463,68 @@ fn edge_with_handles_serializes_them() {
     let back: FrontendGraphEdgeRecord = serde_json::from_str(&json).unwrap();
     assert_eq!(back.source_handle, Some(0));
     assert_eq!(back.target_handle, Some(1));
+}
+
+// ============================================================================
+// §8  Edge-kind (`data.kind`) cases
+// ============================================================================
+
+// 33b. Absent `data` on an edge → `None` (legacy docs and hand-edited imports
+// keep working; the frontend hydrates to the default kind).
+#[test]
+fn edge_without_data_has_none_kind() {
+    let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b"}]}"#;
+    let slice: FrontendGraphSlice = serde_json::from_str(json).unwrap();
+    assert_eq!(slice.edges[0].data, None);
+}
+
+// 33c. `data: {}` → kind `None` (the field itself is optional).
+#[test]
+fn edge_data_without_kind_has_none_kind() {
+    let json =
+        r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "data": {}}]}"#;
+    let slice: FrontendGraphSlice = serde_json::from_str(json).unwrap();
+    assert_eq!(slice.edges[0].data.as_ref().unwrap().kind, None);
+}
+
+// 33d. Unknown / misspelled kinds are rejected loudly (serde enum), so a
+// frontend typo surfaces instead of silently computing as the default.
+#[test]
+fn unknown_edge_kind_is_rejected() {
+    let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "data": {"kind": "dashed"}}]}"#;
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(json);
+    assert!(
+        result.is_err(),
+        "unknown edge kind 'dashed' must be rejected, got: {:?}",
+        result
+    );
+}
+
+// 33e. The on-disk spelling is snake_case: `dashed_blue`, not `dashed-blue`
+// (mirrors `black_dot` for vertex types).
+#[test]
+fn hyphenated_kind_is_rejected() {
+    let json = r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "data": {"kind": "dashed-blue"}}]}"#;
+    let result: Result<FrontendGraphSlice, _> = serde_json::from_str(json);
+    assert!(
+        result.is_err(),
+        "'dashed-blue' must be rejected; snake_case 'dashed_blue' is canonical"
+    );
+}
+
+// 33f. A `default` kind round-trips through the struct (covered for
+// `dashed_blue` in graph_serde.rs; pin `default` here too).
+#[test]
+fn default_kind_round_trips() {
+    let json =
+        r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b", "data": {"kind": "default"}}]}"#;
+    let once: FrontendGraphSlice = serde_json::from_str(json).unwrap();
+    let json2 = serde_json::to_string(&once).unwrap();
+    let twice: FrontendGraphSlice = serde_json::from_str(&json2).unwrap();
+    assert_eq!(
+        twice.edges[0].data.as_ref().unwrap().kind,
+        Some(zxw::EdgeKind::Default)
+    );
 }
 
 // ============================================================================

@@ -1,8 +1,10 @@
 // src/lib/graph/edge-geometry.ts
 //
-// Pure geometry for `StraightCenterEdge`. Kept out of the component so the
-// rotation math is unit-testable without React Flow internals.
+// Pure geometry + styling for `StraightCenterEdge`. Kept out of the
+// component so the rotation math is unit-testable without React Flow
+// internals.
 
+import type { CSSProperties } from "react";
 import { isDirectionalVertex } from "./vertex-types";
 import { normalizeRotation } from "@/lib/serialisation";
 import type { VertexType } from "./types";
@@ -62,4 +64,21 @@ export function getEdgeEndpoint(
   const ry = localX * sin + localY * cos;
 
   return { x: cx + rx, y: cy + ry };
+}
+
+// Edge-kind path styling for `StraightCenterEdge`. The default kind draws a
+// thin 1.5pt line (matching the pre-kind look, slightly slimmer); dashed-blue
+// edges draw dashed in blue at 2pt.
+//
+// `selected` is load-bearing: React Flow colors a selected edge via the CSS
+// variable `--xy-edge-stroke-selected`, and an inline `stroke` would
+// override that CSS rule. So a selected dashed-blue edge drops the inline
+// color (keeping the dash) and lets the selection color show.
+export function edgeKindPathStyle(
+  kind: unknown,
+  selected: boolean,
+): CSSProperties | undefined {
+  if (kind !== "dashed_blue") return { strokeWidth: 1.5 };
+  if (selected) return { strokeDasharray: "4 1.5", strokeWidth: 2 };
+  return { stroke: "#2563eb", strokeDasharray: "4 1.5", strokeWidth: 2 };
 }

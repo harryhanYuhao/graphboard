@@ -9,10 +9,12 @@ import {
 import { create } from "zustand";
 import { temporal } from "zundo";
 import {
+  DEFAULT_EDGE_KIND,
   EDITOR_MODES,
   PERSISTED_IDS,
   type EditorMode,
   type GraphEdge,
+  type EdgeKind,
   type LabelLocation,
   type VertexNode,
   type VertexType,
@@ -85,6 +87,9 @@ type GraphStore = {
   // edges fan out from every ID here to the next clicked target.
   pendingEdgeSources: string[];
   selectedVertexType: VertexType;
+  // Edge kind staged for add-edge mode (like `selectedVertexType` for
+  // vertices). New edges created by `handleVertexClick` carry this kind.
+  selectedEdgeKind: EdgeKind;
 
   // Destructive-action confirmation dialog (`null` when closed).
   confirmDialogue: ConfirmDialogueState | null;
@@ -124,6 +129,7 @@ type GraphStore = {
   hydrate: () => void;
   setMode: (mode: EditorMode) => void;
   setVertexType: (vertexType: VertexType) => void;
+  setEdgeKind: (kind: EdgeKind) => void;
 
   onNodesChange: (changes: NodeChange<VertexNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<GraphEdge>[]) => void;
@@ -144,6 +150,9 @@ type GraphStore = {
   updateVertexType: (nodeId: string, vertexType: VertexType) => void;
   updateVertexOrder: (nodeId: string, targetOrder: number) => void;
   updateVertexRotation: (nodeId: string, rotation: number) => void;
+  // Edge kind switch (e.g. default → dashed-blue). Structural: goes on the
+  // undo stack like a vertex type change.
+  updateEdgeKind: (edgeId: string, kind: EdgeKind) => void;
   copySelected: () => void;
   paste: () => void;
   cutSelected: () => void;
@@ -310,6 +319,7 @@ export const useGraphStore = create<GraphStore>()(
 
       pendingEdgeSources: [],
       selectedVertexType: DEFAULT_VERTEX_TYPE,
+      selectedEdgeKind: DEFAULT_EDGE_KIND,
 
       confirmDialogue: null,
 
@@ -402,6 +412,10 @@ export const useGraphStore = create<GraphStore>()(
         set({ selectedVertexType: vertexType });
       },
 
+      setEdgeKind: (kind) => {
+        set({ selectedEdgeKind: kind });
+      },
+
       onNodesChange: (changes) => {
         // Snap incoming position changes to the grid before applying. This is
         // the chokepoint for both drag ticks and programmatic moves; it stays
@@ -460,6 +474,9 @@ export const useGraphStore = create<GraphStore>()(
           pendingEdgeSources: state.pendingEdgeSources,
           nodes: state.nodes,
           edges: state.edges,
+          // New edges in add-edge mode take the kind staged in the
+          // EdgeKindMenu (default unless the user picked another).
+          edgeKind: state.selectedEdgeKind,
         });
 
         if (patch) set(patch);
@@ -740,6 +757,16 @@ export const useGraphStore = create<GraphStore>()(
         set({
           nodes: get().nodes.map((node) =>
             node.id === nodeId ? { ...node, rotation: normalized } : node,
+          ),
+        });
+      },
+
+      updateEdgeKind: (edgeId, kind) => {
+        set({
+          edges: get().edges.map((edge) =>
+            edge.id === edgeId
+              ? { ...edge, data: { ...edge.data, kind } }
+              : edge,
           ),
         });
       },

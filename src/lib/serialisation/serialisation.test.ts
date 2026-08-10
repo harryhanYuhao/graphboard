@@ -26,7 +26,7 @@ import {
   type GraphEdge,
   type VertexNode,
 } from "../graph/types";
-import { makeEdge, makeVertex } from "@/test-utils/factories";
+import { makeEdge, makeEdgeWith, makeVertex } from "@/test-utils/factories";
 
 describe("normalizeRotation", () => {
   it.each([
@@ -348,6 +348,61 @@ describe("projectDocument ↔ hydrateDocument", () => {
     expect(hydrated.edges.every((e) => e.type === EDGE_TYPES.straightCenter)).toBe(
       true,
     );
+  });
+});
+
+describe("edge kinds (project/hydrate)", () => {
+  const baseInput = {
+    id: "doc-1",
+    title: "t",
+    createdAt: "2025-01-01T00:00:00.000Z",
+    updatedAt: "2025-01-02T00:00:00.000Z",
+  };
+
+  it("projects data.kind into the graph slice (default when absent at runtime)", () => {
+    const doc = projectDocument({
+      ...baseInput,
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [
+        makeEdge("e1", "a", "b"),
+        makeEdgeWith("e2", "a", "b", { kind: "dashed_blue" }),
+      ],
+    });
+    expect(doc.graph.edges[0].data).toEqual({ kind: "default" });
+    expect(doc.graph.edges[1].data).toEqual({ kind: "dashed_blue" });
+  });
+
+  it("hydrates the kind back — dashed-blue round-trips", () => {
+    const doc = projectDocument({
+      ...baseInput,
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdgeWith("e1", "a", "b", { kind: "dashed_blue" })],
+    });
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.edges[0]?.data?.kind).toBe("dashed_blue");
+  });
+
+  it("defaults the kind for legacy edge records (no data field)", () => {
+    const doc = projectDocument({
+      ...baseInput,
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdge("e1", "a", "b")],
+    });
+    // Strip `data` to simulate a pre-kind save.
+    delete doc.graph.edges[0]!.data;
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.edges[0]?.data?.kind).toBe("default");
+  });
+
+  it("coerces crafted/unknown kinds to the default at hydration", () => {
+    const doc = projectDocument({
+      ...baseInput,
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdge("e1", "a", "b")],
+    });
+    doc.graph.edges[0]!.data = { kind: "invisible" as never };
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.edges[0]?.data?.kind).toBe("default");
   });
 });
 

@@ -18,7 +18,9 @@ import { useShallow } from "zustand/react/shallow";
 import { VertexNode } from "./VertexNode";
 import { GraphToolbar } from "./GraphToolbar";
 import { VertexTypeMenu } from "./VertexTypeMenu";
+import { EdgeKindMenu } from "./EdgeKindMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
+import { EdgePropertyPanel } from "./EdgePropertyPanel";
 import { ConfirmationDialog } from "./ConfirmationDialog";
 import { ExportDialog } from "./ExportDialog";
 import { HelpDialog } from "./HelpDialog";
@@ -211,7 +213,9 @@ function GraphEditorInner() {
 
       <GraphToolbar onCompute={compute.requestCompute} />
       <VertexTypeMenu />
+      <EdgeKindMenu />
       <VertexPropertyPanel />
+      <EdgePropertyPanel />
 
       <ConfirmationDialog
         isOpen={confirmDialogue !== null}

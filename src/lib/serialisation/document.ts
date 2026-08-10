@@ -6,9 +6,12 @@
 // (runtime → v1 doc) and `hydrateDocument` (v1 doc → runtime).
 import {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_EDGE_KIND,
   DEFAULT_LABEL_LOCATION,
+  EDGE_KINDS,
   EDGE_TYPES,
   HANDLE_IDS,
+  type EdgeKind,
   type EdgeView,
   type GraphDocument,
   type GraphEdge,
@@ -69,6 +72,9 @@ export function projectToDocument(input: ProjectInput): GraphDocument {
       target: edge.target,
       sourceHandle: handleIdToIndex(edge.sourceHandle),
       targetHandle: handleIdToIndex(edge.targetHandle),
+      // Edge kind is part of the graph slice (future compute differences);
+      // always persisted, `default` when absent at runtime.
+      data: { kind: edge.data?.kind ?? DEFAULT_EDGE_KIND },
     });
     viewEdges.push({ id: edge.id });
   }
@@ -150,7 +156,22 @@ function hydrateEdge(
     ),
     // Renderer discriminator (only `straightCenter` today; constant keeps the literal centralized).
     type: EDGE_TYPES.straightCenter,
+    // Edge kind, defaulting for legacy docs / hand-edited imports and
+    // coercing untrusted values (see `hydrateEdgeKind`).
+    data: { kind: hydrateEdgeKind(graphEdge.data?.kind) },
   };
+}
+
+// Untrusted-import hardening: `data.kind` is user-controlled and can be a
+// non-string or a value outside EDGE_KINDS (e.g. a future/typo'd kind).
+// Coerce at the boundary so the renderer and future compute dispatch never
+// see an unknown kind — a crafted doc otherwise renders nothing or throws.
+// Unknown values degrade to the default edge.
+function hydrateEdgeKind(kind: unknown): EdgeKind {
+  return typeof kind === "string" &&
+    (EDGE_KINDS as readonly string[]).includes(kind)
+    ? (kind as EdgeKind)
+    : DEFAULT_EDGE_KIND;
 }
 
 export function hydrateDocument(doc: GraphDocument): HydratedDocument {

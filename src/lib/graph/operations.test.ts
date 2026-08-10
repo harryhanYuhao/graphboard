@@ -18,7 +18,7 @@ import {
   snapPosition,
 } from "./operations";
 import { EDGE_TYPES, HANDLE_IDS, type VertexNode } from "./types";
-import { makeEdge, makeVertex, makeVertexWith } from "@/test-utils/factories";
+import { makeEdge, makeEdgeWith, makeVertex, makeVertexWith } from "@/test-utils/factories";
 
 describe("createVertexNode", () => {
   it("produces a node with a unique id and the given position", () => {
@@ -45,12 +45,18 @@ describe("createGraphEdge", () => {
     expect(edge.source).toBe("a");
     expect(edge.target).toBe("b");
     expect(edge.type).toBe(EDGE_TYPES.straightCenter);
+    expect(edge.data?.kind).toBe("default");
     expect(edge.id).toBeTruthy();
     // Source is always the bottom slot (centerSource), regardless of type.
     expect(edge.sourceHandle).toBe(HANDLE_IDS.centerSource);
     // Without a node list we can't tell if the target is directional, so the
     // target defaults to the non-directional handle (centerTarget).
     expect(edge.targetHandle).toBe(HANDLE_IDS.centerTarget);
+  });
+
+  it("creates edges with the requested kind", () => {
+    const edge = createGraphEdge("a", "b", undefined, "dashed_blue");
+    expect(edge.data?.kind).toBe("dashed_blue");
   });
 
   it("picks the directional 'top' handle for W / And gate targets", () => {
@@ -200,6 +206,15 @@ describe("pasteSubgraph", () => {
         pasteCount: 0,
       }),
     ).toThrow(/missing from subgraph/);
+  });
+
+  it("preserves the edge kind through paste", () => {
+    const subgraph = {
+      nodes: [makeVertex("a", { x: 0, y: 0 })],
+      edges: [makeEdgeWith("e1", "a", "a", { kind: "dashed_blue" })],
+    };
+    const result = pasteSubgraph({ subgraph, pasteCount: 0 });
+    expect(result.edges[0]?.data?.kind).toBe("dashed_blue");
   });
 });
 
@@ -378,6 +393,29 @@ describe("computeVertexClick", () => {
       expect(result?.edges).toHaveLength(2);
       expect(result?.pendingEdgeSources).toEqual([]);
       expect(result?.nodes?.every((n) => !n.selected)).toBe(true);
+    });
+
+    it("fans out edges of the staged edge kind", () => {
+      const result = computeVertexClick({
+        vertexId: "b",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: ["a"],
+        nodes: baseNodes(),
+        edges: [],
+        edgeKind: "dashed_blue",
+      });
+      expect(result?.edges?.[0]?.data?.kind).toBe("dashed_blue");
+    });
+
+    it("defaults to the default kind when no kind is staged", () => {
+      const result = computeVertexClick({
+        vertexId: "b",
+        modifiers: { modifier: false, shift: false },
+        pendingEdgeSources: ["a"],
+        nodes: baseNodes(),
+        edges: [],
+      });
+      expect(result?.edges?.[0]?.data?.kind).toBe("default");
     });
 
     it("still resets state when the fan-out yields no new edges", () => {
@@ -560,6 +598,18 @@ describe("mergeImportedGraph", () => {
       offset: { x: 0, y: 0 },
     });
     expect(edges).toEqual([]);
+  });
+
+  it("preserves the imported edge kind", () => {
+    const { edges } = mergeImportedGraph({
+      existing: { nodes: [makeVertex("a")], edges: [] },
+      imported: {
+        nodes: [makeVertex("b"), makeVertex("c")],
+        edges: [makeEdgeWith("e1", "b", "c", { kind: "dashed_blue" })],
+      },
+      offset: { x: 0, y: 0 },
+    });
+    expect(edges[0]?.data?.kind).toBe("dashed_blue");
   });
 
   it("re-assigns imported boundary orders after existing ones", () => {

@@ -16,8 +16,8 @@ mod utils;
 pub use contraction::{compute_tensor, TensorResult};
 pub use error::{ComputeError, PhaseError};
 pub use graph::{
-    FrontendGraphEdgeRecord, FrontendGraphNodeRecord, FrontendGraphSlice, FrontendVertexData,
-    VertexType,
+    EdgeKind, FrontendEdgeData, FrontendGraphEdgeRecord, FrontendGraphNodeRecord,
+    FrontendGraphSlice, FrontendVertexData, VertexType,
 };
 pub use nodes::{
     and_gate, build_vertex_tensor, empty, h_box, w_node, x_box, x_spider, z_box, z_spider,

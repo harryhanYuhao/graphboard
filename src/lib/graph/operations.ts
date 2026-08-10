@@ -1,8 +1,10 @@
 import { nanoid } from "nanoid";
 import {
+  DEFAULT_EDGE_KIND,
   DEFAULT_LABEL_LOCATION,
   EDGE_TYPES,
   HANDLE_IDS,
+  type EdgeKind,
   type GraphEdge,
   type VertexNode,
   type VertexType,
@@ -164,6 +166,7 @@ export function createGraphEdge(
   source: string,
   target: string,
   nodes?: VertexNode[],
+  kind: EdgeKind = DEFAULT_EDGE_KIND,
 ): GraphEdge {
   // Pick the target handle: directional vertices (W, And) use the top dot
   // (HANDLE_IDS.top); everything else uses the centered target. Source is
@@ -185,6 +188,9 @@ export function createGraphEdge(
     sourceHandle: HANDLE_IDS.centerSource,
     targetHandle,
     type: EDGE_TYPES.straightCenter,
+    // Kind of the new edge; add-edge mode stages it via the EdgeKindMenu
+    // (`selectedEdgeKind`), everything else uses the default.
+    data: { kind },
   };
 }
 
@@ -261,6 +267,9 @@ export type VertexClickContext = {
   pendingEdgeSources: string[];
   nodes: VertexNode[];
   edges: GraphEdge[];
+  // Kind for newly created edges (add-edge mode). Optional so callers that
+  // only exercise the click dispatcher keep the default kind.
+  edgeKind?: EdgeKind;
 };
 
 // State patch for a vertex click — each case sets only the slices it touches;
@@ -306,8 +315,16 @@ export function computeVertexClick(
         (sourceId) => !existingPairs.has(`${sourceId}->${ctx.vertexId}`),
       )
       // Pass `nodes` so new edges pick the right target handle
-      // (top for directional, centerTarget otherwise).
-      .map((sourceId) => createGraphEdge(sourceId, ctx.vertexId, ctx.nodes));
+      // (top for directional, centerTarget otherwise), and `edgeKind` so
+      // the staged kind (EdgeKindMenu) rides on the new edges.
+      .map((sourceId) =>
+        createGraphEdge(
+          sourceId,
+          ctx.vertexId,
+          ctx.nodes,
+          ctx.edgeKind ?? DEFAULT_EDGE_KIND,
+        ),
+      );
 
     // Nothing to add and nothing to clear — empty patch makes the store `set` a no-op.
     if (newEdges.length === 0 && !clearAfter) return {};

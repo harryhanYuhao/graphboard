@@ -2,7 +2,7 @@
 // given shape/rotation is the bug-prone part worth pinning.
 
 import { describe, expect, it } from "vitest";
-import { getEdgeEndpoint } from "./edge-geometry";
+import { edgeKindPathStyle, getEdgeEndpoint } from "./edge-geometry";
 import type { EndpointInput } from "./edge-geometry";
 
 // Default node: 40x40 body at (0,0), so center is (20, 20).
@@ -124,5 +124,27 @@ describe("getEdgeEndpoint — node position offset", () => {
       ),
       { x: 120, y: 90 },
     );
+  });
+});
+
+describe("edgeKindPathStyle", () => {
+  it("thins the default (or absent) kind to strokeWidth 1.5", () => {
+    expect(edgeKindPathStyle("default", false)).toEqual({ strokeWidth: 1.5 });
+    expect(edgeKindPathStyle(undefined, false)).toEqual({ strokeWidth: 1.5 });
+  });
+
+  it("styles dashed-blue edges dashed in blue", () => {
+    expect(edgeKindPathStyle("dashed_blue", false)).toEqual({
+      stroke: "#2563eb",
+      strokeDasharray: "4 1.5",
+      strokeWidth: 2,
+    });
+  });
+
+  it("keeps the dash but drops the inline color when selected (CSS selection color shows)", () => {
+    expect(edgeKindPathStyle("dashed_blue", true)).toEqual({
+      strokeDasharray: "4 1.5",
+      strokeWidth: 2,
+    });
   });
 });

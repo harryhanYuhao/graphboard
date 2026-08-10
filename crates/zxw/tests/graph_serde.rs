@@ -21,7 +21,8 @@ const FRONTEND_PAYLOAD: &str = r#"{
   ],
   "edges": [
     { "id": "e1", "source": "z1", "target": "h1" },
-    { "id": "e2", "source": "h1", "target": "w1", "sourceHandle": 1, "targetHandle": 0 }
+    { "id": "e2", "source": "h1", "target": "w1", "sourceHandle": 1, "targetHandle": 0 },
+    { "id": "e3", "source": "zb1", "target": "xb1", "data": { "kind": "dashed_blue" } }
   ]
 }"#;
 
@@ -63,6 +64,11 @@ fn absent_handle_fields_become_none_not_zero() {
     let e2 = &slice.edges[1];
     assert_eq!(e2.source_handle, Some(1));
     assert_eq!(e2.target_handle, Some(0));
+
+    // e1/e2 carry no `data` → None; e3 carries the dashed_blue kind.
+    assert_eq!(e1.data, None);
+    assert_eq!(e2.data, None);
+    assert_eq!(slice.edges[2].data.as_ref().unwrap().kind, Some(zxw::EdgeKind::DashedBlue));
 }
 
 #[test]
@@ -82,7 +88,34 @@ fn reserialize_round_trips_through_the_struct() {
     for (a, b) in once.edges.iter().zip(twice.edges.iter()) {
         assert_eq!(a.source_handle, b.source_handle);
         assert_eq!(a.target_handle, b.target_handle);
+        assert_eq!(a.data, b.data);
     }
+}
+
+#[test]
+fn edge_kind_round_trips_through_the_struct() {
+    // `default` and `dashed_blue` kinds survive deserialize → serialize →
+    // deserialize, and absent `data` stays `None`.
+    let json = r#"{
+        "nodes": [],
+        "edges": [
+            { "id": "a", "source": "x", "target": "y", "data": { "kind": "default" } },
+            { "id": "b", "source": "x", "target": "y", "data": { "kind": "dashed_blue" } }
+        ]
+    }"#;
+    let once: FrontendGraphSlice = serde_json::from_str(json).unwrap();
+    assert_eq!(
+        once.edges[0].data.as_ref().unwrap().kind,
+        Some(zxw::EdgeKind::Default)
+    );
+    assert_eq!(
+        once.edges[1].data.as_ref().unwrap().kind,
+        Some(zxw::EdgeKind::DashedBlue)
+    );
+
+    let rejson = serde_json::to_string(&once).unwrap();
+    let twice: FrontendGraphSlice = serde_json::from_str(&rejson).unwrap();
+    assert_eq!(once.edges, twice.edges);
 }
 
 #[test]
@@ -96,6 +129,7 @@ fn empty_edge_handles_omitted_when_none() {
         target: "t".into(),
         source_handle: None,
         target_handle: None,
+        data: None,
     };
     let json = serde_json::to_string(&edge).unwrap();
     assert!(
@@ -105,6 +139,10 @@ fn empty_edge_handles_omitted_when_none() {
     assert!(
         !json.contains("targetHandle"),
         "None handles must be omitted, got: {json}"
+    );
+    assert!(
+        !json.contains("\"data\""),
+        "None data must be omitted, got: {json}"
     );
 }
 

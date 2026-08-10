@@ -202,6 +202,7 @@ export const VERTEX_TYPES: VertexTypeMeta[] = RAW_VERTEX_TYPES.map(enrich);
 // renderer fire, instead of leaking Object.prototype members.
 export const VERTEX_TYPE_MAP: Record<VertexType, VertexTypeMeta> =
   Object.create(null) as Record<VertexType, VertexTypeMeta>;
+
 for (const meta of VERTEX_TYPES) {
   VERTEX_TYPE_MAP[meta.type] = meta;
 }

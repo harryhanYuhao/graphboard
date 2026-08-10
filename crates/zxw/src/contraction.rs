@@ -889,6 +889,7 @@ mod tests {
                     target: (*tgt).into(),
                     source_handle: None,
                     target_handle: None,
+                    data: None,
                 })
                 .collect(),
         }

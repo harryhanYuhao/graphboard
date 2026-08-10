@@ -4,9 +4,9 @@
 //
 //   1. Vertex types  — the 11 vertex types and what each one is
 //   2. Constants     — string-literal sources of truth (HANDLE_IDS,
-//                      EDGE_TYPES, PERSISTED_IDS, EDITOR_MODES); the literal
-//                      values are a contract, so they're never sprinkled
-//                      elsewhere in the codebase
+//                      EDGE_TYPES, EDGE_KINDS, PERSISTED_IDS,
+//                      EDITOR_MODES); the literal values are a contract, so
+//                      they're never sprinkled elsewhere in the codebase
 //   3. VertexData    — graph-slice vertex data (phase, vertexType, order):
 //                      exactly what the compute layer (Rust/WASM) consumes
 //   4. Runtime layer — VertexNode / GraphEdge: React Flow's in-memory
@@ -85,6 +85,19 @@ export const EDGE_TYPES = {
 
 export type EdgeType = (typeof EDGE_TYPES)[keyof typeof EDGE_TYPES];
 
+// Edge kinds — the edge equivalent of `vertexType`. The kind lives in the
+// graph slice (`GraphEdge.data.kind`, persisted as `GraphEdgeRecord.data`)
+// because different kinds will carry different compute definitions; today
+// both kinds compute identically. On-disk spellings are snake_case, matching
+// the vertex-type convention (`black_dot`), while the UI shows prettier
+// names (see the edge-kind swatches in EdgePropertyPanel).
+export const EDGE_KINDS = ["default", "dashed_blue"] as const;
+
+export type EdgeKind = (typeof EDGE_KINDS)[number];
+
+// Unset edge kinds hydrate to this (legacy docs / hand-edited imports).
+export const DEFAULT_EDGE_KIND: EdgeKind = "default";
+
 // Stable ids for `createEmptyGraphDocument` and export, keeping literals
 // out of the serialisation module.
 export const PERSISTED_IDS = {
@@ -135,7 +148,9 @@ export type VertexNode = Node<VertexData, "vertex"> & {
   labelLocation: LabelLocation;
 };
 
-export type GraphEdge = Edge;
+// Runtime edge. `data.kind` is the edge kind (graph slice — persisted and
+// sent to the compute layer, where future kinds will compute differently).
+export type GraphEdge = Edge<{ kind: EdgeKind }>;
 
 // ---- Persistence layer (on-disk, what crosses the serialization boundary) ---
 //
@@ -163,12 +178,17 @@ export type GraphNodeRecord = {
 // more than two handles can extend the scheme without schema churn. Absent on
 // legacy documents; `src/lib/serialisation/document.ts` applies defaults at
 // hydration.
+//
+// `data.kind` is additive-optional (the `order` precedent): legacy docs and
+// hand-edited imports without it hydrate to DEFAULT_EDGE_KIND. The project
+// side always writes it.
 export type GraphEdgeRecord = {
   id: string;
   source: string;
   target: string;
   sourceHandle?: number;
   targetHandle?: number;
+  data?: { kind?: EdgeKind };
 };
 
 export type GraphSlice = {

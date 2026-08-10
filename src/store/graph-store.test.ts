@@ -323,6 +323,58 @@ describe("updateVertexPhase / updateVertexType", () => {
   });
 });
 
+describe("updateEdgeKind", () => {
+  it("changes only the targeted edge's kind", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdge("e1", "a", "b"), makeEdge("e2", "a", "b")],
+    });
+    useGraphStore.getState().updateEdgeKind("e1", "dashed_blue");
+    const edges = useGraphStore.getState().edges;
+    expect(edges[0]?.data?.kind).toBe("dashed_blue");
+    expect(edges[1]?.data?.kind).toBe("default");
+  });
+
+  it("is structural: it lands on the undo stack and undo restores the old kind", () => {
+    useGraphStore.setState({
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdge("e1", "a", "b")],
+    });
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+    useGraphStore.getState().updateEdgeKind("e1", "dashed_blue");
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(
+      baseline + 1,
+    );
+    useGraphStore.temporal.getState().undo();
+    expect(useGraphStore.getState().edges[0]?.data?.kind).toBe("default");
+  });
+});
+
+describe("selectedEdgeKind / setEdgeKind (add-edge staging)", () => {
+  it("defaults to the default kind", () => {
+    expect(useGraphStore.getState().selectedEdgeKind).toBe("default");
+  });
+
+  it("setEdgeKind stages the kind", () => {
+    useGraphStore.getState().setEdgeKind("dashed_blue");
+    expect(useGraphStore.getState().selectedEdgeKind).toBe("dashed_blue");
+  });
+
+  it("handleVertexClick creates new edges with the staged kind", () => {
+    useGraphStore.setState({
+      mode: "add-edge",
+      selectedEdgeKind: "dashed_blue",
+    });
+    useGraphStore
+      .getState()
+      .handleVertexClick("a", { modifier: false, shift: false });
+    useGraphStore
+      .getState()
+      .handleVertexClick("b", { modifier: false, shift: false });
+    expect(useGraphStore.getState().edges[0]?.data?.kind).toBe("dashed_blue");
+  });
+});
+
 describe("help dialog state", () => {
   it("openHelp sets isHelpOpen true", () => {
     useGraphStore.getState().openHelp();

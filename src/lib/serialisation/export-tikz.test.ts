@@ -8,7 +8,12 @@
 
 import { describe, expect, it } from "vitest";
 import { exportTikz } from "./export-tikz";
-import { makeEdge, makeVertex, makeVertexWith } from "@/test-utils/factories";
+import {
+  makeEdge,
+  makeEdgeWith,
+  makeVertex,
+  makeVertexWith,
+} from "@/test-utils/factories";
 
 function render(
   nodes: ReturnType<typeof makeVertexWith>[],
@@ -113,6 +118,25 @@ describe("exportTikz", () => {
     );
     expect(out).toContain("% skipped edge e1: endpoint not in node list");
     expect(out).not.toContain("\\draw[EDGE] (1) to (undefined);");
+  });
+
+  it("draws dashed-blue edges with the BLUE_DASHED_EDGE style and defines it", () => {
+    const out = render(
+      [
+        makeVertex("a", { x: 0, y: 0 }),
+        makeVertex("b", { x: 12, y: 12 }),
+        makeVertex("c", { x: 24, y: 24 }),
+      ],
+      [
+        makeEdgeWith("e1", "a", "b", { kind: "dashed_blue" }),
+        makeEdge("e2", "b", "c"),
+      ],
+    );
+    expect(out).toContain("\\draw[BLUE_DASHED_EDGE] (1) to (2);");
+    expect(out).toContain("\\draw[EDGE] (2) to (3);");
+    expect(out).toContain(
+      "BLUE_DASHED_EDGE/.style={EDGE, draw=blue, dashed}",
+    );
   });
 });
 
