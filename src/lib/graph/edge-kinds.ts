@@ -15,7 +15,10 @@ import type { EdgeKind } from "./types";
 export type EdgeKindMeta = {
   label: string;
   stroke: string;
-  strokeDashArray: string;
+  // Dash pattern for the edge line. `undefined` (not "") means "no dash":
+  // an empty `stroke-dasharray` string is invalid SVG and React would still
+  // emit the attribute.
+  strokeDashArray?: string;
   strokeWidth: number;
 };
 
@@ -24,7 +27,6 @@ export const EDGE_KIND_MAP: Record<EdgeKind, EdgeKindMeta> = {
   default: {
     label: "Default",
     stroke: "#334155",
-    strokeDashArray: "",
     strokeWidth: 1.5,
   },
   dashed_blue: {
@@ -32,5 +34,5 @@ export const EDGE_KIND_MAP: Record<EdgeKind, EdgeKindMeta> = {
     stroke: "#2563eb",
     strokeDashArray: "4 1.5",
     strokeWidth: 2,
-  }
+  },
 };

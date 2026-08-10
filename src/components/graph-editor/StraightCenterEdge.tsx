@@ -1,7 +1,11 @@
 "use client";
 
 import { BaseEdge, type EdgeProps, useInternalNode } from "@xyflow/react";
-import type { VertexNode as VertexNodeType, VertexType } from "@/lib/graph/types";
+import type {
+  EdgeKind,
+  VertexNode as VertexNodeType,
+  VertexType,
+} from "@/lib/graph/types";
 import {
   edgeKindPathStyle,
   getEdgeEndpoint,
@@ -56,10 +60,12 @@ export function StraightCenterEdge(props: EdgeProps) {
   // Edge-kind styling (dashed-blue vs default). `props.selected` keeps the
   // dash on a selected dashed edge while letting React Flow's CSS selection
   // color show through (see `edgeKindPathStyle`).
-  const kindStyle = edgeKindPathStyle(
-    props.data?.kind,
-    props.selected === true,
-  );
+  // The kind is always valid at runtime — hydration coerces imported kinds
+  // and createGraphEdge only ever sets a member — so narrow the `unknown`
+  // from `props.data?.kind` without a cast.
+  const kind: EdgeKind =
+    props.data?.kind === "dashed_blue" ? "dashed_blue" : "default";
+  const kindStyle = edgeKindPathStyle(kind, props.selected === true);
 
   return (
     <BaseEdge

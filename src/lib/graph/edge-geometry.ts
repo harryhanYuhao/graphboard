@@ -7,9 +7,8 @@
 import type { CSSProperties } from "react";
 import { isDirectionalVertex } from "./vertex-types";
 import { normalizeRotation } from "@/lib/serialisation";
-import type { VertexType } from "./types";
-import type { EdgeKind } from "@/lib/graph/types";
-import { EDGE_KIND_MAP } from "@/lib/graph/edge-kinds";
+import type { EdgeKind, VertexType } from "./types";
+import { EDGE_KIND_MAP } from "./edge-kinds";
 
 // Inputs to a single edge endpoint. Mirrors React Flow's `useInternalNode`,
 // plus our custom `rotation`.
@@ -81,10 +80,22 @@ export function edgeKindPathStyle(
   selected: boolean,
 ): CSSProperties | undefined {
   const meta = EDGE_KIND_MAP[kind];
-  // if (kind !== "dashed_blue") return { strokeWidth: meta.strokeWidth };
 
-  // TODO: selected shall have shadow
-  if (selected) return { strokeDasharray: meta.strokeDashArray, strokeWidth: meta.strokeWidth };
+  // Selected edges glow blue, mirroring the vertex selection highlight
+  // (VertexNode uses the same drop-shadow colour). The kind's own stroke is
+  // kept — the glow is the selection indicator, not a colour swap.
+  if (selected) {
+    return {
+      filter: "drop-shadow(0 0 2px rgb(37 99 235))",
+      stroke: meta.stroke,
+      strokeDasharray: meta.strokeDashArray,
+      strokeWidth: meta.strokeWidth,
+    };
+  }
 
-  return { stroke: meta.stroke, strokeDasharray: meta.strokeDashArray, strokeWidth: meta.strokeWidth };
+  return {
+    stroke: meta.stroke,
+    strokeDasharray: meta.strokeDashArray,
+    strokeWidth: meta.strokeWidth,
+  };
 }

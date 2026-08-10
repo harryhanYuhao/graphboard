@@ -128,9 +128,11 @@ describe("getEdgeEndpoint — node position offset", () => {
 });
 
 describe("edgeKindPathStyle", () => {
-  it("thins the default (or absent) kind to strokeWidth 1.5", () => {
-    expect(edgeKindPathStyle("default", false)).toEqual({ strokeWidth: 1.5 });
-    expect(edgeKindPathStyle(undefined, false)).toEqual({ strokeWidth: 1.5 });
+  it("styles the default kind thin and slate (registry-driven)", () => {
+    expect(edgeKindPathStyle("default", false)).toEqual({
+      stroke: "#334155",
+      strokeWidth: 1.5,
+    });
   });
 
   it("styles dashed-blue edges dashed in blue", () => {
@@ -141,10 +143,20 @@ describe("edgeKindPathStyle", () => {
     });
   });
 
-  it("keeps the dash but drops the inline color when selected (CSS selection color shows)", () => {
+  it("glows blue with the kind's own stroke when selected (vertex-style highlight)", () => {
     expect(edgeKindPathStyle("dashed_blue", true)).toEqual({
+      filter: "drop-shadow(0 0 2px rgb(37 99 235))",
+      stroke: "#2563eb",
       strokeDasharray: "4 1.5",
       strokeWidth: 2,
+    });
+  });
+
+  it("selected default edges glow too, keeping their slate stroke", () => {
+    expect(edgeKindPathStyle("default", true)).toEqual({
+      filter: "drop-shadow(0 0 2px rgb(37 99 235))",
+      stroke: "#334155",
+      strokeWidth: 1.5,
     });
   });
 });

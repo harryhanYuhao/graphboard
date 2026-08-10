@@ -19,7 +19,7 @@ export function EdgeKindSwatch({ kind }: { kind: EdgeKind }) {
         x2="32"
         y2="4"
         stroke={meta.stroke}
-        strokeWidth={2}
+        strokeWidth={meta.strokeWidth}
         // Same dash pattern the edges themselves draw (edgeKindPathStyle).
         strokeDasharray={meta.strokeDashArray}
       />
