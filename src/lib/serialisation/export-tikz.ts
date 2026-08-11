@@ -124,6 +124,8 @@ function tikzBackBone(nodeString: string, edgeString: string): string {
 \\providecolor{zxRed}{RGB}{232,165,165}   % X spiders
 \\providecolor{zxGreen}{RGB}{216,248,216} % Z spiders
 \\providecolor{zxYellow}{RGB}{255,255,0}     % hadamard 
+\\providecolor{zxBlue}{RGB}{68,126,255}     % hadamard 
+
 
 \\tikzset{
     EMPTY/.style={minimum size=3.4mm,
@@ -143,7 +145,7 @@ function tikzBackBone(nodeString: string, edgeString: string): string {
         minimum height=3.4mm, minimum width=3.4mm,
         font={\\large\\boldmath}},
     EDGE/.style={draw=black, line width=1pt},
-    BLUE_DASHED_EDGE/.style={EDGE, draw=blue, dashed}
+    BLUE_DASHED_EDGE/.style={-, dashed, dash pattern=on 2pt off 0.5pt, ultra thick, zxBlue}
 }
 \\pgfdeclarelayer{edgelayer}
 \\pgfdeclarelayer{nodelayer}
