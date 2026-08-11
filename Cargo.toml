@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/zxw"]
+members = ["crates/zxw", "crates/cartographer"]
 default-members = ["crates/zxw"]
 
 # Virtual root package: wasm-pack 0.15.0 fails with "missing field

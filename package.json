@@ -10,6 +10,7 @@
     "test": "NODE_OPTIONS='--localstorage-file=/tmp/graph-board-test-localstorage' vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage --ui",
     "build:wasm": "bash scripts/build-wasm.sh",
     "ping:wasm": "tsx scripts/ping-wasm.mts"
   },
@@ -32,6 +33,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "4.1.10",
     "@vitest/ui": "^4.1.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
