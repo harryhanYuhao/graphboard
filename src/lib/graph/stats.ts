@@ -3,7 +3,7 @@
 // Pure graph statistics for the properties dialog. No store, no window —
 // unit-testable in isolation.
 import type { GraphEdge, VertexNode, VertexType } from "./types";
-import { VERTEX_TYPES } from "./vertex-types";
+import { VERTEX_TYPES } from "./vertex-registry";
 
 export type GraphStats = {
   vertexCount: number;

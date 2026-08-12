@@ -8,10 +8,8 @@ import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_EDGE_KIND,
   DEFAULT_LABEL_LOCATION,
-  EDGE_KINDS,
   EDGE_TYPES,
   HANDLE_IDS,
-  type EdgeKind,
   type EdgeView,
   type GraphDocument,
   type GraphEdge,
@@ -22,7 +20,8 @@ import {
   type VertexType,
 } from "../graph/types";
 import { snapPosition } from "../graph/operations";
-import { VERTEX_TYPE_MAP } from "../graph/vertex-types";
+import { coerceEdgeKind } from "../graph/edge-registry";
+import { VERTEX_TYPE_MAP } from "../graph/vertex-registry";
 
 // Wrap an angle into canonical [0, 360) and round to 6 dp. The rounding
 // prevents `%` float drift from accumulating across save/load and making
@@ -157,21 +156,9 @@ function hydrateEdge(
     // Renderer discriminator (only `straightCenter` today; constant keeps the literal centralized).
     type: EDGE_TYPES.straightCenter,
     // Edge kind, defaulting for legacy docs / hand-edited imports and
-    // coercing untrusted values (see `hydrateEdgeKind`).
-    data: { kind: hydrateEdgeKind(graphEdge.data?.kind) },
+    // coercing untrusted values (see `coerceEdgeKind` in edge-registry.ts).
+    data: { kind: coerceEdgeKind(graphEdge.data?.kind) },
   };
-}
-
-// Untrusted-import hardening: `data.kind` is user-controlled and can be a
-// non-string or a value outside EDGE_KINDS (e.g. a future/typo'd kind).
-// Coerce at the boundary so the renderer and future compute dispatch never
-// see an unknown kind — a crafted doc otherwise renders nothing or throws.
-// Unknown values degrade to the default edge.
-function hydrateEdgeKind(kind: unknown): EdgeKind {
-  return typeof kind === "string" &&
-    (EDGE_KINDS as readonly string[]).includes(kind)
-    ? (kind as EdgeKind)
-    : DEFAULT_EDGE_KIND;
 }
 
 export function hydrateDocument(doc: GraphDocument): HydratedDocument {

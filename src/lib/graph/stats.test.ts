@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { computeGraphStats } from "./stats";
-import { VERTEX_TYPES } from "./vertex-types";
+import { VERTEX_TYPES } from "./vertex-registry";
 import { makeEdge, makeVertex, makeVertexWith } from "@/test-utils/factories";
 
 describe("computeGraphStats", () => {

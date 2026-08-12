@@ -1,10 +1,11 @@
 "use client";
 
 import { BaseEdge, type EdgeProps, useInternalNode } from "@xyflow/react";
-import type {
-  EdgeKind,
-  VertexNode as VertexNodeType,
-  VertexType,
+import {
+  DEFAULT_EDGE_KIND,
+  type GraphEdge,
+  type VertexNode as VertexNodeType,
+  type VertexType,
 } from "@/lib/graph/types";
 import {
   edgeKindPathStyle,
@@ -13,7 +14,7 @@ import {
 import { useGraphStore } from "@/store/graph-store";
 import { nodesById } from "@/store/selectors";
 
-export function StraightCenterEdge(props: EdgeProps) {
+export function StraightCenterEdge(props: EdgeProps<GraphEdge>) {
   const sourceNode = useInternalNode<VertexNodeType>(props.source);
   const targetNode = useInternalNode<VertexNodeType>(props.target);
 
@@ -57,14 +58,16 @@ export function StraightCenterEdge(props: EdgeProps) {
 
   const path = `M ${sourcePoint.x},${sourcePoint.y} L ${targetPoint.x},${targetPoint.y}`;
 
-  // Edge-kind styling (dashed-blue vs default). `props.selected` keeps the
-  // dash on a selected dashed edge while letting React Flow's CSS selection
-  // color show through (see `edgeKindPathStyle`).
-  // The kind is always valid at runtime — hydration coerces imported kinds
-  // and createGraphEdge only ever sets a member — so narrow the `unknown`
-  // from `props.data?.kind` without a cast.
-  const kind: EdgeKind =
-    props.data?.kind === "dashed_blue" ? "dashed_blue" : "default";
+  // Edge-kind styling (dashed-blue vs dashed-light vs default).
+  // `props.selected` keeps the dash on a selected dashed edge while letting
+  // React Flow's CSS selection color show through (see `edgeKindPathStyle`).
+  // `EdgeProps<GraphEdge>` types `data` as `{ kind: EdgeKind }`, so
+  // `props.data?.kind` is `EdgeKind | undefined` at compile time — the only
+  // runtime gap left is a missing `data` object, defaulted here. Untrusted
+  // kind values from imported docs are already coerced at the hydration
+  // boundary (`coerceEdgeKind` in edge-registry.ts); the renderer needs no
+  // second coercion.
+  const kind = props.data?.kind ?? DEFAULT_EDGE_KIND;
   const kindStyle = edgeKindPathStyle(kind, props.selected === true);
 
   return (

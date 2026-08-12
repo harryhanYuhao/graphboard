@@ -1,4 +1,4 @@
-// The vertex-types registry is read by both the renderer and the side
+// The vertex-registry is read by both the renderer and the side
 // menu, so bugs surface in two places. Properties (not snapshots) are
 // asserted so adding a type doesn't require touching this file.
 
@@ -9,7 +9,7 @@ import {
   isSpiderType,
   VERTEX_TYPES,
   VERTEX_TYPE_MAP,
-} from "./vertex-types";
+} from "./vertex-registry";
 import type { VertexType } from "./types";
 
 describe("VERTEX_TYPES registry", () => {

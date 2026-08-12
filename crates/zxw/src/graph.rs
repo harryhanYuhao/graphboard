@@ -106,12 +106,13 @@ pub struct FrontendEdgeData {
 }
 
 /// The edge kinds. `Default` is the plain straight edge; `DashedBlue` is the
-/// dashed-blue variant — visually distinct, compute-identical for now (both
-/// contract as the plain edge). Future kinds carry their own tensor
-/// definitions in `contraction.rs`.
+/// dashed-blue variant and `DashedLight` the dashed gray-light variant —
+/// visually distinct, compute-identical for now (all contract as the plain
+/// edge). Future kinds carry their own tensor definitions in `contraction.rs`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     Default,
     DashedBlue,
+    DashedLight,
 }

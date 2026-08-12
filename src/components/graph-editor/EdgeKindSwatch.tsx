@@ -2,11 +2,11 @@
 //
 // Small line preview for an edge kind, used by `EdgeKindMenu` and
 // `EdgePropertyPanel`. Mirrors `VertexSwatch.tsx` (a component over the
-// kind registry in `edge-kinds.ts`).
+// kind registry in `edge-registry.ts`).
 
 "use client";
 
-import { EDGE_KIND_MAP } from "@/lib/graph/edge-kinds";
+import { EDGE_KIND_MAP } from "@/lib/graph/edge-registry";
 import type { EdgeKind } from "@/lib/graph/types";
 
 export function EdgeKindSwatch({ kind }: { kind: EdgeKind }) {

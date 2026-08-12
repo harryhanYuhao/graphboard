@@ -1,7 +1,10 @@
-// src/lib/graph/vertex-types.ts
+// src/lib/graph/vertex-registry.ts
 //
 // Visual metadata for each vertex type (tensor node). Consumed by the vertex
 // renderer (VertexNode), add-vertex menu (VertexTypeMenu), and property panel.
+//
+// The *types* themselves (VertexType, VertexNode, …) live in
+// `type/vertex-types.ts`; this file is the registry + behaviour predicates.
 
 import { createElement, type ReactNode } from "react";
 import type { VertexType } from "./types";

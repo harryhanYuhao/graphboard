@@ -5,10 +5,10 @@
 // internals.
 
 import type { CSSProperties } from "react";
-import { isDirectionalVertex } from "./vertex-types";
+import { isDirectionalVertex } from "./vertex-registry";
 import { normalizeRotation } from "@/lib/serialisation";
 import type { EdgeKind, VertexType } from "./types";
-import { EDGE_KIND_MAP } from "./edge-kinds";
+import { EDGE_KIND_MAP } from "./edge-registry";
 
 // Inputs to a single edge endpoint. Mirrors React Flow's `useInternalNode`,
 // plus our custom `rotation`.

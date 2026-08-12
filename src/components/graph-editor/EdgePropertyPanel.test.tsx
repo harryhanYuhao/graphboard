@@ -59,10 +59,13 @@ describe("EdgePropertyPanel", () => {
     expect(screen.getByText("Edge")).toBeTruthy();
     const defaultBtn = screen.getByRole("button", { name: "Default" });
     const dashedBtn = screen.getByRole("button", { name: "Dashed blue" });
+    const dashedLightBtn = screen.getByRole("button", { name: "Dashed light" });
     expect(defaultBtn).toBeTruthy();
     expect(dashedBtn).toBeTruthy();
+    expect(dashedLightBtn).toBeTruthy();
     expect(defaultBtn.getAttribute("aria-pressed")).toBe("true");
     expect(dashedBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(dashedLightBtn.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("switches the edge kind through the store on click", () => {
@@ -75,6 +78,26 @@ describe("EdgePropertyPanel", () => {
     expect(useGraphStore.getState().edges[0]?.data?.kind).toBe("dashed_blue");
     expect(
       screen.getByRole("button", { name: "Dashed blue" }).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Default" }).getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("false");
+  });
+
+  it("switches to the dashed-light kind through the store on click", () => {
+    useGraphStore.setState({
+      nodes: [makeVertexWith("a"), makeVertexWith("b")],
+      edges: [makeEdgeWith("e1", "a", "b", { selected: true })],
+    });
+    render(<EdgePropertyPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Dashed light" }));
+    expect(useGraphStore.getState().edges[0]?.data?.kind).toBe("dashed_light");
+    expect(
+      screen.getByRole("button", { name: "Dashed light" }).getAttribute(
         "aria-pressed",
       ),
     ).toBe("true");

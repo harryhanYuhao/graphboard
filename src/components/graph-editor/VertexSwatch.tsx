@@ -6,7 +6,7 @@
 import {
   TRIANGLE_CLIP_PATH,
   type VertexTypeMeta,
-} from "@/lib/graph/vertex-types";
+} from "@/lib/graph/vertex-registry";
 
 export function VertexSwatch({ meta }: { meta: VertexTypeMeta }) {
   return (

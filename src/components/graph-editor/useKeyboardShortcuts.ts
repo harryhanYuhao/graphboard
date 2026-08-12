@@ -14,7 +14,7 @@ import { useReactFlow } from "@xyflow/react";
 import { useGraphStore } from "@/store/graph-store";
 import { hasSelection } from "@/store/selectors";
 import { EDITOR_MODES, type VertexType } from "@/lib/graph/types";
-import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
+import { VERTEX_TYPES } from "@/lib/graph/vertex-registry";
 
 export interface KeyboardShortcutOptions {
   onCompute: () => void;

@@ -366,10 +366,12 @@ describe("edge kinds (project/hydrate)", () => {
       edges: [
         makeEdge("e1", "a", "b"),
         makeEdgeWith("e2", "a", "b", { kind: "dashed_blue" }),
+        makeEdgeWith("e3", "a", "b", { kind: "dashed_light" }),
       ],
     });
     expect(doc.graph.edges[0].data).toEqual({ kind: "default" });
     expect(doc.graph.edges[1].data).toEqual({ kind: "dashed_blue" });
+    expect(doc.graph.edges[2].data).toEqual({ kind: "dashed_light" });
   });
 
   it("hydrates the kind back — dashed-blue round-trips", () => {
@@ -380,6 +382,22 @@ describe("edge kinds (project/hydrate)", () => {
     });
     const hydrated = hydrateDocument(doc);
     expect(hydrated.edges[0]?.data?.kind).toBe("dashed_blue");
+  });
+
+  it("hydrates the dashed-light kind back through a full round-trip", () => {
+    const doc = projectDocument({
+      ...baseInput,
+      nodes: [makeVertex("a"), makeVertex("b")],
+      edges: [makeEdgeWith("e1", "a", "b", { kind: "dashed_light" })],
+    });
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.edges[0]?.data?.kind).toBe("dashed_light");
+    // Re-projecting stays stable (no drift back to default).
+    expect(projectDocument({
+      ...baseInput,
+      nodes: hydrated.nodes,
+      edges: hydrated.edges,
+    }).graph.edges[0]!.data).toEqual({ kind: "dashed_light" });
   });
 
   it("defaults the kind for legacy edge records (no data field)", () => {

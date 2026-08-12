@@ -13,7 +13,7 @@ import {
   DEFAULT_VERTEX_TYPE,
   VERTEX_TYPE_MAP,
   isBoundaryVertex,
-} from "./vertex-types";
+} from "./vertex-registry";
 
 export function createVertexNode(
   position: {

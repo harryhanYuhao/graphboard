@@ -13,7 +13,7 @@ import {
   VERTEX_TYPE_MAP,
   isBoundaryVertex,
   isDirectionalVertex,
-} from "@/lib/graph/vertex-types";
+} from "@/lib/graph/vertex-registry";
 import { useGraphStore } from "@/store/graph-store";
 import { nodesById } from "@/store/selectors";
 import { useKatexReady } from "@/lib/hooks/useKatexReady";

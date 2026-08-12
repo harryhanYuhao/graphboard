@@ -113,9 +113,17 @@ function edgeLine(edge: GraphEdge, nodeIndexById: Map<string, number>): string {
   if (source === undefined || target === undefined) {
     return `% skipped edge ${edge.id}: endpoint not in node list`;
   }
-  // Edge kind picks the TikZ style: dashed-blue edges draw dashed in blue,
-  // everything else uses the plain EDGE style.
-  const style = edge.data?.kind === "dashed_blue" ? "BLUE_DASHED_EDGE" : "EDGE";
+  // Edge kind picks the TikZ style: dashed-blue → BLUE_DASHED_EDGE, dashed
+  // light → GRAY_DASHED_EDGE, everything else → the plain EDGE style.
+  let style = "EDGE";
+  switch (edge.data?.kind) {
+    case "dashed_blue":
+      style = "BLUE_DASHED_EDGE";
+      break;
+    case "dashed_light":
+      style = "GRAY_DASHED_EDGE";
+      break;
+  }
   return `\\draw[${style}] (${source}) to (${target});`;
 }
 
@@ -145,7 +153,8 @@ function tikzBackBone(nodeString: string, edgeString: string): string {
         minimum height=3.4mm, minimum width=3.4mm,
         font={\\large\\boldmath}},
     EDGE/.style={draw=black, line width=1pt},
-    BLUE_DASHED_EDGE/.style={-, dashed, dash pattern=on 2pt off 0.5pt, ultra thick, zxBlue}
+    BLUE_DASHED_EDGE/.style={-, dashed, dash pattern=on 2pt off 0.5pt, ultra thick, zxBlue},
+    GRAY_DASHED_EDGE/.style={-, dashed, dash pattern=on 3pt off 1.5pt, thick, lightgray}
 }
 \\pgfdeclarelayer{edgelayer}
 \\pgfdeclarelayer{nodelayer}

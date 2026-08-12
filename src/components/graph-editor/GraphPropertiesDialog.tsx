@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useGraphStore } from "@/store/graph-store";
 import { computeGraphStats } from "@/lib/graph/stats";
-import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
+import { VERTEX_TYPES } from "@/lib/graph/vertex-registry";
 
 interface GraphPropertiesDialogProps {
   isOpen: boolean;

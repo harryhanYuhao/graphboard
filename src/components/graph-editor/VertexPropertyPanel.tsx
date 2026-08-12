@@ -13,7 +13,7 @@ import {
   VERTEX_TYPES,
   isBoundaryVertex,
   isSpiderType,
-} from "@/lib/graph/vertex-types";
+} from "@/lib/graph/vertex-registry";
 import { normalizeRotation } from "@/lib/serialisation";
 import {
   LABEL_LOCATIONS,

@@ -143,12 +143,29 @@ describe("edgeKindPathStyle", () => {
     });
   });
 
+  it("styles dashed-light edges dashed in gray at 1pt", () => {
+    expect(edgeKindPathStyle("dashed_light", false)).toEqual({
+      stroke: "#808080",
+      strokeDasharray: "2 1.5",
+      strokeWidth: 1,
+    });
+  });
+
   it("glows blue with the kind's own stroke when selected (vertex-style highlight)", () => {
     expect(edgeKindPathStyle("dashed_blue", true)).toEqual({
       filter: "drop-shadow(0 0 2px rgb(37 99 235))",
       stroke: "#2563eb",
       strokeDasharray: "4 1.5",
       strokeWidth: 2,
+    });
+  });
+
+  it("keeps the dashed-light dash and gray stroke when selected", () => {
+    expect(edgeKindPathStyle("dashed_light", true)).toEqual({
+      filter: "drop-shadow(0 0 2px rgb(37 99 235))",
+      stroke: "#808080",
+      strokeDasharray: "2 1.5",
+      strokeWidth: 1,
     });
   });
 

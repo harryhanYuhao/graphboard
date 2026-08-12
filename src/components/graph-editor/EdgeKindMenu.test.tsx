@@ -39,8 +39,10 @@ describe("EdgeKindMenu", () => {
     expect(screen.getByText("Edge kind")).toBeTruthy();
     const defaultBtn = screen.getByRole("button", { name: "Default" });
     const dashedBtn = screen.getByRole("button", { name: "Dashed blue" });
+    const dashedLightBtn = screen.getByRole("button", { name: "Dashed light" });
     expect(defaultBtn).toBeTruthy();
     expect(dashedBtn).toBeTruthy();
+    expect(dashedLightBtn).toBeTruthy();
     expect(defaultBtn.getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -52,6 +54,18 @@ describe("EdgeKindMenu", () => {
     expect(
       screen
         .getByRole("button", { name: "Dashed blue" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("stages the dashed-light kind on click", () => {
+    useGraphStore.setState({ mode: "add-edge" });
+    render(<EdgeKindMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Dashed light" }));
+    expect(useGraphStore.getState().selectedEdgeKind).toBe("dashed_light");
+    expect(
+      screen
+        .getByRole("button", { name: "Dashed light" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
   });

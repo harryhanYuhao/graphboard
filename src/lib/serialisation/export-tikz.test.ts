@@ -135,7 +135,42 @@ describe("exportTikz", () => {
     expect(out).toContain("\\draw[BLUE_DASHED_EDGE] (1) to (2);");
     expect(out).toContain("\\draw[EDGE] (2) to (3);");
     expect(out).toContain(
-      "BLUE_DASHED_EDGE/.style={EDGE, draw=blue, dashed}",
+      "BLUE_DASHED_EDGE/.style={-, dashed, dash pattern=on 2pt off 0.5pt, ultra thick, zxBlue}",
+    );
+  });
+
+  it("draws dashed-light edges with the GRAY_DASHED_EDGE style and defines it", () => {
+    const out = render(
+      [
+        makeVertex("a", { x: 0, y: 0 }),
+        makeVertex("b", { x: 12, y: 12 }),
+        makeVertex("c", { x: 24, y: 24 }),
+      ],
+      [
+        makeEdgeWith("e1", "a", "b", { kind: "dashed_light" }),
+        makeEdge("e2", "b", "c"),
+      ],
+    );
+    expect(out).toContain("\\draw[GRAY_DASHED_EDGE] (1) to (2);");
+    expect(out).toContain("\\draw[EDGE] (2) to (3);");
+    expect(out).toContain(
+      "GRAY_DASHED_EDGE/.style={-, dashed, dash pattern=on 3pt off 1.5pt, thick, lightgray}",
+    );
+  });
+
+  it("keeps the tikzset edge styles comma-separated (so every style is defined)", () => {
+    // Each style line inside `\tikzset{...}` must end with a comma except the
+    // last, or the next style is swallowed into the previous one's value and
+    // never defined (`\draw[GRAY_DASHED_EDGE]` then fails to compile).
+    const out = render([
+      makeVertex("a", { x: 0, y: 0 }),
+      makeVertex("b", { x: 12, y: 12 }),
+    ]);
+    expect(out).toContain(
+      "BLUE_DASHED_EDGE/.style={-, dashed, dash pattern=on 2pt off 0.5pt, ultra thick, zxBlue},\n    GRAY_DASHED_EDGE/.style",
+    );
+    expect(out).toContain(
+      "GRAY_DASHED_EDGE/.style={-, dashed, dash pattern=on 3pt off 1.5pt, thick, lightgray}\n}",
     );
   });
 });

@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // vitest coverage output (generated; gitignored).
+    "coverage/**",
     // wasm-pack output (Phase 2+). Generated JS/TS bindings — not
     // hand-written, not lint-worthy.
     "public/wasm/**",

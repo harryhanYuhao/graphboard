@@ -94,13 +94,14 @@ fn reserialize_round_trips_through_the_struct() {
 
 #[test]
 fn edge_kind_round_trips_through_the_struct() {
-    // `default` and `dashed_blue` kinds survive deserialize → serialize →
-    // deserialize, and absent `data` stays `None`.
+    // `default`, `dashed_blue`, and `dashed_light` kinds survive
+    // deserialize → serialize → deserialize, and absent `data` stays `None`.
     let json = r#"{
         "nodes": [],
         "edges": [
             { "id": "a", "source": "x", "target": "y", "data": { "kind": "default" } },
-            { "id": "b", "source": "x", "target": "y", "data": { "kind": "dashed_blue" } }
+            { "id": "b", "source": "x", "target": "y", "data": { "kind": "dashed_blue" } },
+            { "id": "c", "source": "x", "target": "y", "data": { "kind": "dashed_light" } }
         ]
     }"#;
     let once: FrontendGraphSlice = serde_json::from_str(json).unwrap();
@@ -111,6 +112,10 @@ fn edge_kind_round_trips_through_the_struct() {
     assert_eq!(
         once.edges[1].data.as_ref().unwrap().kind,
         Some(zxw::EdgeKind::DashedBlue)
+    );
+    assert_eq!(
+        once.edges[2].data.as_ref().unwrap().kind,
+        Some(zxw::EdgeKind::DashedLight)
     );
 
     let rejson = serde_json::to_string(&once).unwrap();

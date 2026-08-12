@@ -1,6 +1,6 @@
-// src/lib/graph/edge-kinds.ts
+// src/lib/graph/edge-registry.ts
 //
-// Edge-kind registry, mirroring `vertex-types.ts`: `EDGE_KIND_MAP` is the
+// Edge-kind registry, mirroring `vertex-registry.ts`: `EDGE_KIND_MAP` is the
 // single source of truth for each kind's user-facing name and swatch color,
 // consumed by `EdgeKindSwatch`, `EdgeKindMenu`, and `EdgePropertyPanel`.
 //
@@ -10,7 +10,7 @@
 // stays visual-only, exactly like `VERTEX_TYPES` (types) vs
 // `VERTEX_TYPE_MAP` (metadata).
 
-import type { EdgeKind } from "./types";
+import { DEFAULT_EDGE_KIND, EDGE_KINDS, type EdgeKind } from "./types";
 
 export type EdgeKindMeta = {
   label: string;
@@ -22,7 +22,7 @@ export type EdgeKindMeta = {
   strokeWidth: number;
 };
 
-// Keys must cover `EDGE_KINDS` exactly (pinned by `edge-kinds.test.ts`).
+// Keys must cover `EDGE_KINDS` exactly (pinned by `edge-registry.test.ts`).
 export const EDGE_KIND_MAP: Record<EdgeKind, EdgeKindMeta> = {
   default: {
     label: "Default",
@@ -35,4 +35,22 @@ export const EDGE_KIND_MAP: Record<EdgeKind, EdgeKindMeta> = {
     strokeDashArray: "4 1.5",
     strokeWidth: 2,
   },
+  dashed_light: {
+    label: "Dashed light",
+    stroke: "#808080",
+    strokeDashArray: "2 1.5",
+    strokeWidth: 1,
+  },
 };
+
+// Coerce an untrusted `data.kind` (imported docs are user-controlled) to a
+// valid member. Absent / non-string / unknown values degrade to the default
+// kind. Shared by the hydration boundary and the edge renderer so a future
+// kind can't drift out of sync between them (the old renderer-side whitelist
+// ternary silently rendered new kinds as `default`).
+export function coerceEdgeKind(kind: unknown): EdgeKind {
+  return typeof kind === "string" &&
+    (EDGE_KINDS as readonly string[]).includes(kind)
+    ? (kind as EdgeKind)
+    : DEFAULT_EDGE_KIND;
+}

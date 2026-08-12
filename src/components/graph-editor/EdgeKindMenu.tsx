@@ -9,7 +9,7 @@
 
 import { useGraphStore } from "@/store/graph-store";
 import { EDITOR_MODES, EDGE_KINDS } from "@/lib/graph/types";
-import { EDGE_KIND_MAP } from "@/lib/graph/edge-kinds";
+import { EDGE_KIND_MAP } from "@/lib/graph/edge-registry";
 import { EdgeKindSwatch } from "./EdgeKindSwatch";
 
 export function EdgeKindMenu() {

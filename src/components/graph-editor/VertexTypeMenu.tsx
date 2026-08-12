@@ -4,7 +4,7 @@
 
 import { useGraphStore } from "@/store/graph-store";
 import { EDITOR_MODES } from "@/lib/graph/types";
-import { VERTEX_TYPES } from "@/lib/graph/vertex-types";
+import { VERTEX_TYPES } from "@/lib/graph/vertex-registry";
 import { VertexSwatch } from "./VertexSwatch";
 
 export function VertexTypeMenu() {

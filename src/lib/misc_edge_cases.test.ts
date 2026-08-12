@@ -1,6 +1,6 @@
 // Edge-case coverage for three pure modules whose main suites cover only the
 // happy paths:
-//   - vertex-types.ts — `isBoundaryVertex` plus `input`/`output` registry metadata.
+//   - vertex-registry.ts — `isBoundaryVertex` plus `input`/`output` registry metadata.
 //   - edge-geometry.ts — rotations 0/45/360/-90 and NaN/Infinity degenerate input.
 //   - download.ts — anchor Blob content type/filename, custom MIME propagation,
 //     and the `accept` param on both native and fallback paths.
@@ -18,7 +18,7 @@ import {
   isSpiderType,
   VERTEX_TYPES,
   VERTEX_TYPE_MAP,
-} from "./graph/vertex-types";
+} from "./graph/vertex-registry";
 import type { VertexType } from "./graph/types";
 import {
   openTextFileWithPicker,
@@ -26,7 +26,7 @@ import {
 } from "./download";
 
 // ──────────────────────────────────────────────────────────────────────────
-// vertex-types
+// vertex-registry
 // ──────────────────────────────────────────────────────────────────────────
 
 describe("isBoundaryVertex", () => {

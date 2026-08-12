@@ -69,8 +69,9 @@ Typecheck runs through `next build` and the VS Code TS SDK
 - `src/store/graph-store.ts` — Zustand store, single source of truth for graph state.
 - `src/store/selectors.ts` — pure selector functions over `GraphStore` state
   (e.g. `selectSelectedNodeIds`, `hasSelection`).
-- `src/lib/graph/` — pure graph logic: `types.ts`, `operations.ts`
-  (create/delete), `vertex-types.ts` (ZXW generator metadata), `validate.ts`
+- `src/lib/graph/` — pure graph logic: `types.ts` (barrel over `type/`),
+  `operations.ts` (create/delete), `vertex-registry.ts` (ZXW generator
+  metadata + predicates), `validate.ts`
   (pre-compute structural checks ported from the Rust `ComputeError`s).
 - `src/lib/hooks/` — small reusable React hooks: `useCompute` (compute
   lifecycle — the toolbar button and Cmd/Ctrl+Enter call `requestCompute`,
@@ -152,8 +153,8 @@ Typecheck runs through `next build` and the VS Code TS SDK
     keeps the CSS-driven look.
 - **Edge kinds:** `EDGE_KINDS` (`default`, `dashed_blue`) in `types.ts` is
   the registry; `DEFAULT_EDGE_KIND` is `default`; display metadata lives in
-  `src/lib/graph/edge-kinds.ts` (`EDGE_KIND_MAP`), mirroring
-  `vertex-types.ts` (`VERTEX_TYPES` vs `VERTEX_TYPE_MAP`). The kind rides in
+  `src/lib/graph/edge-registry.ts` (`EDGE_KIND_MAP`), mirroring
+  `vertex-registry.ts` (`VERTEX_TYPES` vs `VERTEX_TYPE_MAP`). The kind rides in
   the **graph slice** (`GraphEdge.data.kind` → persisted `edges[].data.kind`,
   sent to the compute layer) because future kinds will compute differently —
   today both kinds contract identically. It is additive-optional (the
@@ -169,7 +170,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
   `src/lib/graph/types.ts` (`center-source`, `center-target`, `top`) is the
   contract shared by operations, serializer, and renderer — don't sprinkle
   the string literals elsewhere. `isDirectionalVertex(type)` (in
-  `vertex-types.ts`) selects the W / And-gate layout (visible `top` target
+  `vertex-registry.ts`) selects the W / And-gate layout (visible `top` target
   dot + centered source) vs the symmetric layout (centered target + source).
   Persisted handle ids are **numeric indices** (0 = top, 1 = bottom),
   translated by `handleIdToIndex` / `indexToHandleId` in
@@ -189,7 +190,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
 - IDs via `nanoid`.
 - **Vertex types** are the ZXW generators plus two boundary markers:
   `"z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and" | "input" | "output"`,
-  see `src/lib/graph/vertex-types.ts`. `VERTEX_TYPES` is the single source
+  see `src/lib/graph/vertex-registry.ts`. `VERTEX_TYPES` is the single source
   of truth for shape/color/size (and optional `glyph`) consumed by
   `VertexNode`, `VertexSwatch`, `VertexTypeMenu`, and `VertexPropertyPanel`
   — keep them in sync when adding/changing a type. The predicates
@@ -249,7 +250,7 @@ change the compute boundary, update the plan too.
 The vertex's **phase** is `data.phase` on the graph slice — the compute
 input for spider/box types (`z`, `x`, `zbox`, `xbox`), decoration only for
 other types. The split is exposed via `isSpiderType(vertexType)` in
-`src/lib/graph/vertex-types.ts` — that's the single source of truth for
+`src/lib/graph/vertex-registry.ts` — that's the single source of truth for
 "should this phase be parsed as a phase?".
 
 - A phase that is exactly `$...$` or `$$...$$` is rendered with KaTeX

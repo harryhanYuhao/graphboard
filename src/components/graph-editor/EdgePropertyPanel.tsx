@@ -10,7 +10,7 @@
 import { useMemo } from "react";
 import { useGraphStore } from "@/store/graph-store";
 import { DEFAULT_EDGE_KIND, EDGE_KINDS, type EdgeKind } from "@/lib/graph/types";
-import { EDGE_KIND_MAP } from "@/lib/graph/edge-kinds";
+import { EDGE_KIND_MAP } from "@/lib/graph/edge-registry";
 import { EdgeKindSwatch } from "./EdgeKindSwatch";
 
 export function EdgePropertyPanel() {

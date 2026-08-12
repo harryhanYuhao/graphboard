@@ -39,7 +39,7 @@ import {
 import {
   DEFAULT_VERTEX_TYPE,
   isBoundaryVertex,
-} from "@/lib/graph/vertex-types";
+} from "@/lib/graph/vertex-registry";
 import { selectSelectedNodeIds } from "@/store/selectors";
 import {
   createEmptyGraphDocument,
