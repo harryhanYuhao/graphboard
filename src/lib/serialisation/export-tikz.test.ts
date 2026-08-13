@@ -211,6 +211,15 @@ describe("exportTikz — header + label hardening", () => {
     expect(out).toContain("{$\\frac{\\pi}{4}$}");
   });
 
+  it("leaves a mismatched `$$`-prefixed phase verbatim (no last-char drop)", () => {
+    // The `$$…$$` reduction only fires when both ends match; a phase that
+    // merely *starts* with `$$` must pass through untouched, not be truncated.
+    const out = render([
+      makeVertexWith("a", { data: { phase: "$$foo" } }),
+    ]);
+    expect(out).toContain("{$$foo}");
+  });
+
   it("emits the visual label as a positioned TikZ label= option", () => {
     // The view-slice visual label becomes a `label=<pos>:{...}` node option;
     // no label when empty or location "none".

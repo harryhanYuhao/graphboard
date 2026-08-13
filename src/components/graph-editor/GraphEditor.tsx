@@ -124,7 +124,7 @@ function GraphEditorInner() {
   // not on single shift-clicks — exactly the gesture to capture here. Sweeps
   // the just-selected nodes into the pending source list for fan-out edges.
   const handleSelectionEnd = useCallback(() => {
-    if (mode !== "add-edge") return;
+    if (mode !== EDITOR_MODES.addEdge) return;
     addSelectedToPendingSources();
   }, [addSelectedToPendingSources, mode]);
 

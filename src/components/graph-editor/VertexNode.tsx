@@ -115,7 +115,7 @@ export function VertexNode({
               "pointer-events-none absolute top-0 z-10 flex min-w-[0.9rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white",
               data.vertexType === "input"
                 ? "left-0 -translate-x-1/2 -translate-y-1/2 bg-blue-600"
-                : "right-0 translate-x-1/2 translate-y-3 bg-green-600",
+                : "right-0 translate-x-1/2 -translate-y-1/2 bg-green-600",
             ].join(" ")}
           >
             {data.order}

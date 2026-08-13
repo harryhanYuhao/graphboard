@@ -133,8 +133,9 @@ Typecheck runs through `next build` and the VS Code TS SDK
   "add-vertex" | "add-edge"`. `setMode` clears selection and any pending edge
   source on every switch.
 - **Edge creation is click-to-connect only** (no drag-connect): in `add-edge`
-  mode, the first vertex click sets `pendingEdgeSourceId`, the second
-  connects them via `handleVertexClick`. Drag-connect is disabled
+  mode, the first vertex click seeds `pendingEdgeSources`; the second fans
+  out edges from each pending source via `handleVertexClick`. Drag-connect
+  is disabled
   (`nodesConnectable={false}`).
 - **Selection & deletion:** React Flow's built-in click selection plus a
   global `Backspace`/`Delete` keydown listener that calls `deleteSelected()`
@@ -148,18 +149,18 @@ Typecheck runs through `next build` and the VS Code TS SDK
     endpoints come from `src/lib/graph/edge-geometry.ts` (node centers, or
     the rotating top-edge dot for directional targets), **not** React Flow's
     default border-to-border. Its stroke is picked by the edge **kind** via
-    `edgeKindPathStyle`: `dashed_blue` draws dashed in blue (color dropped
-    while selected so React Flow's CSS selection colour shows), `default`
-    keeps the CSS-driven look.
-- **Edge kinds:** `EDGE_KINDS` (`default`, `dashed_blue`) in `types.ts` is
-  the registry; `DEFAULT_EDGE_KIND` is `default`; display metadata lives in
-  `src/lib/graph/edge-registry.ts` (`EDGE_KIND_MAP`), mirroring
-  `vertex-registry.ts` (`VERTEX_TYPES` vs `VERTEX_TYPE_MAP`). The kind rides in
-  the **graph slice** (`GraphEdge.data.kind` → persisted `edges[].data.kind`,
-  sent to the compute layer) because future kinds will compute differently —
-  today both kinds contract identically. It is additive-optional (the
-  `order` precedent): legacy docs hydrate to `default`, and `hydrateEdgeKind`
-  coerces crafted/unknown values. **Adding edges is click-to-connect with a
+    `edgeKindPathStyle`: `dashed_blue` draws dashed in blue, `dashed_light`
+    dashed in grey, `default` a thin slate line; selection is shown by a
+    blue drop-shadow glow rather than a stroke swap.
+- **Edge kinds:** `EDGE_KINDS` (`default`, `dashed_blue`, `dashed_light`) in
+  `types.ts` is the registry; `DEFAULT_EDGE_KIND` is `default`; display
+  metadata lives in `src/lib/graph/edge-registry.ts` (`EDGE_KIND_MAP`),
+  mirroring `vertex-registry.ts` (`VERTEX_TYPES` vs `VERTEX_TYPE_MAP`). The
+  kind rides in the **graph slice** (`GraphEdge.data.kind` → persisted
+  `edges[].data.kind`, sent to the compute layer) because future kinds will
+  compute differently — today all kinds contract identically. It is
+  additive-optional (the `order` precedent): legacy docs hydrate to
+  `default`, and `coerceEdgeKind` coerces crafted/unknown values. **Adding edges is click-to-connect with a
   staged kind**: in `add-edge` mode `EdgeKindMenu` appears (like
   `VertexTypeMenu`) and picks `selectedEdgeKind`; `handleVertexClick` →
   `computeVertexClick` creates new edges with that kind via
@@ -189,7 +190,7 @@ Typecheck runs through `next build` and the VS Code TS SDK
   write utility classes inline. Icons from `lucide-react`.
 - IDs via `nanoid`.
 - **Vertex types** are the ZXW generators plus two boundary markers:
-  `"z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and" | "input" | "output"`,
+  `"z" | "empty" | "x" | "w" | "h" | "zbox" | "xbox" | "and" | "black_dot" | "input" | "output"`,
   see `src/lib/graph/vertex-registry.ts`. `VERTEX_TYPES` is the single source
   of truth for shape/color/size (and optional `glyph`) consumed by
   `VertexNode`, `VertexSwatch`, `VertexTypeMenu`, and `VertexPropertyPanel`

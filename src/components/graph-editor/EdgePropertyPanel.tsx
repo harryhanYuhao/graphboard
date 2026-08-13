@@ -1,7 +1,8 @@
 // src/components/graph-editor/EdgePropertyPanel.tsx
 //
 // Popover shown when exactly one edge is selected — edit the edge kind
-// (default vs dashed-blue). Mirrors VertexPropertyPanel's top-right docking;
+// (default / dashed-blue / dashed-light). Mirrors VertexPropertyPanel's
+// top-right docking;
 // auto-dismisses when the selection count leaves 1. The kind lives in the
 // graph slice (data.kind) because future kinds will compute differently.
 

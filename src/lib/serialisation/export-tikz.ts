@@ -82,7 +82,9 @@ function processLabelString(label: string): string {
   if (trimmed === "") return "";
   // Somehow tikz can only handle single $.
   // TODO: better error control later
-  if (trimmed.startsWith("$$")) return trimmed.slice(1, -1);
+  if (trimmed.startsWith("$$") && trimmed.endsWith("$$")) {
+    return trimmed.slice(1, -1);
+  }
   if (trimmed.startsWith("$")) return trimmed;
   //gives the user full control of latex labels
   return trimmed;

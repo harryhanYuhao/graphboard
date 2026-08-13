@@ -527,8 +527,9 @@ export function pasteSubgraph(params: {
 export const IMPORT_OFFSET_STEP = 48;
 
 // Merge an imported (hydrated) graph into the live graph. Non-colliding
-// imported ids survive; ids that clash with the existing graph (or repeat
-// inside the import itself) are re-minted and their edges remapped. Every
+// imported ids survive; an id that clashes with the existing graph is
+// re-minted, and a repeated import id keeps its first occurrence while later
+// duplicates get fresh ids — edges are remapped to match. Every
 // imported position is translated by `offset`, and imported nodes/edges are
 // marked selected so the user immediately sees what was added. The existing
 // nodes/edges are returned untouched, and imported boundary vertices get
@@ -545,18 +546,29 @@ export function mergeImportedGraph(params: {
   const existingEdgeIds = new Set(existing.edges.map((e) => e.id));
 
   // Mint fresh ids only where needed: collisions with the existing graph and
-  // duplicates inside the import itself.
-  const idMap = new Map<string, string>();
+  // duplicates inside the import itself. Assign per node *instance* so two
+  // imported nodes sharing an id each get a distinct id — keying a single map
+  // by the id string would let the second duplicate overwrite the first's
+  // mapping and collapse both onto one reminted id.
   const usedIds = new Set(existingNodeIds);
-  for (const node of imported.nodes) {
+  const remappedNodeIds: string[] = new Array(imported.nodes.length);
+  imported.nodes.forEach((node, i) => {
     if (usedIds.has(node.id)) {
       const freshId = nanoid();
-      idMap.set(node.id, freshId);
+      remappedNodeIds[i] = freshId;
       usedIds.add(freshId);
     } else {
+      remappedNodeIds[i] = node.id;
       usedIds.add(node.id);
     }
-  }
+  });
+
+  // Edge remap keyed by original id. A duplicated id can only resolve to its
+  // first occurrence — edges carry no way to disambiguate further.
+  const idMap = new Map<string, string>();
+  imported.nodes.forEach((node, i) => {
+    if (!idMap.has(node.id)) idMap.set(node.id, remappedNodeIds[i]);
+  });
 
   // Boundary `order` must stay unique per type; seed the pool with the live
   // graph so imported boundaries land after existing ones.
@@ -565,10 +577,10 @@ export function mergeImportedGraph(params: {
     data: { ...node.data },
   }));
 
-  const newNodes: VertexNode[] = imported.nodes.map((node) => {
+  const newNodes: VertexNode[] = imported.nodes.map((node, i) => {
     const newNode: VertexNode = {
       ...node,
-      id: idMap.get(node.id) ?? node.id,
+      id: remappedNodeIds[i],
       position: {
         x: node.position.x + offset.x,
         y: node.position.y + offset.y,

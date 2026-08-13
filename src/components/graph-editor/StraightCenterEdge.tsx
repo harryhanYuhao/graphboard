@@ -58,9 +58,8 @@ export function StraightCenterEdge(props: EdgeProps<GraphEdge>) {
 
   const path = `M ${sourcePoint.x},${sourcePoint.y} L ${targetPoint.x},${targetPoint.y}`;
 
-  // Edge-kind styling (dashed-blue vs dashed-light vs default).
-  // `props.selected` keeps the dash on a selected dashed edge while letting
-  // React Flow's CSS selection color show through (see `edgeKindPathStyle`).
+  // Edge-kind styling (dashed-blue vs dashed-light vs default). Selection is
+  // signalled by a blue glow, not a stroke swap (see `edgeKindPathStyle`).
   // `EdgeProps<GraphEdge>` types `data` as `{ kind: EdgeKind }`, so
   // `props.data?.kind` is `EdgeKind | undefined` at compile time — the only
   // runtime gap left is a missing `data` object, defaulted here. Untrusted

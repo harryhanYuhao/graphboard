@@ -636,6 +636,26 @@ describe("mergeImportedGraph", () => {
     expect(nodes[1].data.order).toBe(1);
   });
 
+  it("re-mints duplicate node ids inside the import to distinct ids", () => {
+    const { nodes, edges } = mergeImportedGraph({
+      existing: { nodes: [], edges: [] },
+      imported: {
+        nodes: [makeVertex("dup"), makeVertex("dup")],
+        edges: [makeEdge("e1", "dup", "dup")],
+      },
+      offset: { x: 0, y: 0 },
+    });
+    // The two imported nodes sharing an id must not collapse onto one id.
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0].id).toBe("dup");
+    expect(nodes[1].id).not.toBe("dup");
+    expect(new Set(nodes.map((n) => n.id)).size).toBe(2);
+    // Edges resolve the duplicated id to the first occurrence.
+    expect(edges).toHaveLength(1);
+    expect(edges[0].source).toBe(nodes[0].id);
+    expect(edges[0].target).toBe(nodes[0].id);
+  });
+
   it("IMPORT_OFFSET_STEP is a positive offset", () => {
     expect(IMPORT_OFFSET_STEP).toBeGreaterThan(0);
   });

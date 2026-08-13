@@ -71,10 +71,9 @@ export function getEdgeEndpoint(
 // thin 1.5pt line (matching the pre-kind look, slightly slimmer); dashed-blue
 // edges draw dashed in blue at 2pt.
 //
-// `selected` is load-bearing: React Flow colors a selected edge via the CSS
-// variable `--xy-edge-stroke-selected`, and an inline `stroke` would
-// override that CSS rule. So a selected dashed-blue edge drops the inline
-// color (keeping the dash) and lets the selection color show.
+// `selected` adds a blue drop-shadow glow as the selection indicator (the
+// same colour VertexNode uses). The kind's own stroke is kept — the glow
+// marks selection rather than swapping the stroke colour.
 export function edgeKindPathStyle(
   kind: EdgeKind,
   selected: boolean,
