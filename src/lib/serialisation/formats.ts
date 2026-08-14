@@ -12,7 +12,7 @@
 import type { GraphEdge, VertexNode } from "@/lib/graph/types";
 import { exportGraphJson } from "./export-json";
 import { exportTikz } from "./export-tikz";
-import { exportZxLive } from "./export-zxlive";
+import { exportZxlive } from "./export-zxlive";
 import { exportQasm } from "./export-qasm";
 
 /** Inputs shared by every serializer (same shape as `exportGraphJson`). */
@@ -24,7 +24,7 @@ export interface ExportParams {
   createdAt?: string;
 }
 
-export type ExportFormatId = "json" | "tikz" | "zxlive" | "QASM";
+export type ExportFormatId = "json" | "tikz" | "zxlive" | "qasm";
 
 export interface ExportFormat {
   id: ExportFormatId;
@@ -62,10 +62,10 @@ export const EXPORT_FORMATS: ExportFormat[] = [
     doc_url: "https://zxwgraphboard-doc.netlify.app/user-guides/saving-and-loading/",
     extension: ".zxlive",
     mimeType: "text/plain",
-    serialize: (params) => exportZxLive(params),
+    serialize: (params) => exportZxlive(params),
   },
   {
-    id: "QASM",
+    id: "qasm",
     label: "QASM",
     description: "Quantum Assembly (Placeholder only)",
     doc_url: "https://zxwgraphboard-doc.netlify.app/user-guides/saving-and-loading/",

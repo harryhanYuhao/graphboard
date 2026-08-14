@@ -28,7 +28,7 @@ function isGraphSlice(
   return true;
 }
 
-// Parse + validate a JSON string against the v1 shape. Stamps
+// Parse + validate a JSON string against the v2 shape. Stamps
 // `schemaVersion` to `CURRENT_SCHEMA_VERSION` on success so downstream
 // consumers don't handle the missing-field case.
 export function parseDocument(contents: string): ParseResult {

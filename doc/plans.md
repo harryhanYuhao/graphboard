@@ -5,6 +5,21 @@
 > a tensor contraction. This is the "foremost function" the user needs; later
 > phases cover simplification/rewrites and richer tensor algebra.
 
+> ## Status (current)
+>
+> - **Phase 0** (LaTeX rendering for labels) — landed.
+> - **Phase 1** (label-as-phase convention + JS parser) — landed.
+> - **Phase 2** (Cargo workspace + `zxw` crate + WASM build) — landed.
+> - **Phase 3** (Rust phase parser + Tensor model + per-vertex builders) — landed.
+> - **Phase 4** (naive sequential contraction) — landed.
+> - **Phase 5** (WASM bindings + Web Worker + frontend UI) — landed.
+> - **Phase 6** (optimisation) — not started; `petgraph` / `cotengrust`
+>   stay gated behind the §3.3 flip conditions.
+>
+> The text below is design history: file paths and schema details in it
+> can drift (e.g. §0 still speaks of `label` and `vertex-types.ts`).
+> `AGENTS.md` documents the current reality.
+
 ---
 
 ## 0. Background
@@ -1338,6 +1353,10 @@ Acceptance is gated on each phase passing the next rung:
   components and many open legs, the output shape is the product of
   the component shapes — exponential blow-up. Phase 6 likely returns
   per-component results, which changes the worker protocol.
+- **Hand-written parsers.** The JS + Rust phase parsers are
+  hand-written; replacing them with a parser generator (`lalrpop` on
+  the Rust side) is a standing idea (moved here from the old
+  `doc/todo.md`).
 
 > **Previously open, now resolved:**
 > - **Main-thread blocking** → Web Worker moves computation off the

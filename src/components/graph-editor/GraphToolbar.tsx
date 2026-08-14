@@ -223,12 +223,14 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
           <OctagonX size={18} color="#f00707" />
         </ToolbarButton>
 
-        <ToolbarButton
-          title="Debug (For developping purpose only"
-          onClick={onDebugButtonPressed}
-        >
-          <Bug size={18} />
-        </ToolbarButton>
+        {process.env.NODE_ENV !== "production" && (
+          <ToolbarButton
+            title="Debug (development builds only)"
+            onClick={onDebugButtonPressed}
+          >
+            <Bug size={18} />
+          </ToolbarButton>
+        )}
       </div>
     </>
   );

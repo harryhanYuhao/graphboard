@@ -1,4 +1,4 @@
-// src/components/graph-editor/HelpDialogue.tsx
+// src/components/graph-editor/HelpDialog.tsx
 //
 // Modal listing every editor shortcut. Sibling shape to `ConfirmationDialog`
 // (backdrop/Escape close, close button auto-focused, scrollable body). The

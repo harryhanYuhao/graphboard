@@ -17,19 +17,19 @@ const params = {
 };
 
 describe("EXPORT_FORMATS", () => {
-  it("registers json, tikz, zxlive, and QASM with picker metadata", () => {
+  it("registers json, tikz, zxlive, and qasm with picker metadata", () => {
     expect(EXPORT_FORMATS.map((f) => f.id)).toEqual([
       "json",
       "tikz",
       "zxlive",
-      "QASM",
+      "qasm",
     ]);
     const byId = Object.fromEntries(EXPORT_FORMATS.map((f) => [f.id, f]));
     expect(byId.json.extension).toBe(".json");
     expect(byId.json.mimeType).toBe("application/json");
     expect(byId.tikz.extension).toBe(".tikz");
     expect(byId.zxlive.extension).toBe(".zxlive");
-    expect(byId.QASM.extension).toBe(".qasm");
+    expect(byId.qasm.extension).toBe(".qasm");
   });
 
   it("json serializes to a valid v2 GraphDocument", () => {
@@ -65,7 +65,7 @@ describe("EXPORT_FORMATS", () => {
   });
 
   it("qasm serializes to a clearly-marked placeholder", () => {
-    const contents = getExportFormat("QASM").serialize(params);
+    const contents = getExportFormat("qasm").serialize(params);
     expect(contents).toContain("// Graph Board QASM export (placeholder)");
     expect(contents).toContain("The QASM format is not defined yet");
     expect(contents).toContain("Title: My Graph");
@@ -79,7 +79,7 @@ describe("EXPORT_FORMATS", () => {
     expect(byId.tikz.doc_url).toBe(`${general}#using-a-tikz-export-in-latex`);
     // Same general page for now; they will diverge as each format's
     // documentation lands.
-    for (const id of ["json", "zxlive", "QASM"]) {
+    for (const id of ["json", "zxlive", "qasm"]) {
       expect(byId[id].doc_url).toBe(general);
     }
   });

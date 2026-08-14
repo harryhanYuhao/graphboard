@@ -5,6 +5,6 @@
 import type { ExportParams } from "./formats";
 import { placeholder } from "./placeholder";
 
-export function exportZxLive(params: ExportParams): string {
+export function exportZxlive(params: ExportParams): string {
   return placeholder("ZXLive", params, "#");
 }

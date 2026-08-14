@@ -1,7 +1,7 @@
 // src/lib/serialisation/export-json.ts
 //
 // JSON export serializer: the native Graph Board document format
-// (`{ graph, view }` v1 shape). Positions are mean-centered before
+// (`{ graph, view }` v2 shape). Positions are mean-centered before
 // projection so the exported file doesn't carry absolute canvas offsets.
 // Pure — no store, no window; never mutates the input nodes.
 import { PERSISTED_IDS, type GraphEdge, type VertexNode } from "../graph/types";

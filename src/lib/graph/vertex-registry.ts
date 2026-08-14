@@ -18,7 +18,7 @@ export function isDirectionalVertex(vertexType: VertexType): boolean {
 }
 
 // True for vertex types whose label is parsed as a phase expression (Z/X
-// spiders and boxes; see `AGENTS.md` §"Label as phase") rather than free text.
+// spiders and boxes; see `AGENTS.md` §"Phase vs. visual label") rather than free text.
 // Single source of truth for "parse this label as a phase?".
 export function isSpiderType(vertexType: VertexType): boolean {
   return (

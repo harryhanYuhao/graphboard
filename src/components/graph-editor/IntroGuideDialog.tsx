@@ -2,7 +2,7 @@
 //
 // First-run onboarding stepper. Auto-opens once per browser (gate in the
 // store's `hydrate()`, keyed off `graph-board-seen-intro`); reopenable from
-// Help. Sibling shape to `KeyboardShortcutsDialog` (backdrop/Escape close,
+// Help. Sibling shape to `HelpDialog` (backdrop/Escape close,
 // primary button auto-focused). Pure/presentational — the store owns the
 // "seen" flag, stamped at open so any close path counts.
 

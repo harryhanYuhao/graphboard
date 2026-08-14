@@ -25,7 +25,7 @@ export {
 } from "./storage";
 export { exportGraphJson } from "./export-json";
 export { exportTikz } from "./export-tikz";
-export { exportZxLive } from "./export-zxlive";
+export { exportZxlive } from "./export-zxlive";
 export { exportQasm } from "./export-qasm";
 export {
   EXPORT_FORMATS,
