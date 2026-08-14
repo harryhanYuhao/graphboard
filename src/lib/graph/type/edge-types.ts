@@ -62,7 +62,7 @@ export type GraphEdgeRecord = {
   target: string;
   sourceHandle?: number;
   targetHandle?: number;
-  data?: { kind?: EdgeKind };
+  data?: { kind: EdgeKind };
 };
 
 // View entry for an edge — placeholder for future curvature/label/style. Empty for now.

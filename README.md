@@ -1,7 +1,9 @@
 # Graph Board for ZXW
 
-An online graph board for the **ZXW calculus**, a quantum-computing
-diagrammatic calculus. Live at [zxwgraphboard.netlify.app](https://zxwgraphboard.netlify.app/).
+An online graph board for the **ZXW calculus**
+Live at [zxwgraphboard.netlify.app](https://zxwgraphboard.netlify.app/).
+ZXW calculus is a specific king of tensor network
+that can present complex linear algebraic computations in diagrams.
 Users place vertices, wire them with edges, and compute the tensor the
 diagram represents via a Rust/WASM backend. Client-side only — no server;
 documents persist in `localStorage` with manual file export.

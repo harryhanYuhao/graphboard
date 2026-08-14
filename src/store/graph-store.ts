@@ -80,8 +80,10 @@ type GraphStore = {
   edges: GraphEdge[];
   mode: EditorMode;
   hasHydrated: boolean;
-  // Bumped after an import so the view layer calls `reactFlow.fitView()`;
-  // the store never touches React Flow itself.
+  // Bumped after a non-empty hydrate so the view layer calls
+  // `reactFlow.fitView()`; the store never touches React Flow itself.
+  // Import deliberately does not bump it — a merge inserts around the
+  // current viewport centre (pinned by graph-store_edge_cases.test.ts).
   fitViewNonce: number;
   // Vertex IDs staged as edge sources in add-edge mode (empty otherwise);
   // edges fan out from every ID here to the next clicked target.

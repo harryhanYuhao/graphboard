@@ -58,14 +58,8 @@ export function StraightCenterEdge(props: EdgeProps<GraphEdge>) {
 
   const path = `M ${sourcePoint.x},${sourcePoint.y} L ${targetPoint.x},${targetPoint.y}`;
 
-  // Edge-kind styling (dashed-blue vs dashed-light vs default). Selection is
-  // signalled by a blue glow, not a stroke swap (see `edgeKindPathStyle`).
-  // `EdgeProps<GraphEdge>` types `data` as `{ kind: EdgeKind }`, so
-  // `props.data?.kind` is `EdgeKind | undefined` at compile time — the only
-  // runtime gap left is a missing `data` object, defaulted here. Untrusted
-  // kind values from imported docs are already coerced at the hydration
-  // boundary (`coerceEdgeKind` in edge-registry.ts); the renderer needs no
-  // second coercion.
+  // Edge-kind styling
+  // Selection is signalled by a blue glow
   const kind = props.data?.kind ?? DEFAULT_EDGE_KIND;
   const kindStyle = edgeKindPathStyle(kind, props.selected === true);
 

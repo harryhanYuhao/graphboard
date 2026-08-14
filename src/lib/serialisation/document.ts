@@ -20,7 +20,6 @@ import {
   type VertexType,
 } from "../graph/types";
 import { snapPosition } from "../graph/operations";
-import { coerceEdgeKind } from "../graph/edge-registry";
 import { VERTEX_TYPE_MAP } from "../graph/vertex-registry";
 
 // Wrap an angle into canonical [0, 360) and round to 6 dp. The rounding
@@ -155,9 +154,7 @@ function hydrateEdge(
     ),
     // Renderer discriminator (only `straightCenter` today; constant keeps the literal centralized).
     type: EDGE_TYPES.straightCenter,
-    // Edge kind, defaulting for legacy docs / hand-edited imports and
-    // coercing untrusted values (see `coerceEdgeKind` in edge-registry.ts).
-    data: { kind: coerceEdgeKind(graphEdge.data?.kind) },
+    data: { kind: graphEdge.data?.kind ?? DEFAULT_EDGE_KIND },
   };
 }
 

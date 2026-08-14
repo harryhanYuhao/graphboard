@@ -132,7 +132,7 @@ function GraphEditorInner() {
     hydrate();
   }, [hydrate]);
 
-  // Refit on graph replacement (import / non-empty hydrate). The `0` guard
+  // Refit on non-empty hydrate. The `0` guard
   // skips the pre-hydrate render and empty graphs, so placing the first vertex
   // on an empty canvas doesn't snap the camera to it. This explicit nonce
   // avoids `<ReactFlow fitView>`'s stale queued fit on empty graphs.
