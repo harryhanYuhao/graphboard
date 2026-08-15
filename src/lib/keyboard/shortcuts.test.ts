@@ -62,6 +62,7 @@ describe("getShortcutGroups", () => {
       "Modes",
       "Selection",
       "Edit",
+      "Tabs",
       "View",
       "Compute",
       "Help",

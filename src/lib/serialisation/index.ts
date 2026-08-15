@@ -13,14 +13,18 @@ export {
 } from "./document";
 export {
   parseDocument,
+  parseWorkspace,
   importGraphJson,
   type ParseResult,
   type ImportResult,
+  type WorkspaceParseResult,
 } from "./parse";
 export {
   createEmptyGraphDocument,
   saveGraphDocument,
   loadGraphDocument,
+  saveGraphWorkspace,
+  loadGraphWorkspace,
   LOCAL_STORAGE_BACKUP_KEY,
 } from "./storage";
 export { exportGraphJson } from "./export-json";

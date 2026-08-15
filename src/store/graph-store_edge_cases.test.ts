@@ -4,7 +4,7 @@
 // and clear the temporal stack between tests.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useGraphStore } from "./graph-store";
+import { makeEmptyTabRecord, useGraphStore } from "./graph-store";
 import { makeVertexWith as makeVertex, makeEdge } from "@/test-utils/factories";
 
 // `importJson` reaches into `@/lib/download`'s openTextFileWithPicker. Mock the
@@ -18,11 +18,14 @@ vi.mock("@/lib/download", () => ({
 import { openTextFileWithPicker, saveTextFileWithPicker } from "@/lib/download";
 
 function resetStore() {
+  const tab = makeEmptyTabRecord("Untitled Graph", null);
   useGraphStore.setState({
     title: "Untitled Graph",
     createdAt: "2025-01-01T00:00:00.000Z",
     nodes: [],
     edges: [],
+    tabs: [tab],
+    activeTabId: tab.id,
     mode: "select",
     hasHydrated: false,
     pendingEdgeSources: [],
@@ -31,7 +34,6 @@ function resetStore() {
     isHelpOpen: false,
     isExportOpen: false,
     clipboard: null,
-    fitViewNonce: 0,
   });
   // Clear the undo/redo stack so prior tests don't leak via snapshots.
   useGraphStore.temporal.getState().clear();
@@ -938,7 +940,6 @@ describe("save → hydrate round-trip preserves nodes/edges/title", () => {
 
   it("preserves title, nodes, edges, and positions across save+hydrate", () => {
     useGraphStore.setState({
-      title: "Round Trip",
       createdAt: "2020-03-03T03:03:03.000Z",
       nodes: [
         // Dot-aligned positions so the round-trip is exact.
@@ -947,6 +948,9 @@ describe("save → hydrate round-trip preserves nodes/edges/title", () => {
       ],
       edges: [makeEdge("e1", "a", "b")],
     });
+    useGraphStore
+      .getState()
+      .renameTab(useGraphStore.getState().activeTabId, "Round Trip");
 
     useGraphStore.getState().save();
     // Wipe runtime state to prove hydrate repopulates from disk.
@@ -998,20 +1002,6 @@ describe("help dialog open/close/toggle", () => {
     expect(useGraphStore.getState().isHelpOpen).toBe(true);
     useGraphStore.getState().toggleHelp();
     expect(useGraphStore.getState().isHelpOpen).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// fitViewNonce on import. Import merges into the current viewport (no
-// replacement), so the view layer has nothing to refit.
-// ---------------------------------------------------------------------------
-
-describe("fitViewNonce on import", () => {
-  it("importJson merges without bumping fitViewNonce", async () => {
-    useGraphStore.setState({ fitViewNonce: 7 });
-    vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
-    await useGraphStore.getState().importJson({ x: 0, y: 0 });
-    expect(useGraphStore.getState().fitViewNonce).toBe(7);
   });
 });
 

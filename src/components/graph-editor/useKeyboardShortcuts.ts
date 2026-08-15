@@ -41,7 +41,7 @@ export function useKeyboardShortcuts({
       if (isTypingTarget(event.target)) return;
 
       const mod = event.metaKey || event.ctrlKey;
-      const { mode, setMode, deleteSelected, copySelected, paste, cutSelected, clearPendingEdgeSources, selectAll, clearSelection, save, setVertexType, toggleHelp } =
+      const { mode, setMode, deleteSelected, copySelected, paste, cutSelected, clearPendingEdgeSources, selectAll, clearSelection, save, setVertexType, toggleHelp, switchAdjacentTab } =
         useGraphStore.getState();
 
       // Modal dialogs swallow every shortcut except `?` closing help.
@@ -113,6 +113,21 @@ export function useKeyboardShortcuts({
         if (key === "x" && !event.shiftKey) {
           event.preventDefault();
           cutSelected();
+          return;
+        }
+
+        if (event.shiftKey && key === "[") {
+          // Ctrl/Cmd+Shift+[ — previous tab. Browsers reserve Ctrl+Tab for
+          // their own tab switching, so the bracket pair is the tab shortcut.
+          event.preventDefault();
+          switchAdjacentTab(-1);
+          return;
+        }
+
+        if (event.shiftKey && key === "]") {
+          // Ctrl/Cmd+Shift+] — next tab.
+          event.preventDefault();
+          switchAdjacentTab(1);
           return;
         }
 

@@ -58,3 +58,27 @@ export type GraphDocument = {
   createdAt: string;
   updatedAt: string;
 };
+
+// ---- Tabs workspace (localStorage layout) -----------------------------------
+//
+// localStorage stores a `layout: "tabs"` wrapper around N v2 documents — one
+// per editor tab, with the tab name doubling as the document `title`. The
+// wrapper is a storage layout, not a schema version: the graph/view document
+// shape stays v2, and legacy single-doc payloads (no `layout` field) load as
+// a one-tab workspace.
+
+export const STORAGE_LAYOUT_TABS = "tabs" as const;
+
+export type WorkspaceTab = {
+  id: string;
+  document: GraphDocument;
+};
+
+export type GraphWorkspace = {
+  activeTabId: string;
+  tabs: WorkspaceTab[];
+};
+
+export type TabsStorageLayout = {
+  layout: typeof STORAGE_LAYOUT_TABS;
+} & GraphWorkspace;

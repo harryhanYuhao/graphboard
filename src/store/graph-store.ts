@@ -5,13 +5,14 @@ import {
   applyNodeChanges,
   type EdgeChange,
   type NodeChange,
+  type Viewport,
 } from "@xyflow/react";
+import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { temporal } from "zundo";
 import {
   DEFAULT_EDGE_KIND,
   EDITOR_MODES,
-  PERSISTED_IDS,
   type EditorMode,
   type GraphEdge,
   type EdgeKind,
@@ -42,15 +43,15 @@ import {
 } from "@/lib/graph/vertex-registry";
 import { selectSelectedNodeIds } from "@/store/selectors";
 import {
-  createEmptyGraphDocument,
   getExportFormat,
   hydrateDocument,
   importGraphJson,
   type HydratedDocument,
-  loadGraphDocument,
+  loadGraphWorkspace,
   LOCAL_STORAGE_BACKUP_KEY,
   normalizeRotation,
-  saveGraphDocument,
+  projectDocument,
+  saveGraphWorkspace,
   type ExportFormatId,
 } from "@/lib/serialisation";
 
@@ -71,6 +72,31 @@ export type ConfirmDialogueState = {
   onConfirm: () => void;
 };
 
+// Pre-gesture snapshot for a continuous edit. Each gesture owns its
+// own controller so overlapping gestures don't trample each other.
+type GraphSnapshot = { nodes: VertexNode[]; edges: GraphEdge[] };
+
+// One editor tab. The ACTIVE tab's graph lives in the root `nodes`/`edges`
+// (every action reads/writes those slices); tab records are authoritative
+// only for inactive tabs. `switchTab`/`addTab`/`closeTab` are the only
+// places data moves between the two, via `activateTab` below.
+export type TabRecord = {
+  id: string;
+  // Tab name; doubles as the persisted v2 document `title`.
+  name: string;
+  nodes: VertexNode[];
+  edges: GraphEdge[];
+  createdAt: string;
+  // Last committed pan/zoom. `null` until the user moves the camera; the
+  // view layer fits the tab's content instead.
+  viewport: Viewport | null;
+  // Session-only undo tree, swapped into the zundo store on tab switch.
+  history: {
+    pastStates: GraphSnapshot[];
+    futureStates: GraphSnapshot[];
+  };
+};
+
 type GraphStore = {
   title: string;
 
@@ -80,11 +106,10 @@ type GraphStore = {
   edges: GraphEdge[];
   mode: EditorMode;
   hasHydrated: boolean;
-  // Bumped after a non-empty hydrate so the view layer calls
-  // `reactFlow.fitView()`; the store never touches React Flow itself.
-  // Import deliberately does not bump it — a merge inserts around the
-  // current viewport centre (pinned by graph-store_edge_cases.test.ts).
-  fitViewNonce: number;
+  // Tab records for every tab (active tab's graph also mirrored in the root
+  // `nodes`/`edges`/`title`/`createdAt` slices; see `TabRecord`).
+  tabs: TabRecord[];
+  activeTabId: string;
   // Vertex IDs staged as edge sources in add-edge mode (empty otherwise);
   // edges fan out from every ID here to the next clicked target.
   pendingEdgeSources: string[];
@@ -132,6 +157,17 @@ type GraphStore = {
   setMode: (mode: EditorMode) => void;
   setVertexType: (vertexType: VertexType) => void;
   setEdgeKind: (kind: EdgeKind) => void;
+
+  addTab: () => void;
+  switchTab: (tabId: string) => void;
+  // Step to the neighbouring tab (wrapped at the ends); `-1` = previous.
+  switchAdjacentTab: (direction: -1 | 1) => void;
+  renameTab: (tabId: string, name: string) => void;
+  // Closes after a confirm dialog when the tab is non-empty; never closes
+  // the last tab (it is replaced with a fresh empty one).
+  closeTab: (tabId: string) => void;
+  // Record the active tab's camera (pan/zoom) on every move end.
+  commitViewport: (viewport: Viewport) => void;
 
   onNodesChange: (changes: NodeChange<VertexNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<GraphEdge>[]) => void;
@@ -221,9 +257,17 @@ const UNDO_LIMIT = 50;
 const temporalEquality = (a: GraphSnapshot, b: GraphSnapshot) =>
   a.nodes === b.nodes && a.edges === b.edges;
 
-// Pre-gesture snapshot for a continuous edit. Each gesture owns its
-// own controller so overlapping gestures don't trample each other.
-type GraphSnapshot = { nodes: VertexNode[]; edges: GraphEdge[] };
+// True iff `next` carries the same elements in the same order as `current`
+// (object identity). `applyNodeChanges`/`applyEdgeChanges` return a fresh
+// array even when nothing matched, so without this check a no-op batch —
+// e.g. React Flow's stale `remove` changes for the PREVIOUS tab's ids right
+// after a tab switch — would still `set` a new slice and land a spurious
+// entry on the incoming tab's undo stack.
+function isSameSlice<T>(next: T[], current: T[]): boolean {
+  if (next === current) return true;
+  if (next.length !== current.length) return false;
+  return next.every((item, index) => item === current[index]);
+}
 
 // Split React Flow changes into structural (`remove`) and visual
 // (everything else: dimension, position, select), applied with the
@@ -249,7 +293,8 @@ function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
   );
 
   if (structuralChanges.length > 0) {
-    params.setSlice(params.apply(structuralChanges, params.getCurrent()));
+    const next = params.apply(structuralChanges, params.getCurrent());
+    if (!isSameSlice(next, params.getCurrent())) params.setSlice(next);
   }
 
   if (visualChanges.length > 0) {
@@ -258,7 +303,8 @@ function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
     const wasTracking = useGraphStore.temporal.getState().isTracking;
     useGraphStore.temporal.getState().pause();
     try {
-      params.setSlice(params.apply(visualChanges, params.getCurrent()));
+      const next = params.apply(visualChanges, params.getCurrent());
+      if (!isSameSlice(next, params.getCurrent())) params.setSlice(next);
     } finally {
       if (wasTracking) useGraphStore.temporal.getState().resume();
     }
@@ -319,25 +365,121 @@ function pruneValidationErrors(
   return pruned;
 }
 
-// Recovery copy written before the hydrate fallback replaces a possibly-
-// valid document; lets a regression (vs. real corruption) be recovered.
-// Key lives in storage.ts so the parse-fail backup path shares it.
+// ---- Tab machinery ----------------------------------------------------------
 
-// Save the graph to localStorage under the stable local-doc id. Shared
-// by `save` and `reset` so the field list lives in one place.
-function persistLocal(doc: {
-  title: string;
-  nodes: VertexNode[];
-  edges: GraphEdge[];
-  createdAt: string;
-}): void {
-  saveGraphDocument({
-    id: PERSISTED_IDS.localDocument,
-    title: doc.title,
-    nodes: doc.nodes,
-    edges: doc.edges,
-    createdAt: doc.createdAt,
+// Fresh empty tab. `name` defaults to the next "Tab N" slot so the first
+// tab is "Tab 1" and closed slots don't collide.
+export function makeEmptyTabRecord(
+  name: string,
+  viewport: Viewport | null,
+): TabRecord {
+  return {
+    id: nanoid(),
+    name,
+    nodes: [],
+    edges: [],
+    createdAt: new Date().toISOString(),
+    viewport,
+    history: { pastStates: [], futureStates: [] },
+  };
+}
+
+function nextTabName(tabs: TabRecord[]): string {
+  let max = 0;
+  for (const tab of tabs) {
+    const match = /^Tab (\d+)$/.exec(tab.name);
+    if (match) max = Math.max(max, Number.parseInt(match[1], 10));
+  }
+  return `Tab ${max + 1}`;
+}
+
+// Commit the active tab's live slices back into its record, then install
+// `nextTabId` as the active tab: root slices, name, and — the load-bearing
+// part — the zundo undo tree. The temporal store is paused for the swap so
+// the switch itself never becomes an undo entry in the INCOMING tab (without
+// the pause, tab A's graph would land in tab B's history and the first undo
+// in B would resurrect A's nodes).
+function activateTab(nextTabId: string, nextTabs: TabRecord[]): void {
+  const nextTab = nextTabs.find((tab) => tab.id === nextTabId);
+  if (!nextTab) return;
+
+  const temporalState = useGraphStore.temporal.getState();
+  const wasTracking = temporalState.isTracking;
+  temporalState.pause();
+  const state = useGraphStore.getState();
+
+  // Stash the outgoing tab's live graph + undo tree into its record. The
+  // stashed stacks are exactly the partialized `{nodes, edges}` snapshots,
+  // so the narrower type is safe (see `partialize`).
+  const committed = nextTabs.map((tab) =>
+    tab.id === state.activeTabId
+      ? {
+        ...tab,
+        nodes: state.nodes,
+        edges: state.edges,
+        history: {
+          pastStates: temporalState.pastStates as GraphSnapshot[],
+          futureStates: temporalState.futureStates as GraphSnapshot[],
+        },
+      }
+      : tab,
+  );
+
+  useGraphStore.setState({
+    tabs: committed,
+    activeTabId: nextTabId,
+    nodes: nextTab.nodes,
+    edges: nextTab.edges,
+    title: nextTab.name,
+    createdAt: nextTab.createdAt,
+    // Transient work-in-progress must not leak into another tab.
+    mode: EDITOR_MODES.select,
+    pendingEdgeSources: [],
+    validationErrors: emptyValidationErrors(),
   });
+
+  // Install the incoming tab's undo tree.
+  useGraphStore.temporal.setState({
+    pastStates: nextTab.history.pastStates,
+    futureStates: nextTab.history.futureStates,
+  });
+
+  if (wasTracking) temporalState.resume();
+}
+
+// Remove `tabId` from the workspace. Closing a non-active tab is a plain
+// tabs-array change (not partialized, so no undo entry); closing the active
+// tab activates a neighbour first so the root slices always match an
+// existing tab. Never leaves zero tabs.
+function performCloseTab(tabId: string): void {
+  const state = useGraphStore.getState();
+  const index = state.tabs.findIndex((tab) => tab.id === tabId);
+  if (index === -1) return;
+
+  if (tabId !== state.activeTabId) {
+    useGraphStore.setState({
+      tabs: state.tabs.filter((tab) => tab.id !== tabId),
+    });
+    return;
+  }
+
+  let nextTabs = state.tabs.filter((tab) => tab.id !== tabId);
+  let nextActiveId: string;
+
+  if (nextTabs.length === 0) {
+    // Closing the last tab replaces it with a fresh empty one.
+    const fresh = makeEmptyTabRecord(
+      "Tab 1",
+      state.tabs[index]?.viewport ?? null,
+    );
+    nextTabs = [fresh];
+    nextActiveId = fresh.id;
+  } else {
+    // Prefer the left neighbour, else the new first tab.
+    nextActiveId = nextTabs[Math.max(0, index - 1)]?.id ?? nextTabs[0].id;
+  }
+
+  activateTab(nextActiveId, nextTabs);
 }
 
 export const useGraphStore = create<GraphStore>()(
@@ -351,7 +493,9 @@ export const useGraphStore = create<GraphStore>()(
       mode: EDITOR_MODES.select,
       hasHydrated: false,
 
-      fitViewNonce: 0,
+      // Empty until `hydrate` builds the persisted tabs.
+      tabs: [],
+      activeTabId: "",
 
       pendingEdgeSources: [],
       selectedVertexType: DEFAULT_VERTEX_TYPE,
@@ -372,48 +516,65 @@ export const useGraphStore = create<GraphStore>()(
       clipboard: null,
 
       hydrate: () => {
-        // Hydrate the persisted doc (v2 `{ graph, view }` shape) into
-        // runtime `VertexNode[]` / `GraphEdge[]`; the persisted shape
-        // never reaches the store.
-        const document = loadGraphDocument();
-        let hydrated: HydratedDocument;
+        // Hydrate the persisted workspace (a `layout: "tabs"` wrapper of v2
+        // `{ graph, view }` docs, or a legacy single doc) into per-tab
+        // runtime records; the persisted shape never reaches the store.
+        const workspace = loadGraphWorkspace();
+        let hydratedTabs: TabRecord[];
         try {
-          hydrated = hydrateDocument(document);
+          hydratedTabs = workspace.tabs.map((entry) => {
+            const hydrated = hydrateDocument(entry.document);
+            return {
+              id: entry.id,
+              name: hydrated.title,
+              nodes: hydrated.nodes,
+              edges: hydrated.edges,
+              createdAt: hydrated.createdAt,
+              viewport: null,
+              history: { pastStates: [], futureStates: [] },
+            };
+          });
         } catch {
           // A localStorage doc can pass the shape check yet hold malformed
           // elements (e.g. `data: null`); fail soft instead of crashing.
-          // Back the parsed doc up first so a regression (rather than real
-          // corruption) can't silently destroy the user's only copy once
-          // the empty fallback is autosaved.
+          // Back the raw workspace up first so a regression (rather than
+          // real corruption) can't silently destroy the user's only copy
+          // once the empty fallback is autosaved.
           console.warn(
             "graph-board: persisted document failed hydration; loading empty document.",
           );
           try {
-            localStorage.setItem(
-              LOCAL_STORAGE_BACKUP_KEY,
-              JSON.stringify(document),
-            );
+            const raw = localStorage.getItem("graph-board-document");
+            if (raw !== null) {
+              localStorage.setItem(LOCAL_STORAGE_BACKUP_KEY, raw);
+            }
           } catch {
             // Quota / availability issues must not block recovery.
           }
-          hydrated = hydrateDocument(createEmptyGraphDocument());
+          hydratedTabs = [makeEmptyTabRecord("Untitled Graph", null)];
         }
 
+        const activeTabId = hydratedTabs.some(
+          (tab) => tab.id === workspace.activeTabId,
+        )
+          ? workspace.activeTabId
+          : hydratedTabs[0].id;
+        const activeTab = hydratedTabs.find(
+          (tab) => tab.id === activeTabId,
+        )!;
+
         set({
-          title: hydrated.title,
-          createdAt: hydrated.createdAt,
-          nodes: hydrated.nodes,
-          edges: hydrated.edges,
+          tabs: hydratedTabs,
+          activeTabId,
+          title: activeTab.name,
+          createdAt: activeTab.createdAt,
+          nodes: activeTab.nodes,
+          edges: activeTab.edges,
           hasHydrated: true,
           validationErrors: emptyValidationErrors(),
         });
 
         useGraphStore.temporal.getState().clear();
-
-        // Frame on reload only when there's something to frame.
-        if (hydrated.nodes.length > 0) {
-          set({ fitViewNonce: get().fitViewNonce + 1 });
-        }
 
         // Auto-open the intro once: stamp the flag now (at open, not at
         // close) so it never reappears on reload. See `intro.ts`.
@@ -450,6 +611,98 @@ export const useGraphStore = create<GraphStore>()(
 
       setEdgeKind: (kind) => {
         set({ selectedEdgeKind: kind });
+      },
+
+      addTab: () => {
+        const state = get();
+        const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+        const tab = makeEmptyTabRecord(
+          nextTabName(state.tabs),
+          // Start where the user is looking; `null` (never moved) stays null
+          // so the view layer fits the first content instead.
+          active?.viewport ?? null,
+        );
+        activateTab(tab.id, [...state.tabs, tab]);
+      },
+
+      switchTab: (tabId) => {
+        const state = get();
+        if (tabId === state.activeTabId) return;
+        if (!state.tabs.some((tab) => tab.id === tabId)) return;
+        activateTab(tabId, state.tabs);
+      },
+
+      switchAdjacentTab: (direction) => {
+        const { tabs, activeTabId } = get();
+        const index = tabs.findIndex((tab) => tab.id === activeTabId);
+        const next = tabs[index + direction];
+        if (next) get().switchTab(next.id);
+      },
+
+      renameTab: (tabId, name) => {
+        const trimmed = name.trim();
+        if (trimmed.length === 0) return;
+
+        const { tabs, activeTabId } = get();
+        set({
+          tabs: tabs.map((tab) =>
+            tab.id === tabId ? { ...tab, name: trimmed } : tab,
+          ),
+          // Root `title` mirrors the active tab's name.
+          ...(tabId === activeTabId ? { title: trimmed } : {}),
+        });
+      },
+
+      closeTab: (tabId) => {
+        const state = get();
+        const tab = state.tabs.find((entry) => entry.id === tabId);
+        if (!tab) return;
+
+        // Emptiness for the ACTIVE tab reads the live slices (its record is
+        // only synced on switch/save); inactive tabs read their record.
+        const isEmpty =
+          tabId === state.activeTabId
+            ? state.nodes.length === 0 && state.edges.length === 0
+            : tab.nodes.length === 0 && tab.edges.length === 0;
+
+        // Empty tabs close silently; a non-empty tab needs a confirm (its
+        // undo tree dies with the tab, so the dialog is the safety net).
+        if (isEmpty) {
+          performCloseTab(tabId);
+          return;
+        }
+
+        get().openConfirmDialogue({
+          title: `Close tab "${tab.name}"?`,
+          message:
+            "This tab's graph will be deleted. This action cannot be undone.",
+          confirmText: "Close tab",
+          cancelText: "Cancel",
+          confirmButtonClassName: "bg-red-600 hover:bg-red-700",
+          onConfirm: () => {
+            get().closeConfirmDialogue();
+            performCloseTab(tabId);
+          },
+        });
+      },
+
+      commitViewport: (viewport) => {
+        const { tabs, activeTabId } = get();
+        if (!activeTabId) return;
+        set({
+          tabs: tabs.map((tab) =>
+            tab.id === activeTabId
+              ? {
+                ...tab,
+                viewport: {
+                  x: viewport.x,
+                  y: viewport.y,
+                  zoom: viewport.zoom,
+                },
+              }
+              : tab,
+          ),
+        });
       },
 
       onNodesChange: (changes) => {
@@ -658,9 +911,28 @@ export const useGraphStore = create<GraphStore>()(
 
       save: () => {
         const state = get();
-        // `updatedAt` is stamped in `saveGraphDocument`; `createdAt` is
-        // preserved from the store.
-        persistLocal(state);
+        // Sync the active tab's live slices into its record, then project
+        // every tab to its v2 document. `updatedAt` is stamped per doc in
+        // `projectDocument`; each tab's `createdAt` is preserved.
+        const tabs = state.tabs.map((tab) =>
+          tab.id === state.activeTabId
+            ? { ...tab, nodes: state.nodes, edges: state.edges }
+            : tab,
+        );
+        saveGraphWorkspace({
+          activeTabId: state.activeTabId,
+          tabs: tabs.map((tab) => ({
+            id: tab.id,
+            document: projectDocument({
+              id: tab.id,
+              title: tab.name,
+              nodes: tab.nodes,
+              edges: tab.edges,
+              createdAt: tab.createdAt,
+              updatedAt: new Date().toISOString(),
+            }),
+          })),
+        });
       },
 
       exportGraph: async (formatId) => {
@@ -828,27 +1100,37 @@ export const useGraphStore = create<GraphStore>()(
       },
 
       reset: () => {
-        // Hydrate an empty v2 doc to runtime shape (the persisted records
-        // are not runtime React Flow objects).
-        const document = createEmptyGraphDocument();
-        const hydrated = hydrateDocument(document);
+        // Reset the CURRENT tab: clear its graph + undo tree, keep its name
+        // (a tab's name is its identity, not its content). The shared
+        // clipboard survives — it belongs to the workspace, not the tab.
+        const state = get();
+        const tabs = state.tabs.map((tab) =>
+          tab.id === state.activeTabId
+            ? {
+              ...tab,
+              nodes: [],
+              edges: [],
+              history: { pastStates: [], futureStates: [] },
+            }
+            : tab,
+        );
 
         set({
-          title: hydrated.title,
-          createdAt: hydrated.createdAt,
-          nodes: hydrated.nodes,
-          edges: hydrated.edges,
+          tabs,
+          nodes: [],
+          edges: [],
           mode: EDITOR_MODES.select,
           confirmDialogue: null,
           isHelpOpen: false,
           isExportOpen: false,
           isPropertiesOpen: false,
-          clipboard: null,
           pendingEdgeSources: [],
           validationErrors: emptyValidationErrors(),
         });
 
-        persistLocal(hydrated);
+        // Persist immediately (not via autosave) so a refresh keeps the
+        // cleared tab.
+        get().save();
         useGraphStore.temporal.getState().clear();
       },
 

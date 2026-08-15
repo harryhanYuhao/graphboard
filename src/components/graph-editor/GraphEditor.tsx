@@ -17,6 +17,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { VertexNode } from "./VertexNode";
 import { GraphToolbar } from "./GraphToolbar";
+import { TabBar } from "./TabBar";
 import { VertexTypeMenu } from "./VertexTypeMenu";
 import { EdgeKindMenu } from "./EdgeKindMenu";
 import { VertexPropertyPanel } from "./VertexPropertyPanel";
@@ -43,15 +44,18 @@ function GraphEditorInner() {
   // `useShallow` bundles multi-field state into one shallow comparison so the
   // component re-renders only when a read slice changes. The actions below are
   // stable references and don't need shallow.
-  const { nodes, edges, mode, hasHydrated, title } = useGraphStore(
-    useShallow((state) => ({
-      nodes: state.nodes,
-      edges: state.edges,
-      mode: state.mode,
-      hasHydrated: state.hasHydrated,
-      title: state.title,
-    })),
-  );
+  const { nodes, edges, mode, hasHydrated, title, tabs, activeTabId } =
+    useGraphStore(
+      useShallow((state) => ({
+        nodes: state.nodes,
+        edges: state.edges,
+        mode: state.mode,
+        hasHydrated: state.hasHydrated,
+        title: state.title,
+        tabs: state.tabs,
+        activeTabId: state.activeTabId,
+      })),
+    );
   const { confirmDialogue, isHelpOpen, isIntroOpen, isExportOpen, isPropertiesOpen } =
     useGraphStore(
       useShallow((state) => ({
@@ -82,10 +86,7 @@ function GraphEditorInner() {
   const closeIntro = useGraphStore((state) => state.closeIntro);
   const closeExport = useGraphStore((state) => state.closeExport);
   const closeProperties = useGraphStore((state) => state.closeProperties);
-  // Bumps whenever the store replaces the graph (import, hydrate). The store
-  // can't call `fitView()` itself (React Flow hooks only work under the
-  // provider), so the view layer watches this nonce.
-  const fitViewNonce = useGraphStore((state) => state.fitViewNonce);
+  const commitViewport = useGraphStore((state) => state.commitViewport);
 
   const reactFlow = useReactFlow<VertexNodeType, GraphEdge>();
 
@@ -132,19 +133,28 @@ function GraphEditorInner() {
     hydrate();
   }, [hydrate]);
 
-  // Refit on non-empty hydrate. The `0` guard
-  // skips the pre-hydrate render and empty graphs, so placing the first vertex
-  // on an empty canvas doesn't snap the camera to it. This explicit nonce
-  // avoids `<ReactFlow fitView>`'s stale queued fit on empty graphs.
+  // Restore the incoming tab's camera on switch/hydrate. A tab whose camera
+  // was never moved (`viewport === null`) falls back to fitting its content,
+  // preserving the pre-tabs behavior of framing a freshly loaded non-empty
+  // graph; empty tabs stay at the default viewport.
   useEffect(() => {
-    if (fitViewNonce === 0) return;
-    reactFlow.fitView({ duration: 400 });
-  }, [fitViewNonce, reactFlow]);
+    if (!activeTabId) return;
+    const tab = useGraphStore
+      .getState()
+      .tabs.find((entry) => entry.id === activeTabId);
+    if (!tab) return;
+    if (tab.viewport) {
+      reactFlow.setViewport(tab.viewport);
+    } else if (tab.nodes.length > 0) {
+      reactFlow.fitView({ duration: 400 });
+    }
+  }, [activeTabId, reactFlow]);
 
   useKeyboardShortcuts({ onCompute: compute.requestCompute });
 
-  // Auto save. `save()` persists `title` too, so title changes must also
-  // reset the debounce (not just node/edge changes).
+  // Auto save. `save()` persists the whole tab workspace, so tab renames,
+  // adds, closes, and viewport commits must also reset the debounce (not
+  // just node/edge/title changes).
   useEffect(() => {
     if (!hasHydrated) return;
 
@@ -153,7 +163,7 @@ function GraphEditorInner() {
     }, 2000);
 
     return () => window.clearTimeout(timeout);
-  }, [nodes, edges, title, hasHydrated]);
+  }, [nodes, edges, title, tabs, activeTabId, hasHydrated]);
 
 
   const handlePaneClick = useCallback(
@@ -186,75 +196,83 @@ function GraphEditorInner() {
 
 
   return (
-    <div className="relative h-screen w-screen bg-slate-50">
-      <ReactFlow<VertexNodeType, GraphEdge>
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
-        onPaneClick={handlePaneClick}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDragStop={onNodeDragStop}
-        // Shift+drag becomes a box-select that sweeps vertices into the pending
-        // source list (handled in onSelectionEnd). selectionKeyCode is already
-        // 'Shift', so we only flip selectionOnDrag on for add-edge mode.
-        selectionOnDrag={mode === EDITOR_MODES.addEdge}
-        onSelectionEnd={handleSelectionEnd}
-        nodesConnectable={false}
-        defaultViewport={{ x: 0, y: 0, zoom: 2 }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1} />
-        <Controls />
-        <MiniMap />
-      </ReactFlow>
+    <div className="flex h-screen w-screen flex-col bg-slate-50">
+      {/* Everything canvas-related sits in its own relative layer below the
+          tab bar, so the toolbar/menus keep their absolute positions. */}
+      <div className="relative min-h-0 flex-1">
+        <ReactFlow<VertexNodeType, GraphEdge>
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={handleNodeClick}
+          onPaneClick={handlePaneClick}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDragStop={onNodeDragStop}
+          // Record pan/zoom into the active tab so switching back restores
+          // the camera.
+          onMoveEnd={(_, viewport) => commitViewport(viewport)}
+          // Shift+drag becomes a box-select that sweeps vertices into the pending
+          // source list (handled in onSelectionEnd). selectionKeyCode is already
+          // 'Shift', so we only flip selectionOnDrag on for add-edge mode.
+          selectionOnDrag={mode === EDITOR_MODES.addEdge}
+          onSelectionEnd={handleSelectionEnd}
+          nodesConnectable={false}
+          defaultViewport={{ x: 0, y: 0, zoom: 2 }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1} />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
 
-      <GraphToolbar onCompute={compute.requestCompute} />
-      <VertexTypeMenu />
-      <EdgeKindMenu />
-      <VertexPropertyPanel />
-      <EdgePropertyPanel />
+        <GraphToolbar onCompute={compute.requestCompute} />
+        <VertexTypeMenu />
+        <EdgeKindMenu />
+        <VertexPropertyPanel />
+        <EdgePropertyPanel />
 
-      <ConfirmationDialog
-        isOpen={confirmDialogue !== null}
-        title={confirmDialogue?.title ?? ""}
-        message={confirmDialogue?.message ?? ""}
-        confirmText={confirmDialogue?.confirmText ?? "Confirm"}
-        cancelText={confirmDialogue?.cancelText ?? "Cancel"}
-        confirmButtonClassName={confirmDialogue?.confirmButtonClassName}
-        onConfirm={() => {
-          // Snapshot the action before closeConfirm nulls out the dialogue.
-          const action = confirmDialogue?.onConfirm;
-          closeConfirm();
-          action?.();
-        }}
-        onCancel={closeConfirm}
-      />
+        <ConfirmationDialog
+          isOpen={confirmDialogue !== null}
+          title={confirmDialogue?.title ?? ""}
+          message={confirmDialogue?.message ?? ""}
+          confirmText={confirmDialogue?.confirmText ?? "Confirm"}
+          cancelText={confirmDialogue?.cancelText ?? "Cancel"}
+          confirmButtonClassName={confirmDialogue?.confirmButtonClassName}
+          onConfirm={() => {
+            // Snapshot the action before closeConfirm nulls out the dialogue.
+            const action = confirmDialogue?.onConfirm;
+            closeConfirm();
+            action?.();
+          }}
+          onCancel={closeConfirm}
+        />
 
-      <HelpDialog
-        isOpen={isHelpOpen}
-        onClose={closeHelp}
-        onShowIntro={openIntro}
-      />
+        <HelpDialog
+          isOpen={isHelpOpen}
+          onClose={closeHelp}
+          onShowIntro={openIntro}
+        />
 
-      <IntroGuideDialog isOpen={isIntroOpen} onClose={closeIntro} />
+        <IntroGuideDialog isOpen={isIntroOpen} onClose={closeIntro} />
 
-      <ExportDialog isOpen={isExportOpen} onClose={closeExport} />
+        <ExportDialog isOpen={isExportOpen} onClose={closeExport} />
 
-      <GraphPropertiesDialog
-        isOpen={isPropertiesOpen}
-        onClose={closeProperties}
-      />
+        <GraphPropertiesDialog
+          isOpen={isPropertiesOpen}
+          onClose={closeProperties}
+        />
 
-      <ComputeResultDialog
-        key={`compute-${compute.computeSeq}`}
-        isOpen={compute.computeOpen}
-        onClose={compute.closeCompute}
-        computePromise={compute.computePromise}
-        progress={compute.progress}
-      />
+        <ComputeResultDialog
+          key={`compute-${compute.computeSeq}`}
+          isOpen={compute.computeOpen}
+          onClose={compute.closeCompute}
+          computePromise={compute.computePromise}
+          progress={compute.progress}
+        />
+      </div>
+      <TabBar />
     </div>
   );
 }

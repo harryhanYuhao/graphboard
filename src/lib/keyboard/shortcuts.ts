@@ -74,6 +74,13 @@ export function getShortcutGroups(): ShortcutGroup[] {
       ],
     },
     {
+      title: "Tabs",
+      entries: [
+        { description: "Switch to previous tab", keys: [mod, "Shift", "["] },
+        { description: "Switch to next tab", keys: [mod, "Shift", "]"] },
+      ],
+    },
+    {
       title: "View",
       entries: [
         { description: "Fit view to all nodes and edges", keys: ["F"] },

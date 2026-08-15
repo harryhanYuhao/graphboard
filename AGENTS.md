@@ -192,6 +192,27 @@ which is cfg'd out under the default features.
   `hydrate` and `reset` call `temporal.getState().clear()` so a replaced
   document doesn't carry the old history; an **import merge** deliberately
   does not — undo removes the imported nodes like any other mutation.
+- **Tabs:** the editor is multi-tab. Each `TabRecord` (in
+  `graph-store.ts`) holds `name` (= the persisted v2 doc `title`), the
+  graph, `createdAt`, a session-only `viewport` (pan/zoom; `null` until
+  the user moves the camera), and a session-only zundo history. **The
+  active tab's graph lives in the root `nodes`/`edges`/`title`/
+  `createdAt` slices** — every existing action reads those, so tab
+  records are authoritative only for *inactive* tabs. `switchTab`/
+  `addTab`/`closeTab` are the only places data moves between the two,
+  through `activateTab`, which pauses the temporal store, commits the
+  outgoing tab (graph + `{pastStates, futureStates}`), installs the
+  incoming tab's root slices and undo tree, then resumes — the pause
+  keeps the switch itself off the undo stack. `switchAdjacentTab` backs
+  the Ctrl/Cmd+Shift+[ / ] shortcuts. Transient work-in-progress
+  (`mode`, `pendingEdgeSources`, `validationErrors`) resets on switch;
+  the clipboard and the vertex/edge palette are shared workspace-wide;
+  `reset` clears only the active tab (keeps its name, keeps the
+  clipboard). Closing a non-empty tab goes through `confirmDialogue`;
+  closing the last tab replaces it with a fresh empty one. Per-tab
+  viewports are applied by `GraphEditor.tsx` on `activeTabId` change
+  (fit when `viewport === null` and the tab is non-empty — the pre-tabs
+  hydrate behavior); `onMoveEnd` → `commitViewport` records the camera.
 - **Keep mutation logic in `src/lib/graph/operations.ts`** — call it from the
   store, not inline in components.
 - **Editor modes** (`EditorMode` in `src/lib/graph/types.ts`): `"select" |
@@ -231,13 +252,13 @@ which is cfg'd out under the default features.
   `validationErrors` (per-vertex, ephemeral — cleared/replaced on every
   compute) and light up the offending vertices.
 - **Import merges, never replaces:** `importJson` hydrates the file and
-  merges it into the live graph (`mergeImportedGraph`: colliding ids
-  re-minted, dangling edges dropped, positions offset by
+  merges it into the active tab's graph (`mergeImportedGraph`: colliding
+  ids re-minted, dangling edges dropped, positions offset by
   `IMPORT_OFFSET_STEP` + viewport centre, imported elements selected).
-  The merge stays on the undo stack. It deliberately does **not** bump
-  `fitViewNonce` — the merge inserts around the current viewport centre;
-  only a non-empty `hydrate` bumps it (pinned by
-  `graph-store_edge_cases.test.ts`).
+  The merge stays on the undo stack — undo removes the imported nodes
+  like any other mutation. Import stays v2-only: a tabs-wrapper payload
+  fails `parseDocument` with a clear message (pinned by
+  `workspace.test.ts`).
 - **Dialog flags** (`isHelpOpen`, `isExportOpen`, `isPropertiesOpen`,
   `isIntroOpen`, `confirmDialogue`) live in the store so toolbar buttons
   and keybindings share one source of truth.
@@ -393,11 +414,18 @@ fixture `crates/zxw/tests/fixtures/phase_grammar.json` pin it.
 ## Persistence & export gotchas
 
 - Auto-save is debounced (~2s) in `GraphEditor.tsx` after node/edge/title
-  changes.
-- `localStorage` key: `graph-board-document`. The first-run intro gate uses
-  a separate key, `graph-board-seen-intro` (see
+  OR `tabs`/`activeTabId` changes (tab adds/renames/switch-commits must
+  also persist).
+- `localStorage` key: `graph-board-document` holds a
+  `layout: "tabs"` wrapper (`GraphWorkspace` in
+  `src/lib/graph/type/editor-types.ts`): `{ layout, activeTabId, tabs:
+  [{ id, document }] }` where each `document` is a plain v2
+  `GraphDocument` and the tab name is its `title`. Legacy single-doc
+  payloads (no `layout` field) load as a one-tab workspace; the wrapper
+  is a storage layout, **not** a schema bump. The first-run intro gate
+  uses a separate key, `graph-board-seen-intro` (see
   `src/lib/onboarding/intro.ts`). A failed load/hydration backs the
-  unreadable document up to `graph-board-document-backup`
+  unreadable payload up to `graph-board-document-backup`
   (`LOCAL_STORAGE_BACKUP_KEY`) before the empty fallback is autosaved.
 - All storage functions guard `typeof window === "undefined"` for SSR safety.
 - JSON export (`exportJson` → `src/lib/download.ts`) prefers the File System
@@ -405,8 +433,9 @@ fixture `crates/zxw/tests/fixtures/phase_grammar.json` pin it.
   `src/lib/filename.ts` sanitizes the title into a safe filename.
 - JSON export mean-centers node positions (`normalize.ts`) so files don't
   carry absolute canvas offsets, and keeps the original `createdAt`; TikZ
-  coordinates go through `round.ts`.
-- Import merges into the current graph, never replaces it (see
+  coordinates go through `round.ts`. Export always emits the **active
+  tab only** as a plain v2 doc — never the wrapper.
+- Import merges into the current (active) tab, never replaces it (see
   "Import merges" under Architecture rules).
 
 ## Document shape (v2): graph vs view
@@ -431,16 +460,18 @@ The runtime store still holds React Flow's own `Node`/`Edge` objects
 (`VertexNode` / `GraphEdge`) because that's what React Flow consumes.
 Conversion happens at the persistence boundary in `src/lib/serialisation/`:
 
-- `projectDocument(runtime)` → v2 doc (called from `saveGraphDocument`
-  and `exportGraphJson`).
-- `hydrateDocument(doc)` → runtime objects (called from `loadGraphDocument`
-  consumers — i.e. the store's `hydrate` action).
+- `projectDocument(runtime)` → v2 doc (called from the store's `save`
+  for every tab, from the legacy `saveGraphDocument`, and from
+  `exportGraphJson`).
+- `hydrateDocument(doc)` → runtime objects (called per tab from the
+  store's `hydrate` action).
 
 **Rules of thumb:**
 
 - The compute boundary reads only `doc.graph` — never `doc.view`.
 - Stable doc ids live in `PERSISTED_IDS` (`local-document` for storage,
-  `exported-document` for JSON export).
+  `exported-document` for JSON export). A persisted tab's document `id`
+  is the tab id; the legacy first tab keeps `local-document`.
 - Selection (`selected`), `origin`, React Flow's `type` discriminator
   (`"vertex"` / `"straight-center"`), and runtime `measured` /
   `internals.*` fields are **never** persisted. (Pre-v1, selection

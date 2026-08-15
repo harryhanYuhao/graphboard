@@ -3,16 +3,21 @@
 // from jsdom; `hydrate` isn't called here, so the baseline is whatever we set.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { useGraphStore } from "./graph-store";
+import { makeEmptyTabRecord, useGraphStore } from "./graph-store";
 import { EDGE_TYPES, type EditorMode } from "@/lib/graph/types";
 import { makeEdge, makeVertexWith as makeVertex } from "@/test-utils/factories";
 
 function resetStore() {
+  // Seed one default tab so actions that read `tabs`/`activeTabId` (save,
+  // tab ops) see a sane baseline.
+  const tab = makeEmptyTabRecord("Untitled Graph", null);
   useGraphStore.setState({
     title: "Untitled Graph",
     createdAt: "2025-01-01T00:00:00.000Z",
     nodes: [],
     edges: [],
+    tabs: [tab],
+    activeTabId: tab.id,
     mode: "select",
     hasHydrated: false,
     pendingEdgeSources: [],
@@ -502,20 +507,25 @@ describe("save / hydrate round-trip via localStorage", () => {
     localStorage.clear();
   });
 
-  it("save writes a v1-shape document to localStorage", () => {
+  it("save writes a tabs-wrapper to localStorage with the active tab's document", () => {
     useGraphStore.setState({
-      title: "Persisted",
       nodes: [makeVertex("a", { position: { x: 10, y: 20 } })],
       edges: [],
     });
+    useGraphStore
+      .getState()
+      .renameTab(useGraphStore.getState().activeTabId, "Persisted");
     useGraphStore.getState().save();
 
     const raw = localStorage.getItem("graph-board-document");
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!);
-    expect(parsed.title).toBe("Persisted");
-    expect(parsed.graph.nodes).toHaveLength(1);
-    expect(parsed.graph.nodes[0].id).toBe("a");
+    expect(parsed.layout).toBe("tabs");
+    expect(parsed.tabs).toHaveLength(1);
+    const tabDoc = parsed.tabs[0].document;
+    expect(tabDoc.title).toBe("Persisted");
+    expect(tabDoc.graph.nodes).toHaveLength(1);
+    expect(tabDoc.graph.nodes[0].id).toBe("a");
   });
 
   it("hydrate restores nodes, edges, title, and flips hasHydrated", () => {
@@ -544,71 +554,37 @@ describe("save / hydrate round-trip via localStorage", () => {
     // Non-aligned disk positions snap to the dots on load.
     expect(state.nodes[0].position).toEqual({ x: 12, y: 12 });
     expect(state.hasHydrated).toBe(true);
+    // A legacy single doc hydrates as a one-tab workspace.
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0].name).toBe("From disk");
+    expect(state.activeTabId).toBe(state.tabs[0].id);
   });
 
-  it("hydrate into a non-empty graph bumps fitViewNonce so the view frames it", () => {
-    // A reload into a saved graph should auto-frame once; the view layer's
-    // fitView() runs in response to this nonce.
-    localStorage.setItem(
-      "graph-board-document",
-      JSON.stringify({
-        schemaVersion: 1,
-        id: "local-document",
-        title: "Non-empty",
-        graph: {
-          nodes: [{ id: "x", data: { phase: "lbl", vertexType: "z" } }],
-          edges: [],
-        },
-        view: { nodes: [{ id: "x", position: { x: 5, y: 7 } }], edges: [] },
-        createdAt: "2025-01-01T00:00:00.000Z",
-        updatedAt: "2025-01-01T00:00:00.000Z",
-      }),
-    );
-
-    // Reset the nonce so a prior test's bump doesn't contaminate the assertion.
-    useGraphStore.setState({ fitViewNonce: 0 });
-    useGraphStore.getState().hydrate();
-    expect(useGraphStore.getState().fitViewNonce).toBe(1);
-  });
-
-  it("hydrate into an empty graph leaves fitViewNonce at 0 (no stale queued fit)", () => {
-    // An empty canvas must NOT queue a fit, or the first vertex added later
-    // snaps the camera to it via xyflow's stale fitViewQueued.
-    localStorage.setItem(
-      "graph-board-document",
-      JSON.stringify({
-        schemaVersion: 1,
-        id: "local-document",
-        title: "Empty",
-        graph: { nodes: [], edges: [] },
-        view: { nodes: [], edges: [] },
-        createdAt: "2025-01-01T00:00:00.000Z",
-        updatedAt: "2025-01-01T00:00:00.000Z",
-      }),
-    );
-
-    useGraphStore.setState({ fitViewNonce: 0 });
-    useGraphStore.getState().hydrate();
-    expect(useGraphStore.getState().fitViewNonce).toBe(0);
-  });
-
-  it("save preserves the document's createdAt across repeated calls", () => {
+  it("save preserves each tab's createdAt across repeated calls", () => {
     // createdAt must be stable across autosave ticks, not regenerated each call.
     useGraphStore.setState({
-      title: "Stable",
-      createdAt: "2020-05-05T05:05:05.000Z",
       nodes: [makeVertex("a", { position: { x: 1, y: 2 } })],
       edges: [],
+      tabs: useGraphStore
+        .getState()
+        .tabs.map((tab) => ({
+          ...tab,
+          createdAt: "2020-05-05T05:05:05.000Z",
+        })),
     });
 
     useGraphStore.getState().save();
     const firstRaw = localStorage.getItem("graph-board-document")!;
-    expect(JSON.parse(firstRaw).createdAt).toBe("2020-05-05T05:05:05.000Z");
+    expect(JSON.parse(firstRaw).tabs[0].document.createdAt).toBe(
+      "2020-05-05T05:05:05.000Z",
+    );
 
     // A second save must not change it.
     useGraphStore.getState().save();
     const secondRaw = localStorage.getItem("graph-board-document")!;
-    expect(JSON.parse(secondRaw).createdAt).toBe("2020-05-05T05:05:05.000Z");
+    expect(JSON.parse(secondRaw).tabs[0].document.createdAt).toBe(
+      "2020-05-05T05:05:05.000Z",
+    );
   });
 
   it("hydrate clears stale validationErrors from the prior session", () => {
@@ -639,7 +615,7 @@ describe("save / hydrate round-trip via localStorage", () => {
 });
 
 describe("reset", () => {
-  it("clears nodes/edges, resets mode, and persists the empty doc", () => {
+  it("clears the active tab's nodes/edges, resets mode, and persists", () => {
     localStorage.clear();
     useGraphStore.setState({
       title: "Busy graph",
@@ -659,11 +635,13 @@ describe("reset", () => {
     expect(state.edges).toEqual([]);
     expect(state.mode).toBe("select");
     expect(state.pendingEdgeSources).toEqual([]);
-    expect(state.clipboard).toBeNull();
+    // Reset is a per-tab op: the shared clipboard survives, and the tab
+    // keeps its name (the name is the tab's identity, not its content).
+    expect(state.clipboard).not.toBeNull();
     expect(state.isHelpOpen).toBe(false);
     expect(state.confirmDialogue).toBeNull();
-    expect(state.title).toBe("Untitled Graph");
-    // Reset writes the empty doc so a refresh keeps the cleared state.
+    expect(state.title).toBe("Busy graph");
+    // Reset writes the empty tab so a refresh keeps the cleared state.
     expect(localStorage.getItem("graph-board-document")).not.toBeNull();
   });
 

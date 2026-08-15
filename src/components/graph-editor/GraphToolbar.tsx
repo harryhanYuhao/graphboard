@@ -209,9 +209,9 @@ export function GraphToolbar({ onCompute }: { onCompute: () => void }) {
           title="RESET (Can NOT be undo)"
           onClick={() => {
             openResetConfirm({
-              title: "Reset Graph",
+              title: "Reset Tab",
               message:
-                "Are you sure you want to reset the graph? This will delete all nodes, edges, and the current title. This action cannot be undone.",
+                "Are you sure you want to reset this tab? This will delete all nodes and edges in the tab. This action cannot be undone.",
               confirmText: "Reset",
               confirmButtonClassName: "bg-red-600 hover:bg-red-700",
               onConfirm: () => {

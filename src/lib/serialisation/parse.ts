@@ -7,12 +7,20 @@
 // policy (load = soft, import = loud).
 import {
   CURRENT_SCHEMA_VERSION,
+  PERSISTED_IDS,
+  STORAGE_LAYOUT_TABS,
   type GraphDocument,
+  type GraphWorkspace,
   type VertexType,
+  type WorkspaceTab,
 } from "../graph/types";
 
 export type ParseResult =
   | { ok: true; document: GraphDocument }
+  | { ok: false; error: string };
+
+export type WorkspaceParseResult =
+  | { ok: true; workspace: GraphWorkspace }
   | { ok: false; error: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -53,6 +61,12 @@ export function parseDocument(contents: string): ParseResult {
     return { ok: false, error: "Document is not valid JSON." };
   }
 
+  return parseDocumentObject(parsed);
+}
+
+// Object-level validation of one v2 document (shared by `parseDocument`,
+// `parseWorkspace`, and the import path so they can't drift).
+function parseDocumentObject(parsed: unknown): ParseResult {
   if (!isRecord(parsed)) {
     return { ok: false, error: "Document must be a JSON object." };
   }
@@ -107,6 +121,83 @@ export function parseDocument(contents: string): ParseResult {
   );
 
   return { ok: true, document: { ...document, schemaVersion: CURRENT_SCHEMA_VERSION } };
+}
+
+// ---- Workspace parsing (localStorage tabs layout) ---------------------------
+//
+// Load-path counterpart to `parseDocument`: accepts either a `layout: "tabs"`
+// wrapper of v2 documents (one per tab) or a legacy single v1/v2 document
+// (which becomes a one-tab workspace). Import deliberately stays on
+// `parseDocument` — a wrapper is not a graph and must not merge silently.
+
+export function parseWorkspace(contents: string): WorkspaceParseResult {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    return { ok: false, error: "Document is not valid JSON." };
+  }
+
+  if (!isRecord(parsed)) {
+    return { ok: false, error: "Document must be a JSON object." };
+  }
+
+  if (parsed.layout === STORAGE_LAYOUT_TABS) {
+    return parseTabsLayout(parsed);
+  }
+
+  // Legacy payload: one tab carrying the document's own id.
+  const result = parseDocumentObject(parsed);
+  if (!result.ok) return result;
+
+  const tabId =
+    typeof result.document.id === "string" && result.document.id.length > 0
+      ? result.document.id
+      : PERSISTED_IDS.localDocument;
+
+  return {
+    ok: true,
+    workspace: {
+      activeTabId: tabId,
+      tabs: [{ id: tabId, document: result.document }],
+    },
+  };
+}
+
+function parseTabsLayout(parsed: Record<string, unknown>): WorkspaceParseResult {
+  const tabsRaw = parsed.tabs;
+  if (!Array.isArray(tabsRaw) || tabsRaw.length === 0) {
+    return {
+      ok: false,
+      error: "Tabs workspace must contain at least one tab.",
+    };
+  }
+
+  const tabs: WorkspaceTab[] = [];
+  const seenIds = new Set<string>();
+  for (const entry of tabsRaw) {
+    if (!isRecord(entry) || typeof entry.id !== "string") {
+      return { ok: false, error: "Each workspace tab needs a string 'id'." };
+    }
+    if (seenIds.has(entry.id)) {
+      return { ok: false, error: `Duplicate tab id '${entry.id}'.` };
+    }
+    seenIds.add(entry.id);
+
+    const docResult = parseDocumentObject(entry.document);
+    if (!docResult.ok) {
+      return { ok: false, error: `Tab '${entry.id}': ${docResult.error}` };
+    }
+    tabs.push({ id: entry.id, document: docResult.document });
+  }
+
+  const activeTabId =
+    typeof parsed.activeTabId === "string" && seenIds.has(parsed.activeTabId)
+      ? parsed.activeTabId
+      : tabs[0].id;
+
+  return { ok: true, workspace: { activeTabId, tabs } };
 }
 
 // ---- Schema migrations ------------------------------------------------------
