@@ -50,7 +50,7 @@ function TabRenameInput(props: {
       }}
       onClick={(event) => event.stopPropagation()}
       aria-label="Tab name"
-      className="w-28 rounded border border-slate-400 px-1 py-0.5 text-xs font-normal text-slate-900 outline-none focus:ring-2 focus:ring-slate-300"
+      className="w-28 rounded border border-slate-400 px-1 py-0.5 text-xs font-normal text-white outline-none focus:ring-2 focus:ring-slate-300"
     />
   );
 }
