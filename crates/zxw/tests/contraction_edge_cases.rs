@@ -9,7 +9,7 @@
 
 use approx::assert_relative_eq;
 use std::cell::RefCell;
-use zxw::{compute_tensor, FrontendGraphSlice};
+use zxw::{compute_tensor, ComputeError, FrontendGraphSlice};
 
 /// Parse JSON, run `compute_tensor`, return the result. Panics on error.
 fn compute(json: &str) -> zxw::TensorResult {
@@ -379,4 +379,254 @@ fn mixed_input_output_dangling_both_outer_product() {
     assert_eq!(r.input_count, 1);
     assert_eq!(r.output_count, 1);
     assert_data(&r.data, &[(1.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)]);
+}
+
+// ============================================================================
+// 19. Malformed-graph defenses (dangling edge refs, duplicate node ids)
+// ============================================================================
+//
+// `compute_tensor` is a public wasm entry point accepting arbitrary JS
+// objects; the frontend pre-validates, but a malformed graph must surface
+// as a clean `ComputeError` (a panic crossing the wasm boundary is a
+// useless JS exception).
+
+/// Parse JSON, run `compute_tensor`, return the error. Panics on Ok.
+#[track_caller]
+fn compute_err(json: &str) -> ComputeError {
+    let graph: FrontendGraphSlice = serde_json::from_str(json).expect("test graph JSON must parse");
+    match compute_tensor(&graph, None) {
+        Err(e) => e,
+        Ok(r) => panic!("expected Err, got Ok with shape {:?}", r.shape),
+    }
+}
+
+#[test]
+fn dangling_edge_target_is_vertex_not_found() {
+    // Edge target 'ghost' has no matching node → VertexNotFound (not a
+    // HashMap-index panic).
+    let e = compute_err(
+        r#"{
+        "nodes": [{"id":"z","data":{"phase":"","vertexType":"z"}}],
+        "edges": [{"id":"e","source":"z","target":"ghost"}]
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::VertexNotFound { .. }), "got: {e:?}");
+    let msg = e.to_string();
+    assert!(
+        msg.contains("not found (referenced by edge"),
+        "Display must carry the TS classifier substring: {msg}"
+    );
+    assert!(msg.contains("'ghost'"), "Display must name the vertex: {msg}");
+    assert!(msg.contains("'e'"), "Display must name the edge: {msg}");
+}
+
+#[test]
+fn dangling_edge_source_is_vertex_not_found() {
+    let e = compute_err(
+        r#"{
+        "nodes": [{"id":"z","data":{"phase":"","vertexType":"z"}}],
+        "edges": [{"id":"e","source":"ghost","target":"z"}]
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::VertexNotFound { .. }), "got: {e:?}");
+    assert!(e.to_string().contains("not found (referenced by edge"));
+}
+
+#[test]
+fn dangling_edge_with_empty_nodes_is_vertex_not_found() {
+    // The degenerate case: no nodes at all but a non-empty edge list
+    // (must not fall into the empty-graph scalar-1 shortcut).
+    let e = compute_err(
+        r#"{"nodes": [], "edges": [{"id": "e", "source": "a", "target": "b"}]}"#,
+    );
+    assert!(matches!(e, ComputeError::VertexNotFound { .. }), "got: {e:?}");
+    assert!(e.to_string().contains("not found (referenced by edge"));
+}
+
+#[test]
+fn duplicate_node_ids_are_rejected() {
+    // Two nodes sharing id 'a' → DuplicateNodeId (silently dropping one
+    // group would compute a wrong tensor).
+    let e = compute_err(
+        r#"{
+        "nodes": [
+            {"id":"a","data":{"phase":"","vertexType":"z"}},
+            {"id":"a","data":{"phase":"","vertexType":"x"}}
+        ],
+        "edges": []
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::DuplicateNodeId { .. }), "got: {e:?}");
+    let msg = e.to_string();
+    assert!(
+        msg.contains("duplicate node id"),
+        "Display must carry the classifier substring: {msg}"
+    );
+    assert!(msg.contains("'a'"), "Display must name the id: {msg}");
+}
+
+// ============================================================================
+// 20. DegreeOverflow — fixed-rank builder vs. actual degree
+// ============================================================================
+
+#[test]
+fn h_node_with_degree_three_is_degree_overflow() {
+    // The H-box builder is fixed rank 2; degree 3 mismatches the
+    // rank==degree invariant in `build_initial_groups` → DegreeOverflow.
+    let e = compute_err(
+        r#"{
+        "nodes": [
+            {"id":"h","data":{"phase":"","vertexType":"h"}},
+            {"id":"a","data":{"phase":"","vertexType":"z"}},
+            {"id":"b","data":{"phase":"","vertexType":"z"}},
+            {"id":"c","data":{"phase":"","vertexType":"z"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"a","target":"h"},
+            {"id":"e2","source":"b","target":"h"},
+            {"id":"e3","source":"c","target":"h"}
+        ]
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::DegreeOverflow { .. }), "got: {e:?}");
+    let msg = e.to_string();
+    assert!(
+        msg.contains("legs available"),
+        "Display must carry the TS classifier substring: {msg}"
+    );
+    assert!(msg.contains("'h'"), "Display must name the vertex: {msg}");
+}
+
+// ============================================================================
+// 21. W topology defenses (mirrors src/lib/graph/validate.ts)
+// ============================================================================
+
+#[test]
+fn w_with_two_inputs_is_rejected() {
+    // W is directional (leg 0 = the single input); a second incoming edge
+    // would silently re-tag leg 0. Must error instead.
+    let e = compute_err(
+        r#"{
+        "nodes": [
+            {"id":"i1","data":{"phase":"","vertexType":"input"}},
+            {"id":"i2","data":{"phase":"","vertexType":"input"}},
+            {"id":"w","data":{"phase":"","vertexType":"w"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output"}},
+            {"id":"o2","data":{"phase":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"i1","target":"w"},
+            {"id":"e2","source":"i2","target":"w"},
+            {"id":"e3","source":"w","target":"o1"},
+            {"id":"e4","source":"w","target":"o2"}
+        ]
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::WInputCount { .. }), "got: {e:?}");
+    let msg = e.to_string();
+    assert!(
+        msg.contains("must have exactly 1 input leg"),
+        "Display must be explicit: {msg}"
+    );
+    assert!(msg.contains("'w'"), "Display must name the vertex: {msg}");
+}
+
+#[test]
+fn w_with_one_output_is_rejected() {
+    // 1 input + 1 output degenerates W to an identity wire; the W tensor
+    // needs ≥ 2 output legs to mean anything. Must error instead.
+    let e = compute_err(
+        r#"{
+        "nodes": [
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"w","data":{"phase":"","vertexType":"w"}},
+            {"id":"o","data":{"phase":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"i","target":"w"},
+            {"id":"e2","source":"w","target":"o"}
+        ]
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::WOutputCount { .. }), "got: {e:?}");
+    let msg = e.to_string();
+    assert!(
+        msg.contains("must have at least 2 output legs"),
+        "Display must be explicit: {msg}"
+    );
+    assert!(msg.contains("'w'"), "Display must name the vertex: {msg}");
+}
+
+#[test]
+fn w_with_self_loop_is_rejected() {
+    // A self-loop is ill-defined for the directional W (contraction would
+    // trace two arbitrary free legs) → rejected outright, not by counting.
+    let e = compute_err(
+        r#"{
+        "nodes": [
+            {"id":"w","data":{"phase":"","vertexType":"w"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output"}},
+            {"id":"o2","data":{"phase":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"s","source":"w","target":"w"},
+            {"id":"e1","source":"w","target":"o1"},
+            {"id":"e2","source":"w","target":"o2"}
+        ]
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::WSelfLoop { .. }), "got: {e:?}");
+    let msg = e.to_string();
+    assert!(
+        msg.contains("has a self-loop"),
+        "Display must be explicit: {msg}"
+    );
+    assert!(msg.contains("'w'"), "Display must name the vertex: {msg}");
+}
+
+#[test]
+fn w_with_valid_input_plus_self_loop_is_rejected() {
+    // The previously-escaped case: 1 real input + 1 self-loop + 2 outputs
+    // passed both the input-count and output-count checks, and contraction
+    // then produced a meaningless tensor. Must be rejected as a self-loop.
+    let e = compute_err(
+        r#"{
+        "nodes": [
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"w","data":{"phase":"","vertexType":"w"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output"}},
+            {"id":"o2","data":{"phase":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"e0","source":"i","target":"w"},
+            {"id":"s","source":"w","target":"w"},
+            {"id":"e1","source":"w","target":"o1"},
+            {"id":"e2","source":"w","target":"o2"}
+        ]
+    }"#,
+    );
+    assert!(matches!(e, ComputeError::WSelfLoop { .. }), "got: {e:?}");
+}
+
+#[test]
+fn valid_w_still_computes_after_topology_checks() {
+    // The happy path (1 input, 2 outputs) must be untouched by the
+    // pre-pass — mirrors `w_node_one_input_two_outputs_yields_directional_state`.
+    let json = r#"{
+        "nodes": [
+            {"id":"i","data":{"phase":"","vertexType":"input"}},
+            {"id":"w","data":{"phase":"","vertexType":"w"}},
+            {"id":"o0","data":{"phase":"","vertexType":"output"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output"}}
+        ],
+        "edges": [
+            {"id":"e1","source":"i","target":"w"},
+            {"id":"e2","source":"w","target":"o0"},
+            {"id":"e3","source":"w","target":"o1"}
+        ]
+    }"#;
+    let r = compute(json);
+    assert_eq!(r.shape, vec![2, 2, 2]);
+    assert_eq!(r.input_count, 1);
+    assert_eq!(r.output_count, 2);
 }

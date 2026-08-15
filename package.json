@@ -10,7 +10,7 @@
     "test": "NODE_OPTIONS='--localstorage-file=/tmp/graph-board-test-localstorage' vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage --ui",
+    "test:coverage": "vitest run --coverage",
     "build:wasm": "bash scripts/build-wasm.sh",
     "ping:wasm": "tsx scripts/ping-wasm.mts"
   },

@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { exportTikz } from "./export-tikz";
+import { placeholder } from "./placeholder";
 import {
   makeEdge,
   makeEdgeWith,
@@ -85,6 +86,7 @@ describe("exportTikz", () => {
       makeVertexWith("empty", { data: { vertexType: "empty" } }),
       makeVertexWith("input", { data: { vertexType: "input" } }),
       makeVertexWith("output", { data: { vertexType: "output" } }),
+      makeVertexWith("black_dot", { data: { vertexType: "black_dot" } }),
     ]);
     expect(out).toContain("\\node [GREEN_DOT] (1) at (0, 0) {};");
     expect(out).toContain("\\node [RED_DOT] (2) at (0, 0) {};");
@@ -96,6 +98,7 @@ describe("exportTikz", () => {
     expect(out).toContain("\\node [EMPTY] (8) at (0, 0) {};");
     expect(out).toContain("\\node [EMPTY] (9) at (0, 0) {};");
     expect(out).toContain("\\node [EMPTY] (10) at (0, 0) {};");
+    expect(out).toContain("\\node [BLACK_DOT] (11) at (0, 0) {};");
   });
 
   it("emits one draw line per edge, using 1-based node names", () => {
@@ -186,6 +189,18 @@ describe("exportTikz — header + label hardening", () => {
     // Exactly one title line — a newline no longer breaks out of the comment.
     expect(
       out.split("\n").filter((line) => line.startsWith("% Title: ")),
+    ).toHaveLength(1);
+  });
+
+  it("strips newlines from the title in placeholder serializer comments", () => {
+    const out = placeholder(
+      "ZXLive",
+      { title: "Line1\nLine2\r\nLine3", nodes: [], edges: [] },
+      "#",
+    );
+    expect(out).toContain("# Title: Line1 Line2 Line3");
+    expect(
+      out.split("\n").filter((line) => line.startsWith("# Title: ")),
     ).toHaveLength(1);
   });
 

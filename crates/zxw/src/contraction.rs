@@ -11,7 +11,7 @@
 // (A–F). The edge walk's three branches live in the private `edge`
 // submodule at the bottom.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -106,10 +106,9 @@ struct GraphCtx<'a> {
 
 impl<'a> GraphCtx<'a> {
     fn build(graph: &'a FrontendGraphSlice) -> Result<Self, ComputeError> {
-        // Precondition: the frontend validated the graph (no duplicate ids,
-        // no dangling edge refs, valid W/H/boundary topology) before
-        // calling compute. We don't re-check here; a malformed graph would
-        // produce a wrong result rather than a clean error.
+        // Precondition: `validate_structure` already ran (no duplicate ids,
+        // no dangling edge refs). W/H/boundary topology is still only
+        // frontend-validated.
         let mut node_index: HashMap<String, (usize, VertexType, String)> = HashMap::new();
         for (i, node) in graph.nodes.iter().enumerate() {
             node_index.insert(
@@ -216,6 +215,10 @@ pub fn compute_tensor(
     graph: &FrontendGraphSlice,
     on_progress: Option<&dyn Fn(usize, usize)>,
 ) -> Result<TensorResult, ComputeError> {
+    // Phase A0 — structural pre-pass. The frontend normally pre-validates,
+    // but this is a public wasm entry: malformed input must Err, not panic.
+    validate_structure(graph)?;
+
     // Phase A — empty graph is the scalar identity (§5.6).
     if graph.nodes.is_empty() {
         return Ok(empty_result());
@@ -250,6 +253,69 @@ pub fn compute_tensor(
         input_count,
         output_count,
     ))
+}
+
+/// Reject duplicate node ids, dangling edge endpoints, and invalid W
+/// topology before any lookup table is built (the phases below assume all
+/// three hold). Mirrors `src/lib/graph/validate.ts` for the checks that
+/// guard against panics / silently wrong tensors.
+fn validate_structure(graph: &FrontendGraphSlice) -> Result<(), ComputeError> {
+    let mut ids: HashSet<&str> = HashSet::new();
+    for node in &graph.nodes {
+        if !ids.insert(node.id.as_str()) {
+            return Err(ComputeError::DuplicateNodeId {
+                vertex_id: node.id.clone(),
+            });
+        }
+    }
+    for edge in &graph.edges {
+        for endpoint in [&edge.source, &edge.target] {
+            if !ids.contains(endpoint.as_str()) {
+                return Err(ComputeError::VertexNotFound {
+                    vertex_id: endpoint.clone(),
+                    edge_id: edge.id.clone(),
+                });
+            }
+        }
+    }
+    validate_w_topology(graph)
+}
+
+/// W is directional (leg 0 = the single input, legs 1..N = outputs);
+/// enforce exactly 1 incoming and ≥ 2 outgoing edges per W node. A
+/// second incoming edge would silently re-tag leg 0 instead of erroring.
+fn validate_w_topology(graph: &FrontendGraphSlice) -> Result<(), ComputeError> {
+    for node in &graph.nodes {
+        if node.data.vertex_type != VertexType::W {
+            continue;
+        }
+        let id = &node.id;
+        let (mut inputs, mut outputs) = (0usize, 0usize);
+        for edge in &graph.edges {
+            if edge.source == *id && edge.target == *id {
+                // Self-loop: contraction would trace two arbitrary free
+                // legs and compute a meaningless tensor — reject outright.
+                return Err(ComputeError::WSelfLoop { vertex_id: id.clone() });
+            } else if edge.target == *id {
+                inputs += 1;
+            } else if edge.source == *id {
+                outputs += 1;
+            }
+        }
+        if inputs != 1 {
+            return Err(ComputeError::WInputCount {
+                vertex_id: id.clone(),
+                count: inputs,
+            });
+        }
+        if outputs < 2 {
+            return Err(ComputeError::WOutputCount {
+                vertex_id: id.clone(),
+                count: outputs,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// The empty-graph result: scalar `1`.
@@ -513,7 +579,7 @@ mod edge {
     ) -> Result<(), ComputeError> {
         let total_edges = ctx.graph.edges.len();
         for (edge_i, edge) in ctx.graph.edges.iter().enumerate() {
-            // Edge endpoint existence validated frontend-side.
+            // Edge endpoint existence validated by the Phase A0 pre-pass.
 
             let src_is_boundary = ctx.is_boundary(&edge.source);
             let tgt_is_boundary = ctx.is_boundary(&edge.target);

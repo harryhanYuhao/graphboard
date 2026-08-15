@@ -505,7 +505,7 @@ describe("save / hydrate round-trip via localStorage", () => {
   it("save writes a v1-shape document to localStorage", () => {
     useGraphStore.setState({
       title: "Persisted",
-      nodes: [makeVertex("a", { x: 10, y: 20 })],
+      nodes: [makeVertex("a", { position: { x: 10, y: 20 } })],
       edges: [],
     });
     useGraphStore.getState().save();
@@ -597,7 +597,7 @@ describe("save / hydrate round-trip via localStorage", () => {
     useGraphStore.setState({
       title: "Stable",
       createdAt: "2020-05-05T05:05:05.000Z",
-      nodes: [makeVertex("a", { x: 1, y: 2 })],
+      nodes: [makeVertex("a", { position: { x: 1, y: 2 } })],
       edges: [],
     });
 
@@ -692,7 +692,7 @@ describe("onNodesChange / onEdgesChange (visual vs structural split)", () => {
   });
 
   it("applies a 'position' change without recording it in the undo stack", () => {
-    useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
+    useGraphStore.setState({ nodes: [makeVertex("a", { position: { x: 0, y: 0 } })] });
     const pastBefore = useGraphStore.temporal.getState().pastStates.length;
     // Dot-aligned target ({108,108} = 12 + 4·24) so the snap is a no-op;
     // the point of this test is the undo-stack behavior, not the snap.
@@ -704,7 +704,7 @@ describe("onNodesChange / onEdgesChange (visual vs structural split)", () => {
   });
 
   it("snaps a 'position' change to the nearest dot", () => {
-    useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
+    useGraphStore.setState({ nodes: [makeVertex("a", { position: { x: 0, y: 0 } })] });
     // {50, 30} snaps to {60, 36} (nearest dots).
     useGraphStore
       .getState()
@@ -713,7 +713,7 @@ describe("onNodesChange / onEdgesChange (visual vs structural split)", () => {
   });
 
   it("leaves non-position changes (select, dimensions) untouched by snapping", () => {
-    useGraphStore.setState({ nodes: [makeVertex("a", { x: 0, y: 0 })] });
+    useGraphStore.setState({ nodes: [makeVertex("a", { position: { x: 0, y: 0 } })] });
     useGraphStore.getState().onNodesChange([
       { id: "a", type: "select", selected: true },
       { id: "a", type: "dimensions", dimensions: { width: 30, height: 30 } },

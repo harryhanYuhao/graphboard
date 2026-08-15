@@ -36,6 +36,10 @@ beforeEach(() => {
     pendingEdgeSources: [],
     selectedVertexType: "z",
     isHelpOpen: false,
+    isExportOpen: false,
+    isIntroOpen: false,
+    isPropertiesOpen: false,
+    confirmDialogue: null,
     clipboard: null,
   });
 });
@@ -146,6 +150,30 @@ describe("modifier-bearing shortcuts", () => {
 
     // After Ctrl+D we expect a duplicated node alongside the original.
     expect(useGraphStore.getState().nodes.length).toBe(2);
+  });
+
+  it("Ctrl+D with nothing selected does not paste a stale clipboard", () => {
+    // Clipboard still holds an earlier copy, but the selection is gone.
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { x: 0, y: 0 }, false)],
+      clipboard: {
+        nodes: [makeVertex("a")],
+        edges: [],
+        pasteCount: 0,
+      },
+    });
+    renderShortcuts();
+
+    const event = new KeyboardEvent("keydown", {
+      key: "d",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(useGraphStore.getState().nodes).toHaveLength(1);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it("Ctrl+S calls save and preventDefaults", () => {
@@ -620,6 +648,79 @@ describe("shift + letter keys", () => {
 
     pressOnBody({ key: "?", shiftKey: true });
     expect(useGraphStore.getState().isHelpOpen).toBe(true);
+  });
+});
+
+describe("modal dialog guard", () => {
+  it("Backspace does not delete the selection while help is open", () => {
+    useGraphStore.setState({
+      isHelpOpen: true,
+      nodes: [makeVertex("a", { x: 0, y: 0 }, true)],
+    });
+    renderShortcuts();
+
+    pressOnBody({ key: "Backspace" });
+    expect(useGraphStore.getState().nodes).toHaveLength(1);
+  });
+
+  it("mode keys are inert while a dialog is open", () => {
+    useGraphStore.setState({ isExportOpen: true });
+    renderShortcuts();
+
+    pressOnBody({ key: "v" });
+    expect(useGraphStore.getState().mode).toBe("select");
+  });
+
+  it("modifier shortcuts are inert while a dialog is open", () => {
+    useGraphStore.setState({
+      isPropertiesOpen: true,
+      nodes: [makeVertex("a", { x: 0, y: 0 }, true)],
+    });
+    renderShortcuts();
+
+    const event = new KeyboardEvent("keydown", {
+      key: "d",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(useGraphStore.getState().nodes).toHaveLength(1);
+  });
+
+  it("? still closes the help dialog while it is open", () => {
+    useGraphStore.setState({ isHelpOpen: true });
+    renderShortcuts();
+
+    pressOnBody({ key: "?" });
+    expect(useGraphStore.getState().isHelpOpen).toBe(false);
+  });
+
+  it("? does not open help on top of another dialog", () => {
+    useGraphStore.setState({ isExportOpen: true });
+    renderShortcuts();
+
+    pressOnBody({ key: "?" });
+    expect(useGraphStore.getState().isHelpOpen).toBe(false);
+  });
+
+  it("the confirm dialog also blocks shortcuts", () => {
+    useGraphStore.setState({
+      confirmDialogue: {
+        title: "t",
+        message: "m",
+        confirmText: "ok",
+        cancelText: "no",
+        confirmButtonClassName: "",
+        onConfirm: () => {},
+      },
+      nodes: [makeVertex("a", { x: 0, y: 0 }, true)],
+    });
+    renderShortcuts();
+
+    pressOnBody({ key: "Backspace" });
+    expect(useGraphStore.getState().nodes).toHaveLength(1);
   });
 });
 

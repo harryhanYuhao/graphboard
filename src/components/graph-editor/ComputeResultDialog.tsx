@@ -425,10 +425,12 @@ function ErrorView({
       case "vertex-not-found":
       case "h-box-arity":
       case "boundary-degree":
+      case "boundary-order":
       case "degree-overflow":
       case "duplicate-node-id":
       case "w-input-count":
       case "w-output-count":
+      case "w-self-loop":
         return <>This is a graph-structure error — check the highlighted vertex or edge.</>;
       default:
         return null;

@@ -262,7 +262,8 @@ which is cfg'd out under the default features.
   future kinds will compute differently — today all kinds contract
   identically. It is
   additive-optional (the `order` precedent): legacy docs hydrate to
-  `default`, **Adding edges is click-to-connect with a
+  `default`, and hydration coerces untrusted kinds (unknown values
+  degrade to `default`). **Adding edges is click-to-connect with a
   staged kind**: in `add-edge` mode `EdgeKindMenu` appears (like
   `VertexTypeMenu`) and picks `selectedEdgeKind`; `handleVertexClick` →
   `computeVertexClick` creates new edges with that kind via
@@ -336,10 +337,14 @@ WASM exports (in `crates/zxw/src/wasm.rs`, feature-gated to `wasm`):
 - `compute_api_version()` — crate version, for the handshake above.
 - `compute_tensor(input, on_progress?)` — real entry point. `input` is a
   `GraphSlice` JS object (camelCase); returns a `TensorResult` JS object.
-  The one remaining Rust-side structural error is `DegreeOverflow`
-  (fires mid-contraction); the other structural checks (duplicate ids,
-  vertex-not-found, boundary degree, H-box arity, W topology) moved to
-  the frontend (`validate.ts`) and never reach the worker. Per-spider
+  Rust-side errors: `DegreeOverflow` (fires mid-contraction) plus a
+  structural pre-pass at the `compute_tensor` entry
+  (`validate_structure`: `DuplicateNodeId`, `VertexNotFound`,
+  `WInputCount`, `WOutputCount`, `WSelfLoop`) — the wasm entry accepts
+  arbitrary JS objects, so malformed input must `Err`, not panic. Via
+  the UI those five never fire (the frontend `validate.ts` pre-checks
+  them); boundary degree, boundary order, and H-box arity are
+  frontend-only. Per-spider
   phase-parse failures are **not** errors — they surface on
   `result.warnings` (plan §5.5).
 - `init_panic_hook()` — `#[wasm_bindgen(start)]`, auto-runs on

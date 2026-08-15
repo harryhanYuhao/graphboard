@@ -193,6 +193,17 @@ describe("matrixEntry — out of bounds", () => {
   });
 });
 
+describe("matrixEntry — row stride at large outputCount", () => {
+  it("outputCount 31: stride is 2**31 (positive), not int32-negative 1<<31", () => {
+    // `1 << 31` wraps to -2147483648, so col*stride+row indexed nowhere.
+    // ComputeResultDialog uses 2 ** outputCount; the stride must match.
+    // Probe via a sparse (dictionary-backed) array — no 2 GB allocation.
+    const data: [number, number][] = [];
+    data[2 ** 31] = [7, 0];
+    expect(matrixEntry(data, 0, 1, 31)).toEqual([7, 0]);
+  });
+});
+
 describe("matrixEntry — 4×4 big-endian flat-index formula", () => {
   // 2 inputs + 2 outputs → 4×4. A distinct sentinel per slot verifies the
   // exact row/col → flat-index mapping: col * (1<<outputCount) + row.
@@ -251,13 +262,26 @@ describe("classifyComputeError — boundary cases", () => {
   });
 });
 
-describe("classifyComputeError — every ComputeErrorKind is reachable", () => {
-  // Exhaustiveness guard: a new union variant without a classifier branch
-  // shows up here.
+describe("classifyComputeError — every classifier-reachable ComputeErrorKind", () => {
+  // Reachability guard: a new union variant without a classifier branch
+  // shows up here. `h-box-arity` / `boundary-degree` match Rust wording
+  // that error.rs no longer emits (those checks moved to frontend
+  // validate.ts); the branches are kept for forward-compat, so they stay
+  // "reachable" here. `boundary-order` is frontend-validator-only (never
+  // crosses the worker), so it has no classifier branch and is excluded;
+  // it is still constructable (see the test below) because `useCompute`
+  // rejects the compute promise with validation errors.
   const cases: Array<[string, ComputeErrorKind]> = [
     ["WASM version mismatch: expected 0.3.0, got 0.2.1", "version-mismatch"],
     ["Failed to fetch wasm asset", "load-failed"],
     ["vertex 'v3' not found (referenced by edge 'e7')", "vertex-not-found"],
+    ["duplicate node id 'a' in graph", "duplicate-node-id"],
+    ["w node 'w1' must have exactly 1 input leg, got 2", "w-input-count"],
+    ["w node 'w1' must have at least 2 output legs, got 1", "w-output-count"],
+    [
+      "w node 'w1' has a self-loop; self-loops are ill-defined for a directional W",
+      "w-self-loop",
+    ],
     ["H-box vertex 'h1' must have arity 2, got 3", "h-box-arity"],
     [
       "boundary vertex 'in0' has degree 2; boundaries must have degree 0 or 1",
@@ -279,14 +303,20 @@ describe("classifyComputeError — every ComputeErrorKind is reachable", () => {
 
 describe("ComputeError — constructable for every kind", () => {
   // Source signature is (kind, message, options?); assert the four
-  // observable properties.
+  // observable properties. Includes the frontend-validated-only kinds,
+  // which never cross the classifier but are still valid `kind` values.
   const kinds: ComputeErrorKind[] = [
     "version-mismatch",
     "load-failed",
     "vertex-not-found",
     "h-box-arity",
     "boundary-degree",
+    "boundary-order",
     "degree-overflow",
+    "duplicate-node-id",
+    "w-input-count",
+    "w-output-count",
+    "w-self-loop",
     "unknown",
   ];
 

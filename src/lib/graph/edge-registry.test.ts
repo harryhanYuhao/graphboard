@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { EDGE_KINDS } from "@/lib/graph/types";
-import { EDGE_KIND_MAP, coerceEdgeKind } from "./edge-registry";
+import { EDGE_KIND_MAP } from "./edge-registry";
 
 describe("EDGE_KIND_MAP", () => {
   it("covers every edge kind exactly once (no drift from EDGE_KINDS)", () => {
@@ -27,28 +27,5 @@ describe("EDGE_KIND_MAP", () => {
 
   it("labels the dashed-light kind 'Dashed light'", () => {
     expect(EDGE_KIND_MAP.dashed_light.label).toBe("Dashed light");
-  });
-});
-
-describe("coerceEdgeKind", () => {
-  it("passes valid members through unchanged", () => {
-    for (const kind of EDGE_KINDS) {
-      expect(coerceEdgeKind(kind)).toBe(kind);
-    }
-  });
-
-  it("degrades undefined and missing data to the default kind", () => {
-    expect(coerceEdgeKind(undefined)).toBe("default");
-  });
-
-  it("degrades unknown strings to the default kind", () => {
-    expect(coerceEdgeKind("dashed")).toBe("default");
-    expect(coerceEdgeKind("invisible")).toBe("default");
-  });
-
-  it("degrades non-strings to the default kind", () => {
-    expect(coerceEdgeKind(42)).toBe("default");
-    expect(coerceEdgeKind(null)).toBe("default");
-    expect(coerceEdgeKind({})).toBe("default");
   });
 });

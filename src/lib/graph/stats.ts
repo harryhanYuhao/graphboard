@@ -28,9 +28,15 @@ export function computeGraphStats(
     degreeById.set(edge.target, (degreeById.get(edge.target) ?? 0) + 1);
   }
 
-  const degrees = nodes.map((node) => degreeById.get(node.id) ?? 0);
-  const minDegree = degrees.length === 0 ? 0 : Math.min(...degrees);
-  const maxDegree = degrees.length === 0 ? 0 : Math.max(...degrees);
+  // Single pass — `Math.min(...degrees)` overflows the arg list (~65k
+  // vertices throws RangeError) and allocates a throwaway array.
+  let minDegree = 0;
+  let maxDegree = 0;
+  nodes.forEach((node, i) => {
+    const degree = degreeById.get(node.id) ?? 0;
+    if (i === 0 || degree < minDegree) minDegree = degree;
+    if (i === 0 || degree > maxDegree) maxDegree = degree;
+  });
 
   // Every vertex type starts at 0 so the breakdown always lists the full
   // type set, even the types currently absent from the graph. Null-prototype

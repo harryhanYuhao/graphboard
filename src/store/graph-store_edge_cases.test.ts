@@ -133,6 +133,22 @@ describe("updateVertexRotation normalization", () => {
 // ---------------------------------------------------------------------------
 
 describe("drag gesture snapshot counting", () => {
+  it("a drag gesture with NO intervening change pushes no snapshot", () => {
+    // The snapshot equals the current partialized state; pushing it would
+    // make the next Cmd+Z a no-op step. zundo's own equality check must
+    // apply to gesture pushes too.
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { position: { x: 0, y: 0 } })],
+    });
+    useGraphStore.temporal.getState().clear();
+
+    useGraphStore.getState().onNodeDragStart();
+    useGraphStore.getState().onNodeDragStop();
+
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(0);
+    expect(useGraphStore.temporal.getState().isTracking).toBe(true);
+  });
+
   it("one drag with many position changes pushes exactly one pastState", () => {
     useGraphStore.setState({
       nodes: [makeVertex("a", { position: { x: 0, y: 0 } })],
@@ -472,6 +488,63 @@ describe("structural changes during an active drag", () => {
   // The drag pauses the temporal store; the structural-apply path doesn't
   // resume for its own set(), so a remove during a drag is applied but NOT
   // recorded (it can't be undone). Known limitation, pinned.
+  it("a visual change during an active gesture keeps the store paused (no premature resume)", () => {
+    // The visual-apply path used to resume() unconditionally, re-enabling
+    // tracking mid-gesture: every later tick landed individually on the
+    // stack and a structural change mid-drag got recorded.
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { position: { x: 0, y: 0 } })],
+    });
+    useGraphStore.temporal.getState().clear();
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+
+    useGraphStore.getState().onNodeDragStart();
+    expect(useGraphStore.temporal.getState().isTracking).toBe(false);
+
+    // First position tick: applied (snapped to the {60,60} dot), but must
+    // NOT resume the gesture's pause.
+    useGraphStore.getState().onNodesChange([
+      { id: "a", type: "position", position: { x: 48, y: 48 } },
+    ]);
+    expect(useGraphStore.temporal.getState().isTracking).toBe(false);
+    expect(useGraphStore.getState().nodes[0].position).toEqual({
+      x: 60,
+      y: 60,
+    });
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
+
+    useGraphStore.getState().onNodeDragStop();
+    expect(useGraphStore.temporal.getState().isTracking).toBe(true);
+    // Exactly one entry for the whole gesture.
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(
+      baseline + 1,
+    );
+  });
+
+  it("a remove during an active drag AFTER a position tick is applied but NOT recorded", () => {
+    // Mirror of the test above: the tick no longer resumes tracking, so a
+    // structural change after a tick still can't land on the stack.
+    useGraphStore.setState({
+      nodes: [makeVertex("a", { position: { x: 0, y: 0 } }), makeVertex("b")],
+    });
+    useGraphStore.temporal.getState().clear();
+    const baseline = useGraphStore.temporal.getState().pastStates.length;
+
+    useGraphStore.getState().onNodeDragStart();
+    useGraphStore.getState().onNodesChange([
+      { id: "a", type: "position", position: { x: 48, y: 48 } },
+    ]);
+    useGraphStore.getState().onNodesChange([{ id: "b", type: "remove" }]);
+
+    expect(useGraphStore.getState().nodes.map((n) => n.id)).toEqual(["a"]);
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(baseline);
+
+    useGraphStore.getState().onNodeDragStop();
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(
+      baseline + 1,
+    );
+  });
+
   it("a remove during an active drag is applied but NOT recorded on the undo stack", () => {
     useGraphStore.setState({
       nodes: [makeVertex("a"), makeVertex("b")],
@@ -1058,6 +1131,28 @@ describe("importJson merge semantics", () => {
     expect(nodes.find((n) => n.id === "keep1")?.selected).toBe(false);
     expect(nodes.find((n) => n.id === "imp1")?.selected).toBe(true);
   });
+
+  it("deselects a pre-existing selection during the merge (mirrors paste)", async () => {
+    // Without the deselect, old + imported selections coexist and the next
+    // drag/delete hits both groups.
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("keep1", { position: { x: 0, y: 0 }, selected: true }),
+        makeVertex("keep2"),
+      ],
+      edges: [makeEdge("e1", "keep1", "keep2", true)],
+    });
+
+    vi.mocked(openTextFileWithPicker).mockResolvedValue(validDocJson());
+    await useGraphStore.getState().importJson({ x: 0, y: 0 });
+
+    const state = useGraphStore.getState();
+    // Only the imported elements remain selected.
+    expect(state.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual([
+      "imp1",
+    ]);
+    expect(state.edges.every((e) => !e.selected)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1091,6 +1186,31 @@ describe("temporal history limit", () => {
       useGraphStore.getState().addVertexAt({ x: i, y: i });
     }
     expect(useGraphStore.temporal.getState().pastStates.length).toBe(50);
+  });
+
+  it("a gesture snapshot at a full stack still respects the limit (50)", () => {
+    for (let i = 0; i < 60; i++) {
+      useGraphStore.getState().addVertexAt({ x: i, y: i });
+    }
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(50);
+
+    // Gesture end() pushes via raw setState, which bypasses zundo's own
+    // limit enforcement — it must shift the oldest entry itself.
+    const firstId = useGraphStore.getState().nodes[0].id;
+    useGraphStore.getState().onNodeDragStart();
+    useGraphStore.getState().onNodesChange([
+      { id: firstId, type: "position", position: { x: 48, y: 48 } },
+    ]);
+    useGraphStore.getState().onNodeDragStop();
+
+    expect(useGraphStore.temporal.getState().pastStates.length).toBe(50);
+    // The newest entry is the gesture's pre-drag snapshot (all 60 nodes,
+    // pre-drag position) — the oldest tracked edit was shifted out.
+    const past = useGraphStore.temporal.getState().pastStates;
+    expect(past[past.length - 1].nodes).toHaveLength(60);
+    expect(
+      past[past.length - 1].nodes.find((n) => n.id === firstId)?.position,
+    ).toEqual({ x: 12, y: 12 });
   });
 });
 
@@ -1292,5 +1412,38 @@ describe("pendingEdgeSources cleanup on delete/cut", () => {
     expect(useGraphStore.getState().clipboard?.nodes.map((n) => n.id)).toEqual([
       "a",
     ]);
+  });
+
+  it("deleteSelected prunes validationErrors for deleted vertices", () => {
+    const errA = { kind: "w-input-count" as const, message: "a", vertexId: "a" };
+    const errB = { kind: "w-input-count" as const, message: "b", vertexId: "b" };
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { selected: true }),
+        makeVertex("b"),
+      ],
+      validationErrors: { a: [errA], b: [errB] },
+    });
+
+    useGraphStore.getState().deleteSelected();
+
+    // Stale entries for deleted vertices must not linger until next compute.
+    expect(useGraphStore.getState().validationErrors).toEqual({ b: [errB] });
+  });
+
+  it("cutSelected prunes validationErrors for deleted vertices", () => {
+    const errA = { kind: "w-input-count" as const, message: "a", vertexId: "a" };
+    const errB = { kind: "w-input-count" as const, message: "b", vertexId: "b" };
+    useGraphStore.setState({
+      nodes: [
+        makeVertex("a", { selected: true }),
+        makeVertex("b"),
+      ],
+      validationErrors: { a: [errA], b: [errB] },
+    });
+
+    useGraphStore.getState().cutSelected();
+
+    expect(useGraphStore.getState().validationErrors).toEqual({ b: [errB] });
   });
 });

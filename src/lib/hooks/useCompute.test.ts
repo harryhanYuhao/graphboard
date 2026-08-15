@@ -205,6 +205,53 @@ describe("useCompute — validation gate", () => {
     expect(result.current.progress).not.toEqual({ contracted: 7, total: 42 });
   });
 
+  // Bug 1 regression: the validation branch must abort the in-flight run
+  // like the valid path does; otherwise the stale run's `onProgress` guard
+  // (`abortRef.current !== controller`) keeps passing and resurrects the
+  // progress bar over the error dialog.
+  it("a validation-failure request aborts the in-flight run and drops its progress", () => {
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+    });
+
+    let capturedOnProgress: ((c: number, t: number) => void) | null = null;
+    let capturedSignal: AbortSignal | null = null;
+    computeTensorMock.mockImplementation((_graph, callbacks) => {
+      capturedOnProgress = callbacks?.onProgress ?? null;
+      capturedSignal = callbacks?.signal ?? null;
+      return new Promise(() => {});
+    });
+
+    const { result } = renderHook(() => useCompute());
+    act(() => result.current.requestCompute());
+    expect(capturedSignal).not.toBeNull();
+
+    // Break the graph, then recompute → validation-failure branch.
+    useGraphStore.setState({
+      nodes: [makeVertexWith("w", { data: { vertexType: "w" } })],
+      edges: [],
+    });
+    act(() => result.current.requestCompute());
+
+    // The in-flight run was aborted and progress is cleared.
+    expect(capturedSignal!.aborted).toBe(true);
+    expect(result.current.progress).toBeNull();
+
+    // Late progress from the stale run must not resurrect the bar.
+    act(() => capturedOnProgress!(7, 42));
+    expect(result.current.progress).toBeNull();
+  });
+
   it("does not create an unhandled promise rejection on a validation error", async () => {
     // The rejection must be caught eagerly so it never becomes an
     // unhandled rejection (the dialog's `.catch` only attaches on the
@@ -363,5 +410,42 @@ describe("useCompute — validation gate", () => {
       }
       process.off("unhandledRejection", handler);
     }
+  });
+
+  // Bug 2 regression: the valid path must pre-catch the worker promise the
+  // same way the validation path does, so an early rejection can't become
+  // unhandled before the dialog mounts. NOTE: we spy on the promise's
+  // `catch` rather than listening for `process.unhandledRejection` —
+  // vitest itself attaches handlers to vi.fn return values, so the Node
+  // signal never fires through the shared module mock.
+  it("worker promise is eagerly pre-caught before the dialog attaches its handler", async () => {
+    const promise = Promise.reject(
+      new ComputeError("unknown", "wasm exploded"),
+    );
+    const catchSpy = vi.spyOn(promise, "catch");
+    computeTensorMock.mockImplementation(() => promise);
+    useGraphStore.setState({
+      nodes: [
+        makeVertexWith("i", { data: { vertexType: "input" } }),
+        makeVertexWith("w", { data: { vertexType: "w" } }),
+        makeVertexWith("o0", { data: { vertexType: "output" } }),
+        makeVertexWith("o1", { data: { vertexType: "output" } }),
+      ],
+      edges: [
+        makeEdge("e1", "i", "w"),
+        makeEdge("e2", "w", "o0"),
+        makeEdge("e3", "w", "o1"),
+      ],
+    });
+
+    const { result } = renderHook(() => useCompute());
+    act(() => result.current.requestCompute());
+
+    // The hook attached a no-op catch before the dialog ever mounts.
+    expect(catchSpy).toHaveBeenCalled();
+    // The same promise is handed to the dialog, rejection intact.
+    expect(result.current.computePromise).toBe(promise);
+    await expect(result.current.computePromise).rejects.toThrow(ComputeError);
+    catchSpy.mockRestore();
   });
 });

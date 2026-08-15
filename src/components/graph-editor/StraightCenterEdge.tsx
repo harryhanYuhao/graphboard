@@ -2,7 +2,6 @@
 
 import { BaseEdge, type EdgeProps, useInternalNode } from "@xyflow/react";
 import {
-  DEFAULT_EDGE_KIND,
   type GraphEdge,
   type VertexNode as VertexNodeType,
   type VertexType,
@@ -11,6 +10,7 @@ import {
   edgeKindPathStyle,
   getEdgeEndpoint,
 } from "@/lib/graph/edge-geometry";
+import { DEFAULT_EDGE_KIND } from "@/lib/graph/types";
 import { useGraphStore } from "@/store/graph-store";
 import { nodesById } from "@/store/selectors";
 

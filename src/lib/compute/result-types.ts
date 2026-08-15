@@ -12,8 +12,9 @@
  *   succeeds and the UI surfaces them in a "Warnings (N)" block.
  * - `inputCount` / `outputCount`: number of input / output boundary
  *   nodes. With `n = inputCount`, `m = outputCount`, the rank-(n+m)
- *   tensor is shown as a `2^n x 2^m` matrix (rows = inputs, cols =
- *   outputs). Both zero -> scalar.
+ *   tensor is shown as a `2^m x 2^n` matrix (rows = outputs, cols =
+ *   inputs) — see `matrix-format.ts` and ComputeResultDialog. Both
+ *   zero -> scalar.
  */
 export type TensorResult = {
   shape: number[];
@@ -27,6 +28,12 @@ export type TensorResult = {
  * Discriminated kind for compute errors. Mirrors the Rust
  * `ComputeError` enum plus non-Rust failure modes (version handshake,
  * wasm load); classified in `errors.ts`.
+ *
+ * The union must stay a superset of `ValidationErrorKind`
+ * (`src/lib/graph/validate.ts`): `useCompute` rejects the compute
+ * promise with the frontend validator's first error, so
+ * frontend-only kinds (`boundary-order`) are valid members even
+ * though `classifyComputeError` never emits them.
  */
 export type ComputeErrorKind =
   | "version-mismatch"
@@ -34,8 +41,10 @@ export type ComputeErrorKind =
   | "vertex-not-found"
   | "h-box-arity"
   | "boundary-degree"
+  | "boundary-order"
   | "degree-overflow"
   | "duplicate-node-id"
   | "w-input-count"
   | "w-output-count"
+  | "w-self-loop"
   | "unknown";

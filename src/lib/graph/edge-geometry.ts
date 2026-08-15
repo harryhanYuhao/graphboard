@@ -7,7 +7,7 @@
 import type { CSSProperties } from "react";
 import { isDirectionalVertex } from "./vertex-registry";
 import { normalizeRotation } from "@/lib/serialisation";
-import type { EdgeKind, VertexType } from "./types";
+import { DEFAULT_EDGE_KIND, type EdgeKind, type VertexType } from "./types";
 import { EDGE_KIND_MAP } from "./edge-registry";
 
 // Inputs to a single edge endpoint. Mirrors React Flow's `useInternalNode`,
@@ -78,7 +78,9 @@ export function edgeKindPathStyle(
   kind: EdgeKind,
   selected: boolean,
 ): CSSProperties | undefined {
-  const meta = EDGE_KIND_MAP[kind];
+  // Unknown kinds (smuggled past the typed boundary) fall back to the
+  // default style rather than crashing the renderer.
+  const meta = EDGE_KIND_MAP[kind] ?? EDGE_KIND_MAP[DEFAULT_EDGE_KIND];
 
   // Selected edges glow blue, mirroring the vertex selection highlight
   // (VertexNode uses the same drop-shadow colour). The kind's own stroke is

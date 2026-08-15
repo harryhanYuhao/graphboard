@@ -18,7 +18,7 @@
 // Registries + behaviour predicates live next door, not here:
 //   - `./vertex-registry.ts` — VERTEX_TYPES / VERTEX_TYPE_MAP, isSpiderType,
 //     isDirectionalVertex, isBoundaryVertex
-//   - `./edge-registry.ts`   — EDGE_KIND_MAP, coerceEdgeKind
+//   - `./edge-registry.ts`   — EDGE_KIND_MAP
 
 export * from "./type/editor-types";
 export * from "./type/vertex-types";

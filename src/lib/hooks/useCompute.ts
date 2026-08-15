@@ -65,6 +65,10 @@ export function useCompute(): ComputeState {
     // the map (empty), invalid graph lights up the offending vertices.
     useGraphStore.getState().setValidationErrors(errors);
     if (errors.length > 0) {
+      // Abort any in-flight run, like the valid path below: its onProgress
+      // guard must fail so stale progress can't resurrect over the dialog.
+      abortRef.current?.abort();
+      abortRef.current = null;
       const first = errors[0];
       // The promise is already-rejected; attach a no-op catch now so it
       // can't become an unhandled rejection before the dialog mounts and
@@ -102,7 +106,12 @@ export function useCompute(): ComputeState {
     };
 
     setProgress({ contracted: 0, total: 0 });
-    setComputePromise(computeTensor(graph, callbacks));
+    // Pre-catch, mirroring the validation path: the rejection must not go
+    // unhandled before the dialog mounts. The dialog still settles via its
+    // own `.then`/`.catch`.
+    const promise = computeTensor(graph, callbacks);
+    promise.catch(() => {});
+    setComputePromise(promise);
     setComputeSeq((n) => n + 1);
     setComputeOpen(true);
   }, []);

@@ -2,7 +2,7 @@
 // its tests. The compute layer returns a flat row-major array over shape
 // `[in_1, ..., in_n, out_1, ..., out_m]` (all dims 2); this reshapes it
 // into a matrix:
-//   M(row, col) = data[col * (1 << outputCount) + row]
+//   M(row, col) = data[col * (2 ** outputCount) + row]
 //   row label   = |big-endian output bits>
 //   col label   = |big-endian input bits>
 
@@ -45,7 +45,8 @@ export function bitsToLabel(index: number, nQubits: number): string {
 /**
  * Matrix entry from the flat row-major `data`. With shape
  * `[in_1, …, in_n, out_1, …, out_m]` (all dim 2), the flattened index
- * is `col * (1 << outputCount) + row`.
+ * is `col * (2 ** outputCount) + row`. `2 **` — not `1 <<`, which goes
+ * int32-negative at outputCount ≥ 31.
  */
 export function matrixEntry(
   data: ComplexPair[],
@@ -53,5 +54,5 @@ export function matrixEntry(
   col: number,
   outputCount: number,
 ): ComplexPair {
-  return data[col * (1 << outputCount) + row];
+  return data[col * (2 ** outputCount) + row];
 }

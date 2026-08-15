@@ -13,8 +13,18 @@ import {
 import type { VertexType } from "./types";
 
 describe("VERTEX_TYPES registry", () => {
+  it("VERTEX_TYPE_MAP resolves every registry entry to itself", () => {
+    // The map is built by a loop + cast, so a broken entry can't fail at
+    // compile time — check the round-trip at runtime instead.
+    for (const meta of VERTEX_TYPES) {
+      expect(VERTEX_TYPE_MAP[meta.type]).toBe(meta);
+    }
+  });
+
   it("covers every VertexType at least once", () => {
-    // A union member missing from the registry would render a missing-glyph box.
+    // A union member missing from the registry would render a missing-glyph
+    // box. TS unions can't be enumerated at runtime, so this hand list is
+    // the guard — keep it in sync when the union grows.
     const allTypes: VertexType[] = [
       "z",
       "empty",
@@ -24,11 +34,16 @@ describe("VERTEX_TYPES registry", () => {
       "zbox",
       "xbox",
       "and",
+      "black_dot",
+      "input",
+      "output",
     ];
+    const registered = new Set(VERTEX_TYPES.map((meta) => meta.type));
     for (const t of allTypes) {
-      expect(VERTEX_TYPE_MAP[t]).toBeDefined();
-      expect(VERTEX_TYPE_MAP[t].type).toBe(t);
+      expect(registered.has(t)).toBe(true);
     }
+    // No extras either: the list is exactly the registry.
+    expect(registered.size).toBe(allTypes.length);
   });
 
   it("contains no duplicate entries", () => {
@@ -81,12 +96,19 @@ describe("isDirectionalVertex", () => {
     expect(isDirectionalVertex("and")).toBe(true);
   });
 
-  it.each<VertexType>(["z", "x", "h", "zbox", "xbox", "empty"])(
-    "is false for symmetric vertex type '%s'",
-    (t) => {
-      expect(isDirectionalVertex(t)).toBe(false);
-    },
-  );
+  it.each<VertexType>([
+    "z",
+    "x",
+    "h",
+    "zbox",
+    "xbox",
+    "empty",
+    "black_dot",
+    "input",
+    "output",
+  ])("is false for symmetric vertex type '%s'", (t) => {
+    expect(isDirectionalVertex(t)).toBe(false);
+  });
 });
 
 describe("DEFAULT_VERTEX_TYPE", () => {
@@ -106,12 +128,17 @@ describe("isSpiderType", () => {
     },
   );
 
-  it.each<VertexType>(["empty", "w", "h", "and"])(
-    "is false for non-spider type '%s'",
-    (t) => {
-      expect(isSpiderType(t)).toBe(false);
-    },
-  );
+  it.each<VertexType>([
+    "empty",
+    "w",
+    "h",
+    "and",
+    "black_dot",
+    "input",
+    "output",
+  ])("is false for non-spider type '%s'", (t) => {
+    expect(isSpiderType(t)).toBe(false);
+  });
 });
 describe("VERTEX_TYPE_MAP — prototype-key safety", () => {
   it("looks up prototype-chain keys as undefined", () => {

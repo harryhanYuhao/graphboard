@@ -125,7 +125,9 @@ number  := [0-9]+ ('.' [0-9]+)?
   `\pi`, the unicode character `π`, and the bare ASCII words `pi` / `PI`.
 - Any other named token (`\alpha`, `\beta`, `\theta`, …) is an **error** in
   v1 — Phase 6 introduces symbolic arithmetic.
-- Whitespace ignored. Unicode `−` (U+2212), `×` (U+00D7), and `÷` (U+00F7)
+- Whitespace ignored — exactly the ECMAScript `\s` class (so U+FEFF is
+  whitespace, U+0085 is not); both parsers pin this via the shared
+  fixture. Unicode `−` (U+2212), `×` (U+00D7), and `÷` (U+00F7)
   accepted alongside ASCII `-` / `*` / `/`.
 
 **Parser API.**
@@ -507,12 +509,12 @@ resulting tensor** (dimension 2). Semantics:
 
 - An `input` is a *source*: its leg flows into the network (one output
   wire from the boundary into its neighbour). In bra/ket terms, it
-  labels an input basis index (row of the resulting matrix).
+  labels an input basis index (column of the resulting matrix).
 - An `output` is a *target*: its leg flows out of the network. It labels
-  an output basis index (column of the resulting matrix).
+  an output basis index (row of the resulting matrix).
 - A graph with `n` input nodes and `m` output nodes contracts to a
-  rank-(n+m) tensor that the UI displays as a **2^n × 2^m matrix**
-  (rows = inputs flattened, cols = outputs flattened — see §5.4).
+  rank-(n+m) tensor that the UI displays as a **2^m × 2^n matrix**
+  (rows = outputs flattened, cols = inputs flattened — see §5.4).
 - A graph with no boundary nodes contracts to a **scalar** (a 1×1
   constant).
 - Degree policy (§5.6): a boundary node may have degree 0 (an open leg
@@ -726,12 +728,12 @@ and the §5.3 cross-tests are reproducible. Do not leave axis order up to
 `HashMap` iteration.
 
 **Matrix interpretation.** With `n` inputs and `m` outputs the result is
-a rank-(n+m) tensor; the UI flattens it into a **2^n × 2^m matrix**
-(rows = inputs flattened in big-endian bit order, cols = outputs
-flattened likewise). This is the standard bra/ket convention: inputs
-are the "in" basis (rows, ⟨x|), outputs are the "out" basis (cols,
-|y⟩), and the matrix entry `(i, j)` is the amplitude ⟨input_i |
-network | output_j⟩. No boundary nodes → scalar (1×1).
+a rank-(n+m) tensor; the UI flattens it into a **2^m × 2^n matrix**
+(rows = outputs flattened in big-endian bit order, cols = inputs
+flattened likewise). This is the standard bra/ket convention: outputs
+are the "out" basis (rows, ⟨x|), inputs are the "in" basis (cols,
+|y⟩), and the matrix entry `(i, j)` is the amplitude ⟨output_i |
+network | input_j⟩. No boundary nodes → scalar (1×1).
 
 ### 5.5 Label parse fallback (D2)
 
@@ -755,7 +757,7 @@ pub struct TensorResult {
     // Boundary counts — drive the UI's matrix interpretation. With
     // `input_count = n` and `output_count = m`, the result is a
     // rank-(n+m) tensor (shape length = n + m + any non-boundary free
-    // legs) that the UI displays as a 2^n × 2^m matrix. Zero boundaries
+    // legs) that the UI displays as a 2^m × 2^n matrix. Zero boundaries
     // → scalar. See §5.4 for axis ordering.
     pub input_count: usize,
     pub output_count: usize,
@@ -831,6 +833,18 @@ Add `DegreeOverflow`, `HBoxArity`, `BoundaryDegreeViolation`, and
 `VertexNotFound` variants to `ComputeError` (see
 `crates/zxw/src/error.rs`). `SelfLoopUnsupported` is **not** present —
 self-loops are supported via `Tensor::trace` per the bullet above.
+
+> **Update (landed set):** `ComputeError` currently carries
+> `DegreeOverflow`, `VertexNotFound`, `DuplicateNodeId`, `WInputCount`,
+> `WOutputCount`, and `WSelfLoop`. `compute_tensor` runs a structural
+> pre-pass (`validate_structure` in `crates/zxw/src/contraction.rs`) that
+> rejects duplicate node ids, dangling edge endpoints, W self-loops
+> (ill-defined for the directional W — contraction would trace two
+> arbitrary free legs), and invalid W topology before any lookup table
+> is built — the wasm entry accepts arbitrary JS objects, so malformed
+> input must `Err` rather than panic.
+> `BoundaryDegreeViolation` / `HBoxArity` never landed in Rust; those
+> checks live in the frontend validator (`src/lib/graph/validate.ts`).
 
 ---
 
@@ -1233,12 +1247,12 @@ export async function computeTensor(
 - **Result panel.** Opens as a side sheet or modal on success. Contents:
   - Shape summary using the boundary counts from `TensorResult`:
     - Scalar (no boundaries): "constant — value `v`".
-    - With `n` inputs + `m` outputs: "`2^n × 2^m` matrix" (e.g. "4 × 2
+    - With `n` inputs + `m` outputs: "`2^m × 2^n` matrix" (e.g. "2 × 4
       matrix" for 2 inputs, 1 output), plus the raw rank if non-boundary
       free legs exist ("+ k dangling legs").
   - Dense value table for ≤ 64 entries. Larger outputs: first 32 entries +
     "… and N more". When boundaries are present, render as an actual
-    matrix grid (rows = inputs, cols = outputs) rather than a flat list.
+    matrix grid (rows = outputs, cols = inputs) rather than a flat list.
   - Per-vertex parse warnings rendered as a collapsible **"Warnings (N)"**
     section (see §5.5 fallback rules).
 - **Error display.** Worker-failed-to-load, version mismatch, and compute
@@ -1380,7 +1394,7 @@ Acceptance is gated on each phase passing the next rung:
 >   Multi-phase (one value per corner) deferred to Phase 6. §4.3.
 > - **`input`/`output` boundary semantics** → they are **not tensors**;
 >   each declares one open leg of the result (dimension 2). n inputs +
->   m outputs → 2^n × 2^m matrix; no boundaries → scalar. Result axes
+>   m outputs → 2^m × 2^n matrix; no boundaries → scalar. Result axes
 >   ordered inputs-then-outputs (§5.4). Degree 0 ok, degree > 1 rejected
 >   with `ComputeError::BoundaryDegreeViolation` (§5.6).
 

@@ -4,6 +4,8 @@
 import { describe, expect, it } from "vitest";
 import { edgeKindPathStyle, getEdgeEndpoint } from "./edge-geometry";
 import type { EndpointInput } from "./edge-geometry";
+import type { EdgeKind } from "./types";
+import { EDGE_KIND_MAP } from "./edge-registry";
 
 // Default node: 40x40 body at (0,0), so center is (20, 20).
 function node(overrides: Partial<EndpointInput> = {}): EndpointInput {
@@ -175,5 +177,13 @@ describe("edgeKindPathStyle", () => {
       stroke: "#334155",
       strokeWidth: 1.5,
     });
+  });
+
+  it("falls back to the default style for an unknown kind (no crash)", () => {
+    // A kind smuggled past the typed boundary must not crash the renderer
+    // (EDGE_KIND_MAP[kind] would be undefined; no error boundary exists).
+    const style = edgeKindPathStyle("invisible" as EdgeKind, false);
+    expect(style).toEqual(edgeKindPathStyle("default", false));
+    expect(style?.stroke).toBe(EDGE_KIND_MAP.default.stroke);
   });
 });

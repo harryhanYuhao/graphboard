@@ -32,11 +32,14 @@ export function placeholder(
   commentPrefix: string,
 ): string {
   const now = new Date().toISOString();
+  // Same as spoilerHeader: titles are user/import controlled; a newline
+  // would break out of the comment line.
+  const title = params.title.replace(/[\r\n]+/g, " ");
   const lines = [
     `${commentPrefix} Graph Board ${formatName} export (placeholder)`,
     `${commentPrefix} The ${formatName} format is not defined yet.`,
     `${commentPrefix} Exported: ${now}`,
-    `${commentPrefix} Title: ${params.title}`,
+    `${commentPrefix} Title: ${title}`,
     `${commentPrefix} Nodes: ${params.nodes.length}, Edges: ${params.edges.length}`,
   ];
   return lines.join("\n") + "\n";

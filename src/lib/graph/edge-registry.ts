@@ -45,9 +45,9 @@ export const EDGE_KIND_MAP: Record<EdgeKind, EdgeKindMeta> = {
 
 // Coerce an untrusted `data.kind` (imported docs are user-controlled) to a
 // valid member. Absent / non-string / unknown values degrade to the default
-// kind. Shared by the hydration boundary and the edge renderer so a future
-// kind can't drift out of sync between them (the old renderer-side whitelist
-// ternary silently rendered new kinds as `default`).
+// kind. Used at the hydration boundary so the renderer, disk, and compute
+// layer only ever meet valid members; the renderer additionally falls back
+// in `edgeKindPathStyle` (defense in depth for smuggled runtime values).
 export function coerceEdgeKind(kind: unknown): EdgeKind {
   return typeof kind === "string" &&
     (EDGE_KINDS as readonly string[]).includes(kind)

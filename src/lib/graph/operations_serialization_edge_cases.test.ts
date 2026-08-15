@@ -14,6 +14,7 @@ import {
   createVertexNode,
   deleteSelectedElements,
   getSelectedSubgraph,
+  nextBoundaryOrder,
   PASTE_OFFSET_STEP,
   pasteSubgraph,
   selectAllElements,
@@ -399,6 +400,57 @@ describe("pasteSubgraph (edge cases)", () => {
     expect(e2).toBeTruthy();
     expect(self).toBeTruthy();
     expect(Object.keys(byId)).toHaveLength(3);
+  });
+});
+
+// ---- Operations: nextBoundaryOrder -----------------------------------------
+
+describe("nextBoundaryOrder", () => {
+  it("legacy doc without orders: falls back to array index so a new boundary lands at the end", () => {
+    // Effective keys of inA/inB are their array positions (1, 2) — a new
+    // input must land after both, not collide at the front.
+    const nodes = [
+      makeVertex("z", { x: 0, y: 0 }),
+      makeVertexWith("inA", { data: { vertexType: "input" } }),
+      makeVertexWith("inB", { data: { vertexType: "input" } }),
+    ];
+    expect(nextBoundaryOrder(nodes, "input")).toBe(3);
+  });
+
+  it("mixed: explicit orders and an order-less node use the larger of order and array index", () => {
+    const nodes = [
+      makeVertexWith("i0", { data: { vertexType: "input", order: 0 } }),
+      makeVertexWith("i1", { data: { vertexType: "input", order: 5 } }),
+      makeVertex("f0", { x: 0, y: 0 }),
+      makeVertex("f1", { x: 0, y: 0 }),
+      makeVertex("f2", { x: 0, y: 0 }),
+      makeVertex("f3", { x: 0, y: 0 }),
+      makeVertex("f4", { x: 0, y: 0 }),
+      makeVertexWith("i2", { data: { vertexType: "input" } }), // index 7
+    ];
+    expect(nextBoundaryOrder(nodes, "input")).toBe(8);
+  });
+
+  it("explicit-only orders return max + 1", () => {
+    const nodes = [
+      makeVertexWith("i0", { data: { vertexType: "input", order: 0 } }),
+      makeVertexWith("i1", { data: { vertexType: "input", order: 1 } }),
+      makeVertexWith("i2", { data: { vertexType: "input", order: 2 } }),
+    ];
+    expect(nextBoundaryOrder(nodes, "input")).toBe(3);
+  });
+
+  it("empty group returns 0", () => {
+    expect(nextBoundaryOrder([makeVertex("z")], "input")).toBe(0);
+    expect(nextBoundaryOrder([], "output")).toBe(0);
+  });
+
+  it("ignores the opposite boundary type (groups are independent)", () => {
+    const nodes = [
+      makeVertexWith("i0", { data: { vertexType: "input", order: 2 } }),
+      makeVertexWith("o0", { data: { vertexType: "output", order: 9 } }),
+    ];
+    expect(nextBoundaryOrder(nodes, "input")).toBe(3);
   });
 });
 

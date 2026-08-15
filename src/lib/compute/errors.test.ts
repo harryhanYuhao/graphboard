@@ -1,7 +1,9 @@
 // Pins error-message → `ComputeErrorKind` classification. Matched
 // substrings mirror the Rust `#[error("…")]` tokens and the loader
 // failure modes, so a Rust reword surfaces here instead of silently
-// degrading the UI's hint to `"unknown"`.
+// degrading the UI's hint to `"unknown"`. `h-box-arity` /
+// `boundary-degree` match retired Rust wording (frontend-validated now)
+// kept for forward-compat.
 
 import { describe, expect, it } from "vitest";
 
@@ -16,13 +18,41 @@ describe("classifyComputeError", () => {
     ).toBe("vertex-not-found");
   });
 
-  it("matches the Rust HBoxArity message", () => {
+  it("matches the Rust DuplicateNodeId message", () => {
+    expect(
+      classifyComputeError("duplicate node id 'a' in graph"),
+    ).toBe("duplicate-node-id");
+  });
+
+  it("matches the Rust WInputCount message", () => {
+    expect(
+      classifyComputeError("w node 'w1' must have exactly 1 input leg, got 2"),
+    ).toBe("w-input-count");
+  });
+
+  it("matches the Rust WOutputCount message", () => {
+    expect(
+      classifyComputeError(
+        "w node 'w1' must have at least 2 output legs, got 1",
+      ),
+    ).toBe("w-output-count");
+  });
+
+  it("matches the Rust WSelfLoop message", () => {
+    expect(
+      classifyComputeError(
+        "w node 'w1' has a self-loop; self-loops are ill-defined for a directional W",
+      ),
+    ).toBe("w-self-loop");
+  });
+
+  it("matches the retired Rust HBoxArity wording (frontend-validated now)", () => {
     expect(
       classifyComputeError("H-box vertex 'h1' must have arity 2, got 3"),
     ).toBe("h-box-arity");
   });
 
-  it("matches the Rust BoundaryDegreeViolation message", () => {
+  it("matches the retired Rust BoundaryDegreeViolation wording (frontend-validated now)", () => {
     expect(
       classifyComputeError(
         "boundary vertex 'in0' has degree 2; boundaries must have degree 0 or 1",

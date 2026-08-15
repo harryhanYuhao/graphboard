@@ -101,6 +101,7 @@ describe("getShortcutGroups", () => {
     expect(allKeys.has("?")).toBe(true); // help
     expect(allKeys.has("esc")).toBe(true); // escape ladder
     expect(allKeys.has("del")).toBe(true); // delete
+    expect(allKeys.has("backspace")).toBe(true); // delete (alternate key)
 
     // From useKeyboardShortcuts.ts modifier-bearing branch:
     expect(allKeys.has("a")).toBe(true); // select all

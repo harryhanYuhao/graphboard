@@ -389,7 +389,7 @@ fn and_gate_two_inputs_is_logical_and() {
     assert_eq!(r.input_count, 2);
     assert_eq!(r.output_count, 1);
     // Row-major over [in1, in2, out]; index = i1*4 + i2*2 + out. Only (1,1,1)=1.
-    assert!(r.data[7].0.abs() - 1.0 < 1e-10, "AND(1,1,1) should be 1");
+    assert!((r.data[7].0 - 1.0).abs() < 1e-10, "AND(1,1,1) should be 1");
     // Every other entry must be zero.
     let non_zeros: Vec<_> = r
         .data
@@ -581,6 +581,116 @@ fn boundary_order_field_drives_input_axis_order() {
     assert_ne!(baseline.data[6].0, reordered.data[6].0);
     assert_ne!(baseline.data[9].0, reordered.data[9].0);
     assert_ne!(baseline.data[10].0, reordered.data[10].0);
+}
+
+#[test]
+fn input_axes_precede_output_axes_in_flat_layout() {
+    // Pins §5.4 role ranking Input=0 < Output=1 with a genuinely
+    // asymmetric wiring (all existing multi-role tests are
+    // role-symmetric, so swapping the axis groups was undetectable).
+    //
+    // Derivation. Component A: i0 → zA(π) → o1, zA = diag(1, e^{iπ}) =
+    // diag(1, −1), so A[i0, o1] = 1 at (0,0), −1 at (1,1), else 0.
+    // Component B: i1 → zB(0) → o0, zB = diag(1, 1) → B[i1, o0] = δ.
+    // Orders i0=0, i1=1, o0=0, o1=1 → axes [i0, i1, o0, o1] (inputs
+    // first, each group by `order`), flat k = i0·8 + i1·4 + o0·2 + o1.
+    // Nonzero iff i0=o1 and i1=o0: k=0 → 1, k=6 → 1, k=9 → −1, k=15 → −1.
+    //
+    // If outputs ranked first (axes [o0,o1,i0,i1]) the same physical
+    // nonzeros land at the same indices k ∈ {0,6,9,15} but with values
+    // 1, −1, 1, −1 (the k=6/k=9 values swap), so this test fails on a
+    // role-rank swap.
+    let json = r#"{
+        "nodes": [
+            {"id":"i0","data":{"phase":"","vertexType":"input","order":0}},
+            {"id":"zA","data":{"phase":"\\pi","vertexType":"z"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output","order":1}},
+            {"id":"i1","data":{"phase":"","vertexType":"input","order":1}},
+            {"id":"zB","data":{"phase":"","vertexType":"z"}},
+            {"id":"o0","data":{"phase":"","vertexType":"output","order":0}}
+        ],
+        "edges": [
+            {"id":"e1","source":"i0","target":"zA"},
+            {"id":"e2","source":"zA","target":"o1"},
+            {"id":"e3","source":"i1","target":"zB"},
+            {"id":"e4","source":"zB","target":"o0"}
+        ]
+    }"#;
+    let r = compute(json);
+    assert_eq!(r.shape, vec![2, 2, 2, 2]);
+    assert_eq!(r.input_count, 2);
+    assert_eq!(r.output_count, 2);
+    assert_data(
+        &r.data,
+        &[
+            (1.0, 0.0),  // k=0
+            (0.0, 0.0),  // k=1
+            (0.0, 0.0),  // k=2
+            (0.0, 0.0),  // k=3
+            (0.0, 0.0),  // k=4
+            (0.0, 0.0),  // k=5
+            (1.0, 0.0),  // k=6
+            (0.0, 0.0),  // k=7
+            (0.0, 0.0),  // k=8
+            (-1.0, 0.0), // k=9
+            (0.0, 0.0),  // k=10
+            (0.0, 0.0),  // k=11
+            (0.0, 0.0),  // k=12
+            (0.0, 0.0),  // k=13
+            (0.0, 0.0),  // k=14
+            (-1.0, 0.0), // k=15
+        ],
+    );
+}
+
+#[test]
+fn boundary_order_field_drives_output_axis_order() {
+    // Same topology as `input_axes_precede_output_axes_in_flat_layout`
+    // with the OUTPUT orders swapped (o1=0, o0=1) → axes [i0, i1, o1, o0].
+    // The physical nonzeros are unchanged (i0=o1, i1=o0) but their flat
+    // positions shift: k = i0·8 + i1·4 + o1·2 + o0 → k=0 → 1, k=5 → 1,
+    // k=10 → −1, k=15 → −1. Only output `order` moved, so this pins
+    // output-boundary `order` driving output axis order (the sibling
+    // test above pins the input side).
+    let json = r#"{
+        "nodes": [
+            {"id":"i0","data":{"phase":"","vertexType":"input","order":0}},
+            {"id":"zA","data":{"phase":"\\pi","vertexType":"z"}},
+            {"id":"o1","data":{"phase":"","vertexType":"output","order":0}},
+            {"id":"i1","data":{"phase":"","vertexType":"input","order":1}},
+            {"id":"zB","data":{"phase":"","vertexType":"z"}},
+            {"id":"o0","data":{"phase":"","vertexType":"output","order":1}}
+        ],
+        "edges": [
+            {"id":"e1","source":"i0","target":"zA"},
+            {"id":"e2","source":"zA","target":"o1"},
+            {"id":"e3","source":"i1","target":"zB"},
+            {"id":"e4","source":"zB","target":"o0"}
+        ]
+    }"#;
+    let r = compute(json);
+    assert_eq!(r.shape, vec![2, 2, 2, 2]);
+    assert_data(
+        &r.data,
+        &[
+            (1.0, 0.0),  // k=0
+            (0.0, 0.0),  // k=1
+            (0.0, 0.0),  // k=2
+            (0.0, 0.0),  // k=3
+            (0.0, 0.0),  // k=4
+            (1.0, 0.0),  // k=5
+            (0.0, 0.0),  // k=6
+            (0.0, 0.0),  // k=7
+            (0.0, 0.0),  // k=8
+            (0.0, 0.0),  // k=9
+            (-1.0, 0.0), // k=10
+            (0.0, 0.0),  // k=11
+            (0.0, 0.0),  // k=12
+            (0.0, 0.0),  // k=13
+            (0.0, 0.0),  // k=14
+            (-1.0, 0.0), // k=15
+        ],
+    );
 }
 
 // ---- Error paths ----------------------------------------------------------

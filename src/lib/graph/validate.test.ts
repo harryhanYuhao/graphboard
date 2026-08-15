@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 import { validateGraphForCompute } from "./validate";
 import type { GraphSlice, GraphNodeRecord, GraphEdgeRecord } from "./types";
 
-function node(id: string, vertexType: string): GraphNodeRecord {
-  return { id, data: { phase: "", vertexType: vertexType as never } };
+function node(id: string, vertexType: string, order?: unknown): GraphNodeRecord {
+  return {
+    id,
+    data: {
+      phase: "",
+      vertexType: vertexType as never,
+      ...(order !== undefined ? { order: order as never } : {}),
+    },
+  };
 }
 
 function edge(id: string, source: string, target: string): GraphEdgeRecord {
@@ -150,17 +157,18 @@ describe("validateGraphForCompute", () => {
     expect(errors).toHaveLength(2);
   });
 
-  it("counts a W self-loop as two output legs (matches backend)", () => {
-    // W with 1 input + 1 self-loop: self-loop = 2 output edges → passes
-    // the ≥2-output check, but only has 1 real output edge. Pin the
-    // backend-mirrored semantics.
+  it("rejects a W self-loop rather than counting it as output legs (matches backend)", () => {
+    // W with 1 input + 1 self-loop: the self-loop is rejected outright
+    // and the real output count (0) also fails. Mirrors the Rust pre-pass.
     const g = graph(
       [node("w", "w"), node("i", "input")],
       [edge("e1", "i", "w"), edge("e2", "w", "w")],
     );
     const errors = validateGraphForCompute(g);
-    // input is fine (1); output is fine (2 from self-loop). No errors.
-    expect(errors).toEqual([]);
+    expect(errors.map((e) => e.kind).sort()).toEqual([
+      "w-output-count",
+      "w-self-loop",
+    ]);
   });
 
   it("flags every check independently when a node violates several", () => {
@@ -224,31 +232,40 @@ describe("validateGraphForCompute", () => {
 
   // ---- W node counting: self-loops, mixed input/output ----
 
-  it("a pure W self-loop is flagged only for input count (output = 2 from loop)", () => {
-    // self-loop → outputEdges += 2, inputEdges = 0 → only w-input-count fires.
+  it("a pure W self-loop is flagged as a self-loop plus input/output counts", () => {
+    // Self-loops are ill-defined for the directional W: contraction would
+    // trace two arbitrary free legs. The self-loop no longer feeds the
+    // output count, so the real counts (0 inputs, 0 outputs) also fire.
     const g = graph([node("w", "w")], [edge("e1", "w", "w")]);
     const errors = validateGraphForCompute(g);
-    expect(kinds(errors)).toEqual(["w-input-count"]);
-    expect(errors[0].message).toContain("got 0");
+    expect(kinds(errors)).toEqual([
+      "w-self-loop",
+      "w-input-count",
+      "w-output-count",
+    ]);
   });
 
-  it("a W self-loop plus one real input edge keeps input count at 1 (valid)", () => {
-    // i→w (input=1) + w→w (output+=2) → input 1, output 2 → no errors.
+  it("a W self-loop plus one real input edge is flagged as a self-loop", () => {
+    // Previously escaped validation (1 input + loop counted as 2 outputs)
+    // and contraction produced a meaningless tensor. Must be rejected.
     const g = graph(
       [node("w", "w"), node("i", "input")],
       [edge("e1", "i", "w"), edge("e2", "w", "w")],
     );
-    expect(validateGraphForCompute(g)).toEqual([]);
+    const errors = validateGraphForCompute(g);
+    expect(kinds(errors)).toEqual(["w-self-loop", "w-output-count"]);
   });
 
-  it("a W with a real input edge AND a self-loop counts the self-loop only as output", () => {
-    // The self-loop's target side does NOT count as an input leg. Pin this.
+  it("a W with a real input edge AND a self-loop counts the self-loop as neither input nor output", () => {
+    // The self-loop is flagged on its own; the real counts (1 input,
+    // 1 output) are checked without it.
     const g = graph(
       [node("w", "w"), node("i", "input"), node("o", "output")],
       [edge("e1", "i", "w"), edge("e2", "w", "w"), edge("e3", "w", "o")],
     );
-    // input=1, output = 2 (self-loop) + 1 (w→o) = 3 → no errors.
-    expect(validateGraphForCompute(g)).toEqual([]);
+    const errors = validateGraphForCompute(g);
+    expect(kinds(errors)).toEqual(["w-self-loop", "w-output-count"]);
+    expect(errors[1].message).toContain("got 1");
   });
 
   it("a W with two real input edges (no self-loop) is flagged for input count", () => {
@@ -369,5 +386,92 @@ describe("validateGraphForCompute", () => {
     expect(dupes).toHaveLength(1);
     expect(inErrs).toHaveLength(1);
     expect(outErrs).toHaveLength(1);
+  });
+
+  // ---- boundary order validation ----
+
+  it("flags duplicate explicit orders within the same boundary group", () => {
+    const g = graph([node("i0", "input", 0), node("i1", "input", 0)], []);
+    const errors = validateGraphForCompute(g);
+    expect(errors).toHaveLength(2);
+    expect(errors.every((e) => e.kind === "boundary-order")).toBe(true);
+    expect(errors.map((e) => e.vertexId).sort()).toEqual(["i0", "i1"]);
+  });
+
+  it("flags duplicate explicit orders in the output group", () => {
+    const g = graph([node("o0", "output", 1), node("o1", "output", 1)], []);
+    const errors = validateGraphForCompute(g).filter(
+      (e) => e.kind === "boundary-order",
+    );
+    expect(errors).toHaveLength(2);
+  });
+
+  it("does not flag the same explicit order across different boundary groups", () => {
+    // Inputs and outputs order independently; 0 in each group is fine.
+    const g = graph(
+      [node("i0", "input", 0), node("o0", "output", 0)],
+      [],
+    );
+    expect(validateGraphForCompute(g)).toEqual([]);
+  });
+
+  it("flags orders that are not finite non-negative integers", () => {
+    const g = graph(
+      [
+        node("a", "input", -1),
+        node("b", "input", 1.5),
+        node("c", "input", "x"),
+        node("d", "output", Number.NaN),
+      ],
+      [],
+    );
+    const errors = validateGraphForCompute(g).filter(
+      (e) => e.kind === "boundary-order",
+    );
+    expect(errors).toHaveLength(4);
+    expect(errors.map((e) => e.vertexId)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("does not flag absent orders (legacy docs fall back to array position)", () => {
+    const g = graph(
+      [node("i0", "input"), node("i1", "input"), node("o0", "output")],
+      [],
+    );
+    expect(validateGraphForCompute(g)).toEqual([]);
+  });
+
+  it("flags an explicit order colliding with an order-less node's array position", () => {
+    // i0's explicit order 2 equals i1's fallback key (index 2) — the
+    // compute layer's axis sort would tie on the effective key.
+    const g = graph(
+      [node("i0", "input", 2), node("z", "z"), node("i1", "input")],
+      [],
+    );
+    const errors = validateGraphForCompute(g).filter(
+      (e) => e.kind === "boundary-order",
+    );
+    expect(errors).toHaveLength(2);
+    expect(errors.map((e) => e.vertexId).sort()).toEqual(["i0", "i1"]);
+  });
+
+  it("does not flag distinct explicit orders", () => {
+    const g = graph(
+      [
+        node("i0", "input", 0),
+        node("i1", "input", 1),
+        node("o0", "output", 1),
+        node("o1", "output", 0),
+      ],
+      [],
+    );
+    expect(validateGraphForCompute(g)).toEqual([]);
+  });
+
+  it("order errors carry a message naming the vertex and order", () => {
+    const g = graph([node("i0", "input", 0), node("i1", "input", 0)], []);
+    const errors = validateGraphForCompute(g);
+    const i1 = errors.find((e) => e.vertexId === "i1");
+    expect(i1?.message).toContain("'i1'");
+    expect(i1?.message).toContain("0");
   });
 });

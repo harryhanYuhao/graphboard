@@ -12,7 +12,11 @@ export function roundToDecimalPlace(input: number, place: number): number {
   // boundary — never genuine values.
   const epsilon = 1e-10;
 
-  return Math.round(input * base + epsilon) / base;
+  // Symmetric half-away-from-zero: Math.round rounds -x.5 toward +∞, which
+  // would round negative boundaries the wrong way. `|| 0` normalizes -0.
+  const rounded =
+    Math.sign(input) * Math.round(Math.abs(input) * base + epsilon);
+  return (rounded / base) || 0;
 }
 
 export function roundToFiveDecimal(input: number): number {

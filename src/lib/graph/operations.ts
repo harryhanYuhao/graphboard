@@ -57,9 +57,10 @@ function boundaryOrderKey(
   return nodes.indexOf(node);
 }
 
-// Next `order` for a boundary vertex of `vertexType`: max of existing orders of
-// that type, +1 (0 if none). Used at creation, type change, and paste so a new
-// boundary lands at the end of its group without colliding.
+// Next `order` for a boundary vertex of `vertexType`: max of existing effective
+// keys (`boundaryOrderKey` — explicit order, else array position) of that type,
+// +1 (0 if none). Used at creation, type change, and paste so a new boundary
+// lands at the end of its group without colliding.
 export function nextBoundaryOrder(
   nodes: VertexNode[],
   vertexType: VertexType,
@@ -67,13 +68,8 @@ export function nextBoundaryOrder(
   let max = -1;
   for (const node of nodes) {
     if (node.data.vertexType !== vertexType) continue;
-    if (
-      typeof node.data.order === "number" &&
-      Number.isFinite(node.data.order) &&
-      node.data.order > max
-    ) {
-      max = node.data.order;
-    }
+    const key = boundaryOrderKey(node, nodes);
+    if (key > max) max = key;
   }
   return max + 1;
 }

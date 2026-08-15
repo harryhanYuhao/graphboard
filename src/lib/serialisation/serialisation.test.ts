@@ -261,6 +261,65 @@ describe("projectDocument ↔ hydrateDocument", () => {
     expect(hydrated.nodes[0].data.phase).toBe("");
   });
 
+  it("coerces a non-string labelLocation from a crafted doc to the default", () => {
+    // Same trust boundary as label/phase: parse only checks array-ness.
+    const doc: GraphDocument = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      id: "doc-1",
+      title: "Crafted",
+      graph: {
+        nodes: [{ id: "a", data: { phase: "", vertexType: "z" } }],
+        edges: [],
+      },
+      view: {
+        nodes: [
+          {
+            id: "a",
+            position: { x: 0, y: 0 },
+            labelLocation: 42 as never,
+          },
+        ],
+        edges: [],
+      },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.nodes[0].labelLocation).toBe(DEFAULT_LABEL_LOCATION);
+  });
+
+  it("drops dangling edges at hydration but keeps valid ones", () => {
+    // Mirrors the import path (mergeImportedGraph drops them); React Flow
+    // would otherwise console-error and autosave would re-persist the junk.
+    const doc: GraphDocument = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      id: "doc-1",
+      title: "Dangling",
+      graph: {
+        nodes: [
+          { id: "a", data: { phase: "", vertexType: "z" } },
+          { id: "b", data: { phase: "", vertexType: "z" } },
+        ],
+        edges: [
+          { id: "e1", source: "a", target: "b" },
+          { id: "e2", source: "a", target: "ghost" },
+          { id: "e3", source: "ghost", target: "b" },
+        ],
+      },
+      view: {
+        nodes: [
+          { id: "a", position: { x: 0, y: 0 } },
+          { id: "b", position: { x: 0, y: 0 } },
+        ],
+        edges: [{ id: "e1" }, { id: "e2" }, { id: "e3" }],
+      },
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+    };
+    const hydrated = hydrateDocument(doc);
+    expect(hydrated.edges.map((e) => e.id)).toEqual(["e1"]);
+  });
+
   it("defaults rotation to 0 when the view entry is missing", () => {
     // Pre-rotation documents hydrate cleanly without losing data.
     const doc: GraphDocument = {
@@ -413,6 +472,9 @@ describe("edge kinds (project/hydrate)", () => {
   });
 
   it("coerces crafted/unknown kinds to the default at hydration", () => {
+    // Same trust boundary as label/phase: parse only checks array-ness, so
+    // a hand-edited kind must not reach the renderer, disk, or the Rust
+    // serde enum (which rejects unknown variants).
     const doc = projectDocument({
       ...baseInput,
       nodes: [makeVertex("a"), makeVertex("b")],

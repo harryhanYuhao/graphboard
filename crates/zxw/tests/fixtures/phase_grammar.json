@@ -5,6 +5,7 @@
     { "group": "empty / whitespace", "name": "whitespace-only is phase 0", "input": "   ", "ok": true, "value": 0 },
     { "group": "empty / whitespace", "name": "only delimiters ($   $) is phase 0", "input": "$   $", "ok": true, "value": 0 },
     { "group": "empty / whitespace", "name": "only delimiters ($$\\n$$) is phase 0", "input": "$$\n$$", "ok": true, "value": 0 },
+    { "group": "empty / whitespace", "name": "NEL U+0085 inside $...$ is not JS whitespace", "input": "$\u0085+2$", "ok": false },
 
     { "group": "numbers", "name": "integer", "input": "0", "ok": true, "value": 0 },
     { "group": "numbers", "name": "positive integer", "input": "3", "ok": true, "value": 3 },
@@ -49,6 +50,10 @@
     { "group": "unicode operator synonyms", "name": "unicode minus", "input": "5 − 3", "ok": true, "value": 2 },
     { "group": "unicode operator synonyms", "name": "unicode multiplication ×", "input": "2 × 3", "ok": true, "value": 6 },
     { "group": "unicode operator synonyms", "name": "unicode division ÷", "input": "6 ÷ 4", "ok": true, "value": 1.5 },
+
+    { "group": "whitespace classes (JS \\s)", "name": "U+0085 (NEL) is NOT whitespace (JS \\s excludes it)", "input": "1\u0085+2", "ok": false },
+    { "group": "whitespace classes (JS \\s)", "name": "U+FEFF (BOM) IS whitespace (JS \\s includes it)", "input": "1\uFEFF+2", "ok": true, "value": 3 },
+    { "group": "whitespace classes (JS \\s)", "name": "U+00A0 (NBSP) is whitespace", "input": "1\u00A0+2", "ok": true, "value": 3 },
 
     { "group": "errors", "name": "trailing junk surfaces the full identifier, not just one char", "input": "1 + 2 hello", "ok": false, "fragment": "hello" },
     { "group": "errors", "name": "missing right paren", "input": "(1 + 2", "ok": false, "fragment": ")" },

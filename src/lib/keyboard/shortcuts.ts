@@ -58,7 +58,7 @@ export function getShortcutGroups(): ShortcutGroup[] {
     {
       title: "Edit",
       entries: [
-        { description: "Delete selected", keys: ["Del"] },
+        { description: "Delete selected", keys: ["Backspace", "Del"] },
         { description: "Cut", keys: [mod, "X"] },
         { description: "Copy", keys: [mod, "C"] },
         { description: "Paste", keys: [mod, "V"] },

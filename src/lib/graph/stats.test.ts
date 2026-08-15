@@ -53,6 +53,22 @@ describe("computeGraphStats", () => {
     expect(stats.maxDegree).toBe(1);
   });
 
+  it("handles 150_000 vertices without a Math.min/max spread overflow", () => {
+    // `Math.min(...degrees)` throws RangeError around ~65k args on V8;
+    // the single pass must keep min/max correct at star-graph scale.
+    const leafCount = 149_999;
+    const nodes = [makeVertex("center")].concat(
+      Array.from({ length: leafCount }, (_, i) => makeVertex(`leaf${i}`)),
+    );
+    const edges = Array.from({ length: leafCount }, (_, i) =>
+      makeEdge(`e${i}`, "center", `leaf${i}`),
+    );
+    const stats = computeGraphStats(nodes, edges);
+    expect(stats.vertexCount).toBe(150_000);
+    expect(stats.minDegree).toBe(1);
+    expect(stats.maxDegree).toBe(149_999);
+  });
+
   it("counts a self-loop twice in the degree", () => {
     const stats = computeGraphStats(
       [makeVertex("a")],

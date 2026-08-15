@@ -28,6 +28,19 @@ function isGraphSlice(
   return true;
 }
 
+// First string id appearing twice, or undefined. Malformed entries (null /
+// non-object / non-string id) are skipped here — hydration fails on them.
+function firstDuplicateId(entries: unknown[]): string | undefined {
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (!isRecord(entry)) continue;
+    if (typeof entry.id !== "string") continue;
+    if (seen.has(entry.id)) return entry.id;
+    seen.add(entry.id);
+  }
+  return undefined;
+}
+
 // Parse + validate a JSON string against the v2 shape. Stamps
 // `schemaVersion` to `CURRENT_SCHEMA_VERSION` on success so downstream
 // consumers don't handle the missing-field case.
@@ -66,6 +79,23 @@ export function parseDocument(contents: string): ParseResult {
     return {
       ok: false,
       error: `Document schemaVersion ${parsed.schemaVersion} is newer than supported (${CURRENT_SCHEMA_VERSION}).`,
+    };
+  }
+
+  // Duplicate ids would collide as React Flow keys downstream.
+  const duplicateNode = firstDuplicateId(parsed.graph.nodes);
+  if (duplicateNode !== undefined) {
+    return {
+      ok: false,
+      error: `Duplicate node id '${duplicateNode}' in 'graph' slice.`,
+    };
+  }
+
+  const duplicateEdge = firstDuplicateId(parsed.graph.edges);
+  if (duplicateEdge !== undefined) {
+    return {
+      ok: false,
+      error: `Duplicate edge id '${duplicateEdge}' in 'graph' slice.`,
     };
   }
 

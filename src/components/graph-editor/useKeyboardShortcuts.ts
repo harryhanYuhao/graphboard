@@ -44,6 +44,20 @@ export function useKeyboardShortcuts({
       const { mode, setMode, deleteSelected, copySelected, paste, cutSelected, clearPendingEdgeSources, selectAll, clearSelection, save, setVertexType, toggleHelp } =
         useGraphStore.getState();
 
+      // Modal dialogs swallow every shortcut except `?` closing help.
+      const { isHelpOpen, isIntroOpen, isExportOpen, isPropertiesOpen, confirmDialogue } =
+        useGraphStore.getState();
+      const anyDialogOpen =
+        isHelpOpen ||
+        isIntroOpen ||
+        isExportOpen ||
+        isPropertiesOpen ||
+        confirmDialogue !== null;
+      if (anyDialogOpen) {
+        if (isHelpOpen && !mod && event.key === "?") toggleHelp();
+        return;
+      }
+
       // ---- Modifier-bearing shortcuts ----
       // Handled before the single-key block so Ctrl+S never collides with a
       // future single-key `s` binding, etc.
@@ -58,10 +72,15 @@ export function useKeyboardShortcuts({
         }
 
         if (key === "d" && !event.shiftKey) {
-          // Ctrl/Cmd+D — duplicate (copy + paste).
+          // Ctrl/Cmd+D — duplicate (copy + paste). Only with a live
+          // selection; otherwise `copySelected` keeps the old clipboard
+          // and `paste` would resurrect it.
           event.preventDefault();
-          copySelected();
-          paste();
+          const { nodes, edges } = useGraphStore.getState();
+          if (hasSelection(nodes, edges)) {
+            copySelected();
+            paste();
+          }
           return;
         }
 

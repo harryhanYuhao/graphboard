@@ -28,6 +28,20 @@ describe("roundToDecimalPlace", () => {
     expect(roundToDecimalPlace(2.345, 2)).toBe(2.35);
     expect(roundToDecimalPlace(1.005, 2)).toBe(1.01);
   });
+
+  it("rounds negative half-boundaries away from zero (symmetric)", () => {
+    // Mirror of the positive cases above: half-away-from-zero on both signs.
+    expect(roundToDecimalPlace(-2.345, 2)).toBe(-2.35);
+    expect(roundToDecimalPlace(-1.005, 2)).toBe(-1.01);
+    expect(roundToDecimalPlace(-0.000005, 5)).toBe(-0.00001);
+    expect(roundToDecimalPlace(-2.5, 0)).toBe(-3);
+    expect(roundToDecimalPlace(0.000005, 5)).toBe(0.00001);
+    expect(roundToDecimalPlace(2.5, 0)).toBe(3);
+  });
+
+  it("normalizes a rounded-to-zero negative to plain 0", () => {
+    expect(Object.is(roundToDecimalPlace(-1e-7, 5), 0)).toBe(true);
+  });
 });
 
 describe("roundToFiveDecimal", () => {

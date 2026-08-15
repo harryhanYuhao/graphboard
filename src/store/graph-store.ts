@@ -211,6 +211,16 @@ function partialize(state: GraphStore) {
   return { nodes, edges };
 }
 
+// zundo history cap; enforced both by the temporal middleware and by the
+// gesture controllers' raw `pastStates` pushes (see makeGestureController).
+const UNDO_LIMIT = 50;
+
+// Reference equality on the partialized slices. Shared by the temporal
+// middleware options and the gesture controllers so gesture snapshots get
+// the same no-change skip as tracked sets.
+const temporalEquality = (a: GraphSnapshot, b: GraphSnapshot) =>
+  a.nodes === b.nodes && a.edges === b.edges;
+
 // Pre-gesture snapshot for a continuous edit. Each gesture owns its
 // own controller so overlapping gestures don't trample each other.
 type GraphSnapshot = { nodes: VertexNode[]; edges: GraphEdge[] };
@@ -243,16 +253,23 @@ function applyReactiveFlowChanges<T, C extends { type: string }>(params: {
   }
 
   if (visualChanges.length > 0) {
+    // Resume only if WE paused an active store; an in-flight gesture's
+    // pause must survive the tick (else mid-gesture changes get recorded).
+    const wasTracking = useGraphStore.temporal.getState().isTracking;
     useGraphStore.temporal.getState().pause();
-    params.setSlice(params.apply(visualChanges, params.getCurrent()));
-    useGraphStore.temporal.getState().resume();
+    try {
+      params.setSlice(params.apply(visualChanges, params.getCurrent()));
+    } finally {
+      if (wasTracking) useGraphStore.temporal.getState().resume();
+    }
   }
 }
 
 // Pause/resume bookkeeping for one continuous-edit gesture. While
 // active the temporal store is paused (intermediate commits create no
 // undo entry); on end the pre-gesture snapshot is pushed to
-// `pastStates` so undo restores to before the gesture.
+// `pastStates` so undo restores to before the gesture (skipped when the
+// gesture changed nothing, per `temporalEquality`).
 function makeGestureController() {
   let snapshot: GraphSnapshot | null = null;
 
@@ -264,9 +281,14 @@ function makeGestureController() {
     end: () => {
       const temporalState = useGraphStore.temporal.getState();
       temporalState.resume();
-      if (snapshot) {
+      if (snapshot && !temporalEquality(snapshot, partialize(useGraphStore.getState()))) {
+        const pastStates = [...temporalState.pastStates];
+        // Raw setState bypasses zundo's own limit enforcement (it only
+        // shifts inside _handleSet) — mirror it here.
+        if (pastStates.length >= UNDO_LIMIT) pastStates.shift();
+        pastStates.push(snapshot);
         useGraphStore.temporal.setState({
-          pastStates: [...temporalState.pastStates, snapshot],
+          pastStates,
           futureStates: [],
         });
       }
@@ -283,6 +305,18 @@ const vertexPropertyEditGesture = makeGestureController();
 // from resolving to inherited members anywhere the map is read.
 function emptyValidationErrors(): Record<string, ValidationError[]> {
   return Object.create(null);
+}
+
+// Drop validation-error buckets whose vertex no longer exists (delete/cut).
+function pruneValidationErrors(
+  errors: Record<string, ValidationError[]>,
+  remainingIds: Set<string>,
+): Record<string, ValidationError[]> {
+  const pruned = emptyValidationErrors();
+  for (const id of Object.keys(errors)) {
+    if (remainingIds.has(id)) pruned[id] = errors[id]!;
+  }
+  return pruned;
 }
 
 // Recovery copy written before the hydrate fallback replaces a possibly-
@@ -515,7 +549,14 @@ export const useGraphStore = create<GraphStore>()(
           remainingIds.has(id),
         );
 
-        set({ ...next, pendingEdgeSources });
+        set({
+          ...next,
+          pendingEdgeSources,
+          validationErrors: pruneValidationErrors(
+            get().validationErrors,
+            remainingIds,
+          ),
+        });
       },
 
       selectAll: () => {
@@ -604,6 +645,10 @@ export const useGraphStore = create<GraphStore>()(
         set({
           ...remaining,
           pendingEdgeSources,
+          validationErrors: pruneValidationErrors(
+            get().validationErrors,
+            remainingIds,
+          ),
           clipboard: {
             ...cloneSubgraphForClipboard(subgraph),
             pasteCount: 0,
@@ -674,7 +719,16 @@ export const useGraphStore = create<GraphStore>()(
 
         const merged = mergeImportedGraph({
           imported,
-          existing: { nodes: state.nodes, edges: state.edges },
+          existing: {
+            // Deselect the live graph first (paste symmetry): only the
+            // imported elements end up selected after the merge.
+            nodes: state.nodes.map((node) =>
+              node.selected ? { ...node, selected: false } : node,
+            ),
+            edges: state.edges.map((edge) =>
+              edge.selected ? { ...edge, selected: false } : edge,
+            ),
+          },
           offset,
         });
 
@@ -917,8 +971,8 @@ export const useGraphStore = create<GraphStore>()(
       // equality reserves the undo stack for real graph-structure
       // changes; visual changes (drag, select) still bypass it via the
       // gesture controllers in `applyReactiveFlowChanges`.
-      equality: (a, b) => a.nodes === b.nodes && a.edges === b.edges,
-      limit: 50,
+      equality: temporalEquality,
+      limit: UNDO_LIMIT,
     },
   ),
 );

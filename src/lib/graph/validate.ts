@@ -1,12 +1,13 @@
 // Pre-compute structural validation. Runs on the frontend right before
 // the WASM contraction, catching graph-shape errors (bad W topology,
-// boundary degree, H-box arity, dangling edge refs, duplicate ids) so the
-// user gets immediate feedback without a worker round-trip.
+// boundary degree/order, H-box arity, dangling edge refs, duplicate ids)
+// so the user gets immediate feedback without a worker round-trip.
 //
-// These checks were ported from the Rust `ComputeError` variants — the
-// messages match so the dialog's remediation hints stay consistent.
-// `DegreeOverflow` stays backend-only (fires during contraction on
-// intermediate state, not pre-checkable).
+// The duplicate/dangling/W checks are mirrored by the Rust structural
+// pre-pass (`validate_structure` in contraction.rs) with matching
+// messages; `boundary-degree`, `h-box-arity`, and `boundary-order` are
+// frontend-only. `DegreeOverflow` stays backend-only (fires during
+// contraction on intermediate state, not pre-checkable).
 
 import type { GraphSlice } from "./types";
 
@@ -15,9 +16,11 @@ export type ValidationErrorKind =
   | "duplicate-node-id"
   | "vertex-not-found"
   | "boundary-degree"
+  | "boundary-order"
   | "h-box-arity"
   | "w-input-count"
-  | "w-output-count";
+  | "w-output-count"
+  | "w-self-loop";
 
 export type ValidationError = {
   kind: ValidationErrorKind;
@@ -105,17 +108,27 @@ export function validateGraphForCompute(graph: GraphSlice): ValidationError[] {
     }
 
     // W node: exactly 1 input edge (targets it), ≥ 2 output edges (sources it).
+    // A self-loop is ill-defined for the directional W — contraction would
+    // trace two arbitrary free legs — so it is rejected outright.
     if (vt === "w") {
       let inputEdges = 0;
       let outputEdges = 0;
+      let hasSelfLoop = false;
       for (const edge of graph.edges) {
         if (edge.source === id && edge.target === id) {
-          outputEdges += 2; // self-loop: ill-defined for W
+          hasSelfLoop = true;
         } else if (edge.target === id) {
           inputEdges += 1;
         } else if (edge.source === id) {
           outputEdges += 1;
         }
+      }
+      if (hasSelfLoop) {
+        errors.push({
+          kind: "w-self-loop",
+          message: `W node '${id}' has a self-loop; self-loops are ill-defined for a directional W`,
+          vertexId: id,
+        });
       }
       if (inputEdges !== 1) {
         errors.push({
@@ -128,6 +141,56 @@ export function validateGraphForCompute(graph: GraphSlice): ValidationError[] {
         errors.push({
           kind: "w-output-count",
           message: `W node '${id}' must have at least 2 output legs, got ${outputEdges}`,
+          vertexId: id,
+        });
+      }
+    }
+  }
+
+  // --- boundary order (frontend-only check) ---
+  // Explicit `order`s on input/output must be finite integers >= 0. The
+  // compute layer sorts boundary axes by the effective key — explicit
+  // `order`, else array position (`order.unwrap_or(index)` in
+  // contraction.rs) — so uniqueness is enforced over the effective keys:
+  // an explicit order colliding with an order-less node's array position
+  // would tie in the tensor's axis sort. Groups are independent (inputs
+  // and outputs ordered separately). Each distinct vertex id once
+  // (duplicates already flagged above).
+  const orderChecked = new Set<string>();
+  const groupKeys = new Map<string, { id: string; key: number }[]>();
+  graph.nodes.forEach((node, index) => {
+    const vt = node.data.vertexType;
+    if (vt !== "input" && vt !== "output") return;
+    if (orderChecked.has(node.id)) return;
+    orderChecked.add(node.id);
+
+    const order = node.data.order;
+    if (order !== undefined &&
+      (typeof order !== "number" || !Number.isInteger(order) || order < 0)) {
+      errors.push({
+        kind: "boundary-order",
+        message: `boundary vertex '${node.id}' order must be a non-negative integer, got ${String(order)}`,
+        vertexId: node.id,
+      });
+      return; // invalid order already blocks compute; skip the tie check
+    }
+
+    const group = groupKeys.get(vt) ?? [];
+    group.push({ id: node.id, key: typeof order === "number" ? order : index });
+    groupKeys.set(vt, group);
+  });
+
+  // Flag every node whose effective key is shared within its group.
+  for (const [vt, group] of groupKeys) {
+    const counts = new Map<number, number>();
+    for (const { key } of group) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    for (const { id, key } of group) {
+      if ((counts.get(key) ?? 0) > 1) {
+        errors.push({
+          kind: "boundary-order",
+          message: `boundary vertex '${id}' has duplicate effective order ${key} (${vt} orders must be unique; array-position fallbacks count)`,
           vertexId: id,
         });
       }

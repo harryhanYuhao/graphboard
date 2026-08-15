@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  assignBoundaryOrderOnTypeChange,
   clearAllSelections,
   cloneSubgraphForClipboard,
   computeVertexClick,
@@ -14,6 +15,7 @@ import {
   mergeImportedGraph,
   PASTE_OFFSET_STEP,
   pasteSubgraph,
+  reorderBoundaryVertex,
   selectAllElements,
   snapPosition,
 } from "./operations";
@@ -215,6 +217,167 @@ describe("pasteSubgraph", () => {
     };
     const result = pasteSubgraph({ subgraph, pasteCount: 0 });
     expect(result.edges[0]?.data?.kind).toBe("dashed_blue");
+  });
+
+  it("with existingNodes: pasted boundaries get non-colliding sequential orders", () => {
+    // The subgraph carries orders 0/1 that collide with the live graph's;
+    // paste must re-stamp 2/3 after the existing ones.
+    const subgraph = {
+      nodes: [
+        makeVertexWith("inA", { data: { vertexType: "input", order: 0 } }),
+        makeVertexWith("inB", { data: { vertexType: "input", order: 1 } }),
+      ],
+      edges: [],
+    };
+    const existingNodes = [
+      makeVertexWith("live0", { data: { vertexType: "input", order: 0 } }),
+      makeVertexWith("live1", { data: { vertexType: "input", order: 1 } }),
+    ];
+    const result = pasteSubgraph({ subgraph, pasteCount: 0, existingNodes });
+    expect(result.nodes.map((n) => n.data.order)).toEqual([2, 3]);
+  });
+
+  it("without existingNodes: pasted boundaries are re-stamped from 0", () => {
+    // No existing pool to collide with → sequential orders from 0, so the
+    // subgraph's own order (4) is not preserved.
+    const subgraph = {
+      nodes: [
+        makeVertexWith("inA", { data: { vertexType: "input", order: 4 } }),
+      ],
+      edges: [],
+    };
+    const result = pasteSubgraph({ subgraph, pasteCount: 0 });
+    expect(result.nodes[0].data.order).toBe(0);
+  });
+});
+
+// ---- reorderBoundaryVertex --------------------------------------------------
+
+describe("reorderBoundaryVertex", () => {
+  const threeInputs = (): VertexNode[] => [
+    makeVertexWith("in0", { data: { vertexType: "input", order: 0 } }),
+    makeVertexWith("in1", { data: { vertexType: "input", order: 1 } }),
+    makeVertexWith("in2", { data: { vertexType: "input", order: 2 } }),
+  ];
+
+  const ordersById = (nodes: VertexNode[]) =>
+    Object.fromEntries(nodes.map((n) => [n.id, n.data.order]));
+
+  it("moving a boundary earlier re-stamps consecutive 0..n-1 orders", () => {
+    const nodes = [
+      ...threeInputs(),
+      makeVertexWith("out0", { data: { vertexType: "output", order: 0 } }),
+    ];
+    const { nodes: next } = reorderBoundaryVertex({
+      nodes,
+      vertexId: "in2",
+      targetOrder: 0,
+    });
+    expect(ordersById(next)).toEqual({
+      in0: 1,
+      in1: 2,
+      in2: 0,
+      out0: 0, // opposite group untouched
+    });
+  });
+
+  it("moving a boundary later re-stamps consecutive 0..n-1 orders", () => {
+    const { nodes: next } = reorderBoundaryVertex({
+      nodes: threeInputs(),
+      vertexId: "in0",
+      targetOrder: 2,
+    });
+    expect(ordersById(next)).toEqual({ in0: 2, in1: 0, in2: 1 });
+  });
+
+  it("clamps an above-range target order to the last slot", () => {
+    const { nodes: next } = reorderBoundaryVertex({
+      nodes: threeInputs(),
+      vertexId: "in0",
+      targetOrder: 99,
+    });
+    expect(ordersById(next)).toEqual({ in0: 2, in1: 0, in2: 1 });
+  });
+
+  it("clamps a below-range target order to slot 0", () => {
+    const { nodes: next } = reorderBoundaryVertex({
+      nodes: threeInputs(),
+      vertexId: "in2",
+      targetOrder: -5,
+    });
+    expect(ordersById(next)).toEqual({ in0: 1, in1: 2, in2: 0 });
+  });
+
+  it("is a no-op returning the same ref for a single-element group", () => {
+    const nodes = [
+      makeVertexWith("in0", { data: { vertexType: "input", order: 3 } }),
+    ];
+    expect(
+      reorderBoundaryVertex({ nodes, vertexId: "in0", targetOrder: 5 }).nodes,
+    ).toBe(nodes);
+  });
+
+  it("is a no-op returning the same ref for a non-boundary vertex", () => {
+    const nodes = [makeVertex("z", { x: 0, y: 0 })];
+    expect(
+      reorderBoundaryVertex({ nodes, vertexId: "z", targetOrder: 0 }).nodes,
+    ).toBe(nodes);
+  });
+
+  it("is a no-op returning the same ref for an unknown vertex id", () => {
+    const nodes = threeInputs();
+    expect(
+      reorderBoundaryVertex({ nodes, vertexId: "ghost", targetOrder: 0 }).nodes,
+    ).toBe(nodes);
+  });
+});
+
+// ---- assignBoundaryOrderOnTypeChange ----------------------------------------
+
+describe("assignBoundaryOrderOnTypeChange", () => {
+  const nodes = (): VertexNode[] => [
+    makeVertex("z1", { x: 0, y: 0 }),
+    makeVertexWith("in0", { data: { vertexType: "input", order: 0 } }),
+    makeVertexWith("in1", { data: { vertexType: "input", order: 1 } }),
+  ];
+
+  it("changing z → input assigns the next order at the end of the group", () => {
+    const next = assignBoundaryOrderOnTypeChange({
+      nodes: nodes(),
+      vertexId: "z1",
+      newType: "input",
+    });
+    expect(next[0].data.vertexType).toBe("input");
+    expect(next[0].data.order).toBe(2);
+    // Existing inputs keep their orders.
+    expect([next[1].data.order, next[2].data.order]).toEqual([0, 1]);
+  });
+
+  it("returns the same ref when the new type is not a boundary", () => {
+    const input = nodes();
+    expect(
+      assignBoundaryOrderOnTypeChange({
+        nodes: input,
+        vertexId: "z1",
+        newType: "x",
+      }),
+    ).toBe(input);
+  });
+
+  it("does not count the changed node's own stale order", () => {
+    // z1 carries a stale order 5 from a previous boundary incarnation; the
+    // new order must land after the *others* (2).
+    const input = [
+      makeVertexWith("z1", { data: { vertexType: "z", order: 5 } }),
+      makeVertexWith("in0", { data: { vertexType: "input", order: 0 } }),
+      makeVertexWith("in1", { data: { vertexType: "input", order: 1 } }),
+    ];
+    const next = assignBoundaryOrderOnTypeChange({
+      nodes: input,
+      vertexId: "z1",
+      newType: "input",
+    });
+    expect(next[0].data.order).toBe(2);
   });
 });
 

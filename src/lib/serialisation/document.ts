@@ -20,6 +20,7 @@ import {
   type VertexType,
 } from "../graph/types";
 import { snapPosition } from "../graph/operations";
+import { coerceEdgeKind } from "../graph/edge-registry";
 import { VERTEX_TYPE_MAP } from "../graph/vertex-registry";
 
 // Wrap an angle into canonical [0, 360) and round to 6 dp. The rounding
@@ -71,7 +72,8 @@ export function projectToDocument(input: ProjectInput): GraphDocument {
       sourceHandle: handleIdToIndex(edge.sourceHandle),
       targetHandle: handleIdToIndex(edge.targetHandle),
       // Edge kind is part of the graph slice (future compute differences);
-      // always persisted, `default` when absent at runtime.
+      // always persisted. Hydration coerces untrusted kinds, so runtime
+      // edges always carry a valid member and disk stays canonical.
       data: { kind: edge.data?.kind ?? DEFAULT_EDGE_KIND },
     });
     viewEdges.push({ id: edge.id });
@@ -126,7 +128,10 @@ function hydrateNode(
     rotation: normalizeRotation(view?.rotation ?? 0),
     // Absent visual-label fields (pre-v2 docs) hydrate to no label.
     label,
-    labelLocation: view?.labelLocation ?? DEFAULT_LABEL_LOCATION,
+    labelLocation:
+      typeof view?.labelLocation === "string"
+        ? view.labelLocation
+        : DEFAULT_LABEL_LOCATION,
     data: { ...graphNode.data, phase },
     // Pins React Flow's handle anchor at the node center. Renderer detail, not persisted.
     origin: [0.5, 0.5],
@@ -154,7 +159,10 @@ function hydrateEdge(
     ),
     // Renderer discriminator (only `straightCenter` today; constant keeps the literal centralized).
     type: EDGE_TYPES.straightCenter,
-    data: { kind: graphEdge.data?.kind ?? DEFAULT_EDGE_KIND },
+    // Untrusted-import hardening (like `phase`/`label` above): unknown or
+    // absent kinds degrade to the default so the renderer, disk, and the
+    // Rust compute serde never meet an invalid member.
+    data: { kind: coerceEdgeKind(graphEdge.data?.kind) },
   };
 }
 
@@ -166,12 +174,17 @@ export function hydrateDocument(doc: GraphDocument): HydratedDocument {
   const vertexTypeById = new Map<string, VertexType>(
     doc.graph.nodes.map((n) => [n.id, n.data.vertexType]),
   );
+  // Drop dangling edges (endpoint id has no node) — mirrors the import path;
+  // React Flow would skip them anyway and autosave would re-persist the junk.
+  const nodeIdSet = new Set(doc.graph.nodes.map((n) => n.id));
 
   return {
     id: doc.id,
     title: doc.title,
     nodes: doc.graph.nodes.map((n) => hydrateNode(n, nodeViewById)),
-    edges: doc.graph.edges.map((e) => hydrateEdge(e, vertexTypeById)),
+    edges: doc.graph.edges
+      .filter((e) => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
+      .map((e) => hydrateEdge(e, vertexTypeById)),
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

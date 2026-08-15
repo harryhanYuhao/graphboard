@@ -81,23 +81,49 @@ struct Cursor {
 }
 
 fn skip_ws(chars: &[char], c: &mut Cursor) {
-    while c.pos < chars.len() && chars[c.pos].is_whitespace() {
+    while c.pos < chars.len() && is_js_whitespace(chars[c.pos]) {
         c.pos += 1;
     }
+}
+
+/// ECMAScript `\s` exactly: WhiteSpace ∪ LineTerminator (TAB, VT, FF, SP,
+/// NBSP, ZWNBSP/BOM, Unicode Zs, LF, CR, LS, PS). NOT `char::is_whitespace`
+/// (Unicode White_Space), which diverges on U+0085 (NEL: Rust yes, JS no)
+/// and U+FEFF (BOM: Rust no, JS yes). Kept in lock-step with the JS
+/// `/\s/` in `src/lib/phase/parser.ts` by the shared fixture.
+fn is_js_whitespace(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n'
+            | '\u{0B}'
+            | '\u{0C}'
+            | '\r'
+            | ' '
+            | '\u{A0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200A}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202F}'
+            | '\u{205F}'
+            | '\u{3000}'
+            | '\u{FEFF}'
+    )
 }
 
 /// Strip a matching leading/trailing `$...$` or `$$...$$` pair. Only acts
 /// when both delimiters are present at the matching positions, so a label
 /// like `price: $5` is left alone.
 fn strip_math_delimiters(input: &str) -> &str {
-    let t = input.trim();
+    // JS `String.prototype.trim` trims the same set as `/\s/`.
+    let t = input.trim_matches(is_js_whitespace);
     let bytes = t.as_bytes();
     let len = bytes.len();
     if len >= 4 && t.starts_with("$$") && t.ends_with("$$") {
-        return t[2..len - 2].trim();
+        return t[2..len - 2].trim_matches(is_js_whitespace);
     }
     if len >= 2 && t.starts_with('$') && t.ends_with('$') {
-        return t[1..len - 1].trim();
+        return t[1..len - 1].trim_matches(is_js_whitespace);
     }
     t
 }
