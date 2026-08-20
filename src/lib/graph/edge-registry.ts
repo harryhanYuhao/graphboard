@@ -29,6 +29,12 @@ export const EDGE_KIND_MAP: Record<EdgeKind, EdgeKindMeta> = {
     stroke: "#334155",
     strokeWidth: 1.5,
   },
+  dashed_red: {
+    label: "Dashed red",
+    stroke: "#fb2c36",
+    strokeDashArray: "4 1.5",
+    strokeWidth: 2,
+  },
   dashed_blue: {
     label: "Dashed blue",
     stroke: "#2563eb",

@@ -57,8 +57,11 @@ Uses **pnpm** (see `pnpm-workspace.yaml`).
   component tests (Testing Library) are all covered; there are no
   pixel/snapshot tests of styled output. `pnpm test` passes
   `NODE_OPTIONS=--localstorage-file=/tmp/graph-board-test-localstorage`
-  (Node ≥24 ships a native `localStorage` that throws without it);
-  `vitest.setup.ts` also overrides the global with jsdom's implementation.
+  (Node ≥24 ships a native `localStorage` that throws without it; with the
+  flag it is a process-level SQLite store shared across workers).
+  `vitest.setup.ts` replaces both `globalThis.localStorage` and
+  `window.localStorage` with a per-worker in-memory `Storage`, cleared
+  before each test, so parallel test files never share state.
 - `pnpm build:wasm` — `wasm-pack` build of `crates/zxw` →
   `public/wasm/zxw/` (gitignored). Run before `pnpm build` and after any
   Rust change.

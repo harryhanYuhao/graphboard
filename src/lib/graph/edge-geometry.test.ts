@@ -153,6 +153,14 @@ describe("edgeKindPathStyle", () => {
     });
   });
 
+  it("styles dashed-red edges dashed in red at 2pt", () => {
+    expect(edgeKindPathStyle("dashed_red", false)).toEqual({
+      stroke: "#fb2c36",
+      strokeDasharray: "4 1.5",
+      strokeWidth: 2,
+    });
+  });
+
   it("glows blue with the kind's own stroke when selected (vertex-style highlight)", () => {
     expect(edgeKindPathStyle("dashed_blue", true)).toEqual({
       filter: "drop-shadow(0 0 2px rgb(37 99 235))",

@@ -125,6 +125,9 @@ function edgeLine(edge: GraphEdge, nodeIndexById: Map<string, number>): string {
     case "dashed_light":
       style = "GRAY_DASHED_EDGE";
       break;
+    case "dashed_red":
+      style = "RED_DASHED_EDGE";
+      break;
   }
   return `\\draw[${style}] (${source}) to (${target});`;
 }
@@ -156,6 +159,7 @@ function tikzBackBone(nodeString: string, edgeString: string): string {
         font={\\large\\boldmath}},
     EDGE/.style={draw=black, line width=1pt},
     BLUE_DASHED_EDGE/.style={-, dashed, dash pattern=on 2pt off 0.5pt, ultra thick, zxBlue},
+    RED_DASHED_EDGE/.style={-, dashed, dash pattern=on 2pt off 0.5pt, ultra thick, zxRed},
     GRAY_DASHED_EDGE/.style={-, dashed, dash pattern=on 3pt off 1.5pt, thick, lightgray}
 }
 \\pgfdeclarelayer{edgelayer}

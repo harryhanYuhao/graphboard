@@ -28,4 +28,8 @@ describe("EDGE_KIND_MAP", () => {
   it("labels the dashed-light kind 'Dashed light'", () => {
     expect(EDGE_KIND_MAP.dashed_light.label).toBe("Dashed light");
   });
+
+  it("labels the dashed-red kind 'Dashed red'", () => {
+    expect(EDGE_KIND_MAP.dashed_red.label).toBe("Dashed red");
+  });
 });

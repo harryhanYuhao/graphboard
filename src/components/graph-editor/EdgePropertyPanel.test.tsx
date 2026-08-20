@@ -59,12 +59,15 @@ describe("EdgePropertyPanel", () => {
     expect(screen.getByText("Edge")).toBeTruthy();
     const defaultBtn = screen.getByRole("button", { name: "Default" });
     const dashedBtn = screen.getByRole("button", { name: "Dashed blue" });
+    const dashedRedBtn = screen.getByRole("button", { name: "Dashed red" });
     const dashedLightBtn = screen.getByRole("button", { name: "Dashed light" });
     expect(defaultBtn).toBeTruthy();
     expect(dashedBtn).toBeTruthy();
+    expect(dashedRedBtn).toBeTruthy();
     expect(dashedLightBtn).toBeTruthy();
     expect(defaultBtn.getAttribute("aria-pressed")).toBe("true");
     expect(dashedBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(dashedRedBtn.getAttribute("aria-pressed")).toBe("false");
     expect(dashedLightBtn.getAttribute("aria-pressed")).toBe("false");
   });
 

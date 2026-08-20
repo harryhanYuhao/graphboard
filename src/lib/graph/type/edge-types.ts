@@ -29,7 +29,12 @@ export type EdgeType = (typeof EDGE_TYPES)[keyof typeof EDGE_TYPES];
 // all kinds compute identically. On-disk spellings are snake_case, matching
 // the vertex-type convention (`black_dot`), while the UI shows prettier
 // names (see the edge-kind swatches in EdgePropertyPanel).
-export const EDGE_KINDS = ["default", "dashed_blue", "dashed_light"] as const;
+export const EDGE_KINDS = [
+  "default",
+  "dashed_blue",
+  "dashed_red",
+  "dashed_light",
+] as const;
 
 export type EdgeKind = (typeof EDGE_KINDS)[number];
 
